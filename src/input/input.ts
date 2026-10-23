@@ -30,6 +30,9 @@ class InputState {
   private padPrev: boolean[] = [];
   usingTouch = false;
   usingPad = false;
+  /** street mode lets a held mouse button look around when pointer lock is unavailable */
+  dragLook = false;
+  private dragging = false;
 
   attach(canvas: HTMLCanvasElement): void {
     window.addEventListener('keydown', (e) => {
@@ -45,8 +48,10 @@ class InputState {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
+    canvas.addEventListener('mousedown', () => { if (this.dragLook && !this.locked) this.dragging = true; });
+    window.addEventListener('mouseup', () => { this.dragging = false; });
     window.addEventListener('mousemove', (e) => {
-      if (this.locked) {
+      if (this.locked || (this.dragging && this.dragLook)) {
         this.mouseDX += e.movementX;
         this.mouseDY += e.movementY;
       }
@@ -57,7 +62,14 @@ class InputState {
   }
 
   requestLock(canvas: HTMLCanvasElement): void {
-    if (!this.locked && !this.usingTouch) canvas.requestPointerLock?.();
+    if (this.locked || this.usingTouch || !canvas.requestPointerLock) return;
+    // some embeds refuse pointer lock — drag-to-look keeps working there
+    try {
+      const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+      p?.catch?.(() => {});
+    } catch {
+      /* not allowed here */
+    }
   }
   releaseLock(): void {
     if (document.pointerLockElement) document.exitPointerLock();

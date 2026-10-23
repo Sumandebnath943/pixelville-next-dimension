@@ -168,6 +168,7 @@ function frame(now: number): void {
 
   // the player
   const street = !planner.active;
+  Input.dragLook = street;
   if (street && !panels.anyModalOpen()) {
     founder.update(dt);
     interactions();
@@ -214,7 +215,7 @@ function frame(now: number): void {
     else {
       $('hint').textContent = Input.usingTouch ? 'Left thumb moves · right thumb looks · 🏗️ opens the Planner'
         : Input.locked ? 'WASD move · Shift run · Space jump · V camera · F drive · P Planner · Esc frees the mouse'
-          : 'Click the view to look around · WASD move · F drive · P Planner · F1 help';
+          : 'Click (or drag) the view to look around · WASD move · F drive · P Planner · F1 help';
     }
   }
   if (now - lastPanel > 1200) { lastPanel = now; panels.refresh(); }
