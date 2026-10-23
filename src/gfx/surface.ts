@@ -1,0 +1,259 @@
+/* ============================================================
+   The surface patch: one onBeforeCompile injection that every
+   V2 standard material goes through. It adds
+   - world-space anti-tiling (large stains and colour drift),
+   - wetness (darker, glossier), puddles with rain ripples and a
+     planar reflection of the street,
+   - snow that settles on upward faces, breaks up with noise as
+     it thins, is cleared by tyres and feet (wear mask) and
+     sparkles in the sun,
+   - height fog that is warmer towards the sun,
+   - optional hooks so foliage and windows can add wind sway or
+     lit interiors without losing the weather.
+   ============================================================ */
+import * as THREE from 'three';
+import { ENV, GLSL_COMMON, bindEnv } from './env';
+
+export interface SurfaceOpts {
+  /** how readily snow settles here (0 never … 1 fully) */
+  snow?: number;
+  /** how much rain darkens the surface (porous ≈ 1, glazed ≈ 0.3) */
+  wet?: number;
+  /** flat paving that collects puddles and reflects the street */
+  puddles?: boolean;
+  /** read the traffic-wear mask (tyre tracks, footpaths, kerb piles) */
+  wear?: boolean;
+  /** strength of large-scale colour variation */
+  antiTile?: number;
+  /** GLSL declarations for the vertex shader */
+  vDecl?: string;
+  /** GLSL run after begin_vertex; may modify `transformed` (object space) */
+  vDisplace?: string;
+  /** GLSL declarations for the fragment shader */
+  fDecl?: string;
+  /** GLSL run after color_fragment (diffuseColor available) */
+  fColor?: string;
+  /** GLSL run after emissivemap_fragment (add to totalEmissiveRadiance) */
+  fEmissive?: string;
+  /** extra uniforms */
+  uniforms?: Record<string, THREE.IUniform>;
+  /** double-sided foliage: don't flip normals on back faces */
+  keepNormals?: boolean;
+}
+
+const RIPPLE = /* glsl */ `
+vec2 pvRipple(vec2 p, float t) {
+  vec2 acc = vec2(0.0);
+  for (int k = 0; k < 2; k++) {
+    vec2 q = p * (2.4 + float(k) * 1.7) + float(k) * 7.31;
+    vec2 cell = floor(q), f = fract(q);
+    for (int j = -1; j <= 1; j++)
+      for (int i = -1; i <= 1; i++) {
+        vec2 c = cell + vec2(float(i), float(j));
+        vec2 h = pvHash22(c + float(k) * 13.0);
+        vec2 dv = (vec2(float(i), float(j)) + h) - f;
+        float ph = fract(t * (0.8 + h.x * 0.5) + h.y);
+        float x = length(dv) - ph;
+        float ring = sin(x * 26.0) * smoothstep(0.14, 0.0, abs(x)) * (1.0 - ph) * (1.0 - ph);
+        acc += ring * normalize(dv + 1e-4);
+      }
+  }
+  return acc * 0.5;
+}
+`;
+
+export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, key = ''): THREE.MeshStandardMaterial {
+  const snowK = o.snow ?? 0;
+  const wetK = o.wet ?? 0.6;
+  // only structural switches are defines; strengths are uniforms so materials share programs
+  const defs: string[] = [];
+  if (snowK > 0) defs.push('#define PV_SNOW');
+  if (o.puddles) defs.push('#define PV_PUDDLES');
+  if (o.wear) defs.push('#define PV_WEAR');
+  if (o.antiTile) defs.push('#define PV_ANTITILE');
+  const head = defs.join('\n') + '\n';
+  const hooked = !!(o.vDecl || o.vDisplace || o.fDecl || o.fColor || o.fEmissive || o.keepNormals);
+  const strengths = { uSnowK: { value: snowK }, uWetK: { value: wetK }, uAntiK: { value: o.antiTile ?? 0 } };
+
+  mat.onBeforeCompile = (sh) => {
+    bindEnv(sh.uniforms);
+    Object.assign(sh.uniforms, strengths);
+    sh.uniforms.uReflTex = ENV.reflTex;
+    sh.uniforms.uReflMat = ENV.reflMat;
+    sh.uniforms.uReflOn = ENV.reflOn;
+    sh.uniforms.uWearTex = ENV.wearTex;
+    sh.uniforms.uWearRect = ENV.wearRect;
+    if (o.uniforms) Object.assign(sh.uniforms, o.uniforms);
+
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>\n${head}${GLSL_COMMON}\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\n${o.vDecl || ''}`)
+      .replace(
+        '#include <defaultnormal_vertex>',
+        `#include <defaultnormal_vertex>
+        {
+          vec3 wn = objectNormal;
+          #ifdef USE_INSTANCING
+            wn = mat3(instanceMatrix) * wn;
+          #endif
+          vWNrm = normalize(mat3(modelMatrix) * wn);
+        }`,
+      )
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${o.vDisplace || ''}`)
+      .replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+        {
+          vec4 wp = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+            wp = instanceMatrix * wp;
+          #endif
+          vWPos = (modelMatrix * wp).xyz;
+        }`,
+      );
+
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>\n${head}${GLSL_COMMON}
+        #ifdef PV_PUDDLES
+        ${RIPPLE}
+        #endif
+        varying vec3 vWPos;
+        varying vec3 vWNrm;
+        uniform float uSnowK;
+        uniform float uWetK;
+        uniform float uAntiK;
+        uniform sampler2D uReflTex;
+        uniform mat4 uReflMat;
+        uniform float uReflOn;
+        uniform sampler2D uWearTex;
+        uniform vec4 uWearRect;
+        ${o.fDecl || ''}`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        vec3 pvN = normalize(vWNrm);
+        float pvUp = pvN.y;
+        #ifdef PV_ANTITILE
+          float pvAT = pvFbm(vWPos.xz * 0.045) * 0.7 + pvFbm(vWPos.xz * 0.23) * 0.3;
+          diffuseColor.rgb *= mix(1.0 - uAntiK, 1.0 + uAntiK * 0.5, pvAT);
+        #endif
+        ${o.fColor || ''}
+        vec2 pvWear = vec2(0.0);
+        #ifdef PV_WEAR
+          vec2 pvWuv = (vWPos.xz - uWearRect.xy) * uWearRect.zw;
+          if (pvWuv.x > 0.0 && pvWuv.x < 1.0 && pvWuv.y > 0.0 && pvWuv.y < 1.0) pvWear = texture2D(uWearTex, pvWuv).rg;
+        #endif
+        float pvSnow = 0.0;
+        float pvSlush = 0.0;
+        #ifdef PV_SNOW
+        {
+          float sn = pvFbm(vWPos.xz * 0.55 + vWPos.y * 0.3) * 0.7 + pvNoise(vWPos.xz * 4.0) * 0.3;
+          float cov = uSnow * uSnowK;
+          float up = smoothstep(0.25, 0.95, pvUp);
+          pvSnow = smoothstep(0.0, 0.22, cov * 1.3 - (1.0 - up) * 0.9 + (sn - 0.5) * (1.0 - cov) * 0.9 - 0.15) * step(0.3, pvUp);
+          pvSlush = pvWear.r * smoothstep(0.03, 0.35, uSnow) * uSnowK;
+          pvSnow *= 1.0 - pvWear.r * 0.9;
+          pvSnow = max(pvSnow, pvWear.g * smoothstep(0.08, 0.45, uSnow) * step(0.3, pvUp));
+        }
+        #endif
+        float pvPud = 0.0;
+        #ifdef PV_PUDDLES
+          pvPud = smoothstep(0.64 - uWet * 0.08, 0.68 - uWet * 0.08, pvFbm(vWPos.xz * 0.16 + 3.1) + pvWear.r * 0.05)
+                * step(0.92, pvUp) * smoothstep(0.35, 0.9, uWet) * (1.0 - pvSnow);
+        #endif
+        float pvWet = max(uWet * uWetK * mix(0.45, 1.0, smoothstep(0.1, 0.8, abs(pvUp))), pvSlush) * (1.0 - pvSnow);
+        diffuseColor.rgb *= mix(1.0, 0.5, pvWet);
+        diffuseColor.rgb *= mix(1.0, 0.55, pvPud);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.19, 0.17), pvSlush * 0.55 * (1.0 - pvSnow));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.94) * (0.92 + 0.08 * pvNoise(vWPos.xz * 9.0)), pvSnow);`,
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, min(roughnessFactor, 0.32), pvWet);
+        roughnessFactor = mix(roughnessFactor, 0.025, pvPud);
+        roughnessFactor = mix(roughnessFactor, 0.6, pvSnow);`,
+      )
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - pvSnow;')
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        ${o.keepNormals ? '#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif' : ''}
+        {
+          vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+          normal = normalize(mix(normal, upV, max(pvSnow * 0.75, pvPud)));
+          #ifdef PV_PUDDLES
+          if (uRain > 0.01 && pvUp > 0.9) {
+            vec2 rp = pvRipple(vWPos.xz, uTime) * uRain * (pvPud * 0.45 + pvWet * 0.12);
+            vec3 nW = normalize(vec3(-rp.x, 1.0, -rp.y));
+            vec3 nV = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
+            normal = normalize(normal + (nV - upV));
+          }
+          #endif
+        }`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        #ifdef PV_SNOW
+        if (pvSnow > 0.01) {
+          vec3 cp = floor(vWPos * 70.0);
+          vec2 hh = pvHash22(cp.xz + cp.y * 17.0);
+          vec3 rn = normalize(vec3(hh.x - 0.5, 0.55, hh.y - 0.5));
+          vec3 vd = normalize(cameraPosition - vWPos);
+          float g = pow(max(dot(rn, normalize(vd + uSunDir)), 0.0), 260.0) * step(0.8, pvHash12(cp.xz * 1.37 + cp.y));
+          totalEmissiveRadiance += uSunColor * g * pvSnow * 0.5;
+        }
+        #endif
+        ${o.fEmissive || ''}`,
+      )
+      .replace(
+        '#include <lights_fragment_maps>',
+        `#include <lights_fragment_maps>
+        #if defined(PV_PUDDLES) && defined(USE_ENVMAP)
+        if (uReflOn > 0.5 && pvUp > 0.9) {
+          vec4 rp = uReflMat * vec4(vWPos, 1.0);
+          vec2 ruv = rp.xy / rp.w;
+          vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+          ruv += (normal.xy - upV.xy) * 0.08;
+          float lod = material.roughness * 7.0;
+          vec3 rc = vec3(0.0);
+          for (int i = 0; i < 4; i++) rc += textureLod(uReflTex, ruv + vec2(0.0, (float(i) - 1.5) * material.roughness * 0.03), lod).rgb;
+          rc *= 0.25;
+          float rk = clamp(1.0 - material.roughness * 2.6, 0.0, 1.0) * max(pvWet, pvPud);
+          radiance = mix(radiance, rc, rk);
+        }
+        #endif`,
+      )
+      .replace('#include <fog_fragment>', 'gl_FragColor.rgb = pvFog(gl_FragColor.rgb, vWPos);');
+  };
+  mat.customProgramCacheKey = () => `pv|${head}|${hooked ? key : ''}`;
+  return mat;
+}
+
+/** apply only the V2 fog to an unlit material (glows, lamps) */
+export function fogOnly(mat: THREE.Material, key = ''): THREE.Material {
+  mat.onBeforeCompile = (sh) => {
+    bindEnv(sh.uniforms);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+      .replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+        {
+          vec4 wp = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+            wp = instanceMatrix * wp;
+          #endif
+          vWPos = (modelMatrix * wp).xyz;
+        }`,
+      );
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\n${GLSL_COMMON}\nvarying vec3 vWPos;`)
+      .replace('#include <fog_fragment>', 'gl_FragColor.rgb = pvFog(gl_FragColor.rgb, vWPos);');
+  };
+  mat.customProgramCacheKey = () => 'pvfog|' + key;
+  return mat;
+}

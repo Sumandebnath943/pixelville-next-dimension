@@ -5,6 +5,10 @@ export default defineConfig({
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      // the game, and the V2 look lab (vertical slice)
+      input: { main: 'index.html', slice: 'slice.html' },
+    },
   },
   test: {
     include: ['tests/**/*.test.ts'],

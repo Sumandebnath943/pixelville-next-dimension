@@ -1,0 +1,281 @@
+/* ============================================================
+   Water: surfaces shaped by Gerstner waves that grow with the
+   wind, drifting detail ripples along the current, rain rings,
+   Fresnel-weighted planar reflection, sun glitter, foam along
+   the shore, and a murky body colour lit by the sky. Every
+   water mesh at one level shares a WaterSystem (one mirror, one
+   wave set); the same wave sum runs on the CPU, so boats and
+   ducks float, pitch and roll on the waves the camera sees.
+   Meshes carry `aShore`: metres from this point to dry land.
+   ============================================================ */
+import * as THREE from 'three';
+import { ENV, GLSL_COMMON, bindEnv } from './env';
+import { waterNormals } from './textures';
+import { PlanarReflection } from './pipeline';
+
+const NW = 4;
+export interface Wave { dir: THREE.Vector2; length: number; amp: number; steep: number }
+
+const VERT = /* glsl */ `
+${GLSL_COMMON}
+uniform vec4 uWaves[${NW}];   // dir.xy, wavelength, amplitude
+uniform float uSteep;
+attribute float aShore;
+varying vec3 vWPos;
+varying vec3 vNrm;
+varying float vShore;
+void main() {
+  vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
+  vShore = aShore;
+  // waves die down in the shallows
+  float calm = smoothstep(0.0, 6.0, aShore);
+  vec3 disp = vec3(0.0);
+  vec3 n = vec3(0.0, 1.0, 0.0);
+  for (int i = 0; i < ${NW}; i++) {
+    vec2 d = uWaves[i].xy;
+    float L = uWaves[i].z, A = uWaves[i].w * (0.3 + 0.7 * calm);
+    float k = 6.2831853 / L;
+    float c = sqrt(9.8 / k);
+    float f = k * (dot(d, p.xz) - c * uTime) + float(i) * 1.7;
+    float cf = cos(f), sf = sin(f);
+    disp.x += uSteep * A * d.x * cf;
+    disp.z += uSteep * A * d.y * cf;
+    disp.y += A * sf;
+    n.x -= d.x * k * A * cf;
+    n.z -= d.y * k * A * cf;
+    n.y -= uSteep * k * A * sf;
+  }
+  p += disp;
+  vWPos = p;
+  vNrm = normalize(n);
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+}`;
+
+const FRAG = /* glsl */ `
+${GLSL_COMMON}
+uniform sampler2D uNormals;
+uniform sampler2D uRefl;
+uniform mat4 uReflMat;
+uniform float uReflOn;
+uniform vec3 uDeep;
+uniform vec3 uShallow;
+uniform float uAmbient;
+uniform vec2 uFlowDir;
+uniform float uFlow;
+uniform float uIce;
+varying vec3 vWPos;
+varying vec3 vNrm;
+varying float vShore;
+
+vec2 ripple(vec2 p, float t) {
+  vec2 acc = vec2(0.0);
+  for (int k = 0; k < 2; k++) {
+    vec2 q = p * (1.6 + float(k) * 1.3) + float(k) * 5.1;
+    vec2 cell = floor(q), f = fract(q);
+    for (int j = -1; j <= 1; j++)
+      for (int i = -1; i <= 1; i++) {
+        vec2 c = cell + vec2(float(i), float(j));
+        vec2 h = pvHash22(c + float(k) * 9.0);
+        vec2 dv = (vec2(float(i), float(j)) + h) - f;
+        float ph = fract(t * (0.7 + h.x * 0.6) + h.y);
+        float x = length(dv) - ph * 0.9;
+        acc += sin(x * 30.0) * smoothstep(0.12, 0.0, abs(x)) * (1.0 - ph) * (1.0 - ph) * normalize(dv + 1e-4);
+      }
+  }
+  return acc;
+}
+
+void main() {
+  vec3 V = normalize(cameraPosition - vWPos);
+  float dist = length(cameraPosition - vWPos);
+  vec2 uv1 = vWPos.xz * 0.11 + uFlowDir * uTime * 0.05 * uFlow;
+  vec2 uv2 = vWPos.xz * 0.29 + uWindDir * uTime * (0.02 + uWind * 0.06) + vec2(0.37, 0.71);
+  vec3 n1 = texture2D(uNormals, uv1).xzy * 2.0 - 1.0;
+  vec3 n2 = texture2D(uNormals, uv2).xzy * 2.0 - 1.0;
+  float detail = (0.25 + uWind * 0.9) / (1.0 + dist * 0.012) * (1.0 - uIce);
+  vec3 N = normalize(vNrm + vec3(n1.x + n2.x, 0.0, n1.z + n2.z) * detail);
+  if (uRain > 0.01 && uIce < 0.5) {
+    vec2 r = ripple(vWPos.xz, uTime) * uRain * 0.6 / (1.0 + dist * 0.03);
+    N = normalize(N + vec3(-r.x, 0.0, -r.y));
+  }
+  float NV = max(dot(N, V), 0.0);
+  float F = 0.02 + 0.98 * pow(1.0 - NV, 5.0);
+
+  vec3 refl = uFogAway;
+  if (uReflOn > 0.5) {
+    vec4 rp = uReflMat * vec4(vWPos, 1.0);
+    vec2 ruv = rp.xy / rp.w + N.xz * 0.045;
+    refl = texture2D(uRefl, clamp(ruv, 0.002, 0.998)).rgb;
+  }
+  float sunUp = max(uSunDir.y, 0.0);
+  vec3 light = vec3(uAmbient) + uSunColor * sunUp * 0.12;
+  vec3 body = mix(uShallow, uDeep, smoothstep(0.0, 7.0, vShore)) * light;
+  body += uSunColor * uShallow * pow(max(0.0, dot(-V, uSunDir)), 4.0) * 0.2;
+
+  vec3 col = mix(body, refl, F);
+  float nh = max(dot(N, normalize(V + uSunDir)), 0.0);
+  float spec = pow(nh, 1400.0) * 2.2 + pow(nh, 160.0) * 0.05;
+  col += uSunColor * spec * (1.0 - uRain * 0.7) * smoothstep(0.0, 0.08, uSunDir.y) * (1.0 - uIce * 0.8);
+  // foam where small waves break on the shore
+  float fn = pvFbm(vWPos.xz * vec2(0.9, 1.4) + vec2(uTime * 0.25 * uFlow, uTime * 0.05));
+  float foam = smoothstep(1.4, 0.0, vShore) * smoothstep(0.42, 0.72, fn + (0.12 + uWind * 0.3)) * (1.0 - uIce);
+  col = mix(col, light * vec3(0.75, 0.78, 0.8) + uSunColor * sunUp * 0.06, foam * 0.6);
+  // winter: a skin of ice, white where snow has settled on it
+  if (uIce > 0.01) {
+    vec3 ice = light * mix(vec3(0.55, 0.62, 0.66), vec3(0.88, 0.9, 0.94), smoothstep(0.35, 0.75, pvFbm(vWPos.xz * 0.12)) * uSnow);
+    col = mix(col, mix(ice, refl, F * 0.5), uIce);
+  }
+  col = pvFog(col, vWPos);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+export class WaterSystem {
+  material: THREE.ShaderMaterial;
+  reflection: PlanarReflection;
+  waves: Wave[] = [];
+  meshes: THREE.Mesh[] = [];
+  flowDir = new THREE.Vector2(1, 0);
+  private wavesU: THREE.Vector4[];
+  private mirrored = false;
+  /** world-space boxes the water occupies (for the on-screen test) */
+  bounds: THREE.Box3[] = [];
+
+  constructor(public level: number, reflScale = 0.5) {
+    this.wavesU = Array.from({ length: NW }, () => new THREE.Vector4());
+    this.reflection = new PlanarReflection(level, reflScale);
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        uWaves: { value: this.wavesU },
+        uSteep: { value: 0.6 },
+        uFlow: { value: 0.6 },
+        uFlowDir: { value: this.flowDir },
+        uNormals: { value: waterNormals() },
+        uRefl: { value: this.reflection.rt.texture },
+        uReflMat: { value: this.reflection.textureMatrix },
+        uReflOn: { value: 1 },
+        uDeep: { value: new THREE.Color(0.012, 0.035, 0.03) },
+        uShallow: { value: new THREE.Color(0.05, 0.085, 0.06) },
+        uAmbient: { value: 1 },
+        uIce: { value: 0 },
+      },
+      vertexShader: VERT,
+      fragmentShader: FRAG,
+    });
+    bindEnv(this.material.uniforms);
+    this.setWind();
+  }
+
+  add(mesh: THREE.Mesh): void {
+    mesh.material = this.material;
+    mesh.receiveShadow = false;
+    this.meshes.push(mesh);
+    mesh.geometry.computeBoundingBox();
+    this.bounds.push(mesh.geometry.boundingBox!.clone().applyMatrix4(mesh.matrixWorld).expandByScalar(1));
+  }
+  remove(mesh: THREE.Mesh): void {
+    const i = this.meshes.indexOf(mesh);
+    if (i >= 0) { this.meshes.splice(i, 1); this.bounds.splice(i, 1); }
+  }
+  /** move the whole surface (a drought lowers it) */
+  setLevel(y: number): void {
+    const dy = y - this.level;
+    if (Math.abs(dy) < 1e-4) return;
+    this.level = y;
+    this.reflection.y = y;
+    for (const m of this.meshes) m.position.y += dy;
+    for (const b of this.bounds) b.translate(new THREE.Vector3(0, dy, 0));
+  }
+
+  /** wave set follows the current wind: calm water is glassy, a gale chops it up */
+  private setWind(): void {
+    const wd = ENV.windDir.value;
+    const w = ENV.wind.value;
+    const base = Math.atan2(wd.y, wd.x);
+    const spec: [number, number, number][] = [[0, 6.5, 0.05], [0.5, 3.1, 0.035], [-0.6, 1.9, 0.022], [1.1, 1.1, 0.012]];
+    this.waves = spec.map(([da, L, a]) => ({
+      dir: new THREE.Vector2(Math.cos(base + da), Math.sin(base + da)),
+      length: L * (0.7 + w * 0.6),
+      amp: a * (0.15 + w * 1.6),
+      steep: 0.6,
+    }));
+    this.waves.forEach((v, i) => this.wavesU[i].set(v.dir.x, v.dir.y, v.length, v.amp));
+  }
+
+  /** surface height at a point (CPU twin of the vertex shader, open water) */
+  height(x: number, z: number): number {
+    const t = ENV.time.value;
+    let y = this.level;
+    this.waves.forEach((v, i) => {
+      const k = (2 * Math.PI) / v.length;
+      const c = Math.sqrt(9.8 / k);
+      y += v.amp * Math.sin(k * (v.dir.x * x + v.dir.y * z - c * t) + i * 1.7);
+    });
+    return y;
+  }
+
+  update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, cam: THREE.PerspectiveCamera, ambient: number, reflect = true, ice = 0): void {
+    this.setWind();
+    const u = this.material.uniforms;
+    u.uAmbient.value = (ambient / Math.PI) * 0.6;
+    u.uReflOn.value = this.reflection.enabled ? 1 : 0;
+    u.uIce.value = ice;
+    const fr = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    const vis = this.bounds.some((b) => fr.intersectsBox(b));
+    for (const m of this.meshes) m.visible = vis;
+    if (!vis) { this.mirrored = false; return; }
+    if (reflect || !this.mirrored) {
+      this.mirrored = true;
+      for (const m of this.meshes) m.visible = false;
+      this.reflection.update(renderer, scene, cam);
+      for (const m of this.meshes) m.visible = true;
+    }
+  }
+}
+
+/** a straight river channel (the slice) */
+export class River extends WaterSystem {
+  mesh: THREE.Mesh;
+  constructor(scene: THREE.Scene, public x0: number, public x1: number, public z0: number, public z1: number, level: number) {
+    super(level, 0.5);
+    const w = x1 - x0, d = z1 - z0;
+    const geo = new THREE.PlaneGeometry(w, d, Math.ceil(w / 1.2), Math.ceil(d / 0.8));
+    geo.rotateX(-Math.PI / 2);
+    geo.translate((x0 + x1) / 2, level, (z0 + z1) / 2);
+    const p = geo.attributes.position;
+    const shore = new Float32Array(p.count);
+    for (let i = 0; i < p.count; i++) shore[i] = Math.min(Math.abs(p.getZ(i) - z0), Math.abs(p.getZ(i) - (z1 - 2.5)));
+    geo.setAttribute('aShore', new THREE.BufferAttribute(shore, 1));
+    this.mesh = new THREE.Mesh(geo, this.material);
+    scene.add(this.mesh);
+    this.add(this.mesh);
+  }
+}
+
+/* ---------- floating bodies ---------- */
+export class Floater {
+  y = 0;
+  vy = 0;
+  pitch = 0;
+  roll = 0;
+  constructor(public obj: THREE.Object3D, private water: WaterSystem, private length: number, private beam: number, private draft: number) {
+    this.y = water.level;
+  }
+  update(dt: number): void {
+    const o = this.obj;
+    const yaw = o.rotation.y;
+    const fx = (Math.sin(yaw) * this.length) / 2, fz = (Math.cos(yaw) * this.length) / 2;
+    const sx = (Math.cos(yaw) * this.beam) / 2, sz = (-Math.sin(yaw) * this.beam) / 2;
+    const w = this.water;
+    const hb = w.height(o.position.x + fx, o.position.z + fz), hs = w.height(o.position.x - fx, o.position.z - fz);
+    const hp = w.height(o.position.x + sx, o.position.z + sz), hq = w.height(o.position.x - sx, o.position.z - sz);
+    const target = (hb + hs + hp + hq) / 4 - this.draft;
+    // a damped spring towards the buoyant equilibrium
+    this.vy += ((target - this.y) * 28 - this.vy * 4.5) * dt;
+    this.y += this.vy * dt;
+    const tp = Math.atan2(hs - hb, this.length), tr = Math.atan2(hp - hq, this.beam);
+    this.pitch += (tp - this.pitch) * Math.min(1, dt * 3);
+    this.roll += (tr - this.roll) * Math.min(1, dt * 3);
+    o.position.y = this.y;
+    o.rotation.set(this.pitch, yaw, this.roll, 'YXZ');
+  }
+}

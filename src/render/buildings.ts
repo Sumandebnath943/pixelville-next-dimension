@@ -1,50 +1,239 @@
 /* ============================================================
-   Buildings: a procedural low-poly builder for every catalog
-   type, in V1's visual language (wall/roof palettes, awnings,
-   signs, glowing windows), plus the layer that keeps the 3D
-   town in sync with the sim — construction sites rising inside
-   scaffolds, extra floors, ruins, and collision boxes.
+   Buildings (V2 look): every catalog type is still described by
+   V1's builder functions below, but the toolkit they draw with
+   is real architecture — walls of brick, render or stone cut
+   around recessed sash windows (with rooms behind the glass),
+   curtain walls on glazed blocks, panelled doors, tiled roofs
+   with fascias and gutters, flat roofs with parapets and plant,
+   striped awnings, backlit name boards, brick chimneys, stone
+   columns and pediments, fences and railings, and real trees.
+   The layer merges finished buildings per map chunk (one mesh
+   per material) and keeps construction sites separate so they
+   can rise inside their scaffolds.
    Local frame: plot centred on the origin, front (door) at +Z.
    ============================================================ */
 import * as THREE from 'three';
 import { CAT } from '../sim/catalog';
 import { World } from '../sim/world';
 import { Weather } from '../sim/weather';
-import { MeshBuilder, MAT, hex, shade, hash2 } from './kit';
+import { hex, shade, hash2 } from './kit';
+import { Kit, Palette, sharedPalette, Frame, Hole, wallFace, obox, sashWindow, frontDoor, glassPane, chimney as brickChimney, TRIM, meshesFromParts } from '../gfx/architecture';
+import * as TX from '../gfx/textures';
+import { TreeInstance, Species } from '../gfx/vegetation';
 
 const TM = 8;
 const FLOOR = 3.2;
 type Box2 = [number, number, number, number]; // x0 z0 x1 z1 (local)
+type P3 = number[];
 
 const HOUSE_WALLS = ['#f0e0bd', '#e6c69c', '#d8e4ef', '#f2d4cc', '#e4e0d4', '#cfe0c2'];
 const HOUSE_ROOFS = ['#c0574f', '#7a8fb1', '#8a9a5b', '#a86f4f', '#6d5b8e', '#b0883f'];
 
 /** buildings you can walk straight into (open venues): no collision box */
 const OPEN = new Set(['park', 'playground', 'grandpark', 'plaza', 'pool', 'busstop', 'taxistand', 'heliport', 'dock']);
+const CLASSICAL = new Set(['bank', 'exchange', 'museum', 'library', 'courthouse', 'townhall', 'college', 'theater', 'mansion']);
+const INDUSTRIAL = new Set(['factory', 'steelworks', 'sawmill', 'brickworks', 'textilemill', 'cannery', 'glassworks', 'warehouse', 'powerplant']);
+
+const V = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
+const WHITE = new THREE.Color(1, 1, 1);
+const _hsl = { h: 0, s: 0, l: 0 };
+const hslOf = (c: THREE.Color): { h: number; s: number; l: number } => c.getHSL(_hsl);
+
+/* ---------- picking a real material for a V1 colour ---------- */
+function roofKey(c: THREE.Color): string {
+  const { h, s } = hslOf(c);
+  return (h < 0.11 || h > 0.94) && s > 0.22 ? 'clay' : 'slate';
+}
+function detailKey(c: THREE.Color, flatGround: boolean): string {
+  const { h, s, l } = hslOf(c);
+  if (flatGround) {
+    if (h > 0.17 && h < 0.45 && s > 0.18 && l < 0.78) return 'grass';
+    if (l < 0.42 && s < 0.2) return 'asphalt';
+    if (h > 0.06 && h < 0.16 && s > 0.22) return 'gravel';
+    return 'paving';
+  }
+  if (l < 0.3 && s < 0.35) return 'metal';
+  if (h > 0.03 && h < 0.12 && s > 0.2 && l < 0.5) return 'timber';
+  if (s > 0.42) return 'paint';
+  return 'render';
+}
+/** keep tints believable on textured materials */
+function tintFor(key: string, c: THREE.Color): THREE.Color {
+  if (key === 'grass' || key.startsWith('brick') || key === 'clay' || key === 'asphalt') return WHITE;
+  if (key === 'slate' || key === 'stone' || key === 'paving' || key === 'gravel') return WHITE.clone().lerp(c, 0.35).multiplyScalar(1.15);
+  if (key === 'render') return c.clone().lerp(WHITE, 0.15);
+  return c;
+}
+
+/* ---------- adapters: V1's MeshBuilder calls, drawn into a Kit ---------- */
+function polyGeo(pts: P3[]): THREE.BufferGeometry {
+  const a = V(pts[0][0], pts[0][1], pts[0][2]), b = V(pts[1][0], pts[1][1], pts[1][2]), c = V(pts[2][0], pts[2][1], pts[2][2]);
+  const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+  const tris = pts.length === 4 ? [0, 1, 2, 0, 2, 3] : [0, 1, 2];
+  const pos: number[] = [], nor: number[] = [];
+  for (const i of tris) { pos.push(pts[i][0], pts[i][1], pts[i][2]); nor.push(n.x, n.y, n.z); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  return g;
+}
+
+class KBody {
+  /** optional local transform (like V1's MeshBuilder.mat) */
+  mat: THREE.Matrix4 | null = null;
+  /** force a material key for the next calls */
+  force: string | null = null;
+  constructor(private c: Ctx) {}
+  get empty(): boolean { return false; }
+  put(geo: THREE.BufferGeometry, color: THREE.Color, flat = false, roofish = false): this {
+    if (this.mat) geo.applyMatrix4(this.mat);
+    const key = this.force || (roofish ? roofKey(color) : detailKey(color, flat));
+    this.c.kit.add(key, geo, tintFor(key, color));
+    return this;
+  }
+  box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: THREE.Color, _top?: THREE.Color, _o?: unknown): this {
+    const g = new THREE.BoxGeometry(Math.max(0.001, Math.abs(x1 - x0)), Math.max(0.001, Math.abs(y1 - y0)), Math.max(0.001, Math.abs(z1 - z0)));
+    g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    return this.put(g, color, Math.abs(y1 - y0) < 0.25 && Math.min(y0, y1) < 0.35);
+  }
+  boxC(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, color: THREE.Color, top?: THREE.Color): this {
+    return this.box(cx - sx / 2, cy - sy / 2, cz - sz / 2, cx + sx / 2, cy + sy / 2, cz + sz / 2, color, top);
+  }
+  quad(a: P3, b: P3, c: P3, d: P3, color: THREE.Color): this {
+    const flat = Math.abs(a[1] - c[1]) < 0.05 && a[1] < 0.35;
+    return this.put(polyGeo([a, b, c, d]), color, flat);
+  }
+  tri(a: P3, b: P3, c: P3, color: THREE.Color): this {
+    return this.put(polyGeo([a, b, c]), color);
+  }
+  cyl(cx: number, y0: number, cz: number, r: number, h: number, n: number, color: THREE.Color, _top?: THREE.Color, rTop?: number): this {
+    const g = new THREE.CylinderGeometry(rTop === undefined ? r : rTop, r, Math.max(0.01, h), Math.max(12, n * 2));
+    g.translate(cx, y0 + h / 2, cz);
+    return this.put(g, color, h < 0.25 && y0 < 0.35);
+  }
+  cone(cx: number, y0: number, cz: number, r: number, h: number, n: number, color: THREE.Color): this {
+    const g = new THREE.ConeGeometry(r, h, Math.max(n, 4) === 4 ? 4 : Math.max(16, n * 2));
+    if (n === 4) g.rotateY(Math.PI / 4);
+    g.translate(cx, y0 + h / 2, cz);
+    return this.put(g, color, false, hslOf(color).s < 0.4);
+  }
+  blob(cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: THREE.Color): this {
+    const g = new THREE.SphereGeometry(1, 16, 12);
+    g.scale(rx, ry, rz).translate(cx, cy, cz);
+    return this.put(g, color);
+  }
+  gableX(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, color: THREE.Color, gable: THREE.Color): this {
+    const zm = (z0 + z1) / 2;
+    this.put(polyGeo([[x0, y0, z1], [x1, y0, z1], [x1, y1, zm], [x0, y1, zm]]), color, false, true);
+    this.put(polyGeo([[x1, y0, z0], [x0, y0, z0], [x0, y1, zm], [x1, y1, zm]]), color, false, true);
+    this.put(polyGeo([[x0, y0, z0], [x0, y0, z1], [x0, y1, zm]]), gable);
+    this.put(polyGeo([[x1, y0, z1], [x1, y0, z0], [x1, y1, zm]]), gable);
+    return this;
+  }
+  gableZ(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, color: THREE.Color, gable: THREE.Color): this {
+    const xm = (x0 + x1) / 2;
+    this.put(polyGeo([[x1, y0, z1], [x1, y0, z0], [xm, y1, z0], [xm, y1, z1]]), color, false, true);
+    this.put(polyGeo([[x0, y0, z0], [x0, y0, z1], [xm, y1, z1], [xm, y1, z0]]), color, false, true);
+    this.put(polyGeo([[x0, y0, z1], [x1, y0, z1], [xm, y1, z1]]), gable);
+    this.put(polyGeo([[x1, y0, z0], [x0, y0, z0], [xm, y1, z0]]), gable);
+    return this;
+  }
+  pyramid(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, color: THREE.Color, inset = 0): this {
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    const ax = inset ? Math.min(inset, (x1 - x0) / 2) : 0;
+    const p0 = [cx - ax, y1, cz], p1 = [cx + ax, y1, cz];
+    this.put(polyGeo([[x0, y0, z1], [x1, y0, z1], p1, p0]), color, false, true);
+    this.put(polyGeo([[x1, y0, z0], [x0, y0, z0], p0, p1]), color, false, true);
+    this.put(polyGeo([[x1, y0, z1], [x1, y0, z0], p1]), color, false, true);
+    this.put(polyGeo([[x0, y0, z0], [x0, y0, z1], p0]), color, false, true);
+    return this;
+  }
+}
+
+/** windows drawn directly by builders: glass with a room behind it, in a slim frame */
+class KWin {
+  constructor(private c: Ctx, private kind: number) {}
+  quad(a: P3, b: P3, _c: P3, d: P3, _color?: THREE.Color): this {
+    const A = V(a[0], a[1], a[2]), B = V(b[0], b[1], b[2]), D = V(d[0], d[1], d[2]);
+    const u = new THREE.Vector3().subVectors(B, A);
+    const w = u.length();
+    u.normalize();
+    const up = new THREE.Vector3().subVectors(D, A);
+    const n = new THREE.Vector3().crossVectors(u, up).normalize();
+    if (Math.abs(n.y) > 0.5 || w < 0.05) { // roof lights and odd shapes: plain glass
+      this.c.kit.add('glassPlain', polyGeo([a, b, _c, d]));
+      return this;
+    }
+    const F = new Frame(V(A.x, 0, A.z), u, n);
+    const h: Hole = { a0: 0, b0: Math.min(A.y, D.y), a1: w, b1: Math.max(A.y, D.y) };
+    const tall = h.b1 - h.b0 > 2.2;
+    const seed = this.c.hv + Math.round(A.x * 7 + A.y * 13 + A.z * 3);
+    const lit = TX.hash(seed, 3, 9) > 0.4;
+    glassPane(this.c.kit, F, h, 0, tall ? Math.max(0.1, h.b0 - 0.3) : h.b0 - 0.9, seed, lit, this.kind);
+    const fc = new THREE.Color(0.08, 0.08, 0.09);
+    obox(this.c.kit, 'metal', F, h.a0 - 0.05, h.b0 - 0.05, -0.02, h.a0 + 0.02, h.b1 + 0.05, 0.05, fc);
+    obox(this.c.kit, 'metal', F, h.a1 - 0.02, h.b0 - 0.05, -0.02, h.a1 + 0.05, h.b1 + 0.05, 0.05, fc);
+    obox(this.c.kit, 'metal', F, h.a0, h.b1 - 0.02, -0.02, h.a1, h.b1 + 0.05, 0.05, fc);
+    obox(this.c.kit, 'metal', F, h.a0, h.b0 - 0.05, -0.02, h.a1, h.b0 + 0.02, 0.05, fc);
+    return this;
+  }
+  cyl(cx: number, y0: number, cz: number, r: number, h: number, n: number, _color?: THREE.Color): this {
+    const g = new THREE.CylinderGeometry(r, r, h, Math.max(16, n * 2), 1, true);
+    g.translate(cx, y0 + h / 2, cz);
+    this.c.kit.add('glassPlain', g);
+    return this;
+  }
+}
+
+/** lit things (signs, neon, beacons): coloured panels by day, glowing after dusk */
+class KGlow {
+  constructor(private c: Ctx) {}
+  box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: THREE.Color): this {
+    const g = new THREE.BoxGeometry(Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0));
+    g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    this.c.kit.add('glowPanel', g, color);
+    return this;
+  }
+  boxC(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, color: THREE.Color): this {
+    return this.box(cx - sx / 2, cy - sy / 2, cz - sz / 2, cx + sx / 2, cy + sy / 2, cz + sz / 2, color);
+  }
+  cyl(cx: number, y0: number, cz: number, r: number, h: number, n: number, color: THREE.Color): this {
+    const g = new THREE.CylinderGeometry(r, r, Math.max(0.02, h), Math.max(16, n));
+    g.translate(cx, y0 + h / 2, cz);
+    this.c.kit.add('glowPanel', g, color);
+    return this;
+  }
+}
 
 export interface Built {
-  body: MeshBuilder;
-  win: MeshBuilder[]; // three window materials
-  glow: MeshBuilder;
   height: number;
   solids: Box2[];
+  trees: TreeInstance[];
 }
 
 class Ctx implements Built {
-  body = new MeshBuilder();
-  win = [new MeshBuilder(), new MeshBuilder(), new MeshBuilder()];
-  glow = new MeshBuilder();
+  kit: Kit;
+  body: KBody;
+  win: KWin[];
+  glow: KGlow;
   height = 4;
   solids: Box2[] = [];
+  trees: TreeInstance[] = [];
   W: number;
   D: number;
   hv: number;
   winK = 0;
-  constructor(public b: any, public key: string) {
+  private wall = { key: 'render', tint: WHITE };
+  constructor(public b: any, public key: string, kit?: Kit) {
     const d = CAT[key];
     this.W = (d.w || 1) * TM;
     this.D = (d.h || 1) * TM;
     this.hv = hash2(b.id || 1, b.x * 7 + b.y);
+    this.kit = kit || new Kit(sharedPalette());
+    this.body = new KBody(this);
+    // window interiors: 0 homes, 3 offices and halls, 1 shops, 4 stained glass
+    this.win = [new KWin(this, 0), new KWin(this, 3), new KWin(this, 4)];
+    this.glow = new KGlow(this);
   }
   get hw(): number { return this.W / 2; }
   get hd(): number { return this.D / 2; }
@@ -60,123 +249,277 @@ class Ctx implements Built {
     this.solids.push([x0, z0, x1, z1]);
     return this;
   }
+
+  /** which real wall finish a V1 wall colour becomes on this building */
+  private wallFor(wall: string): { key: string; tint: THREE.Color } {
+    const col = hex(wall);
+    const { h, s, l } = hslOf(col);
+    if (s > 0.35 && (h < 0.05 || h > 0.96) && l < 0.62) return { key: 'brickRed', tint: WHITE };
+    if (s > 0.25 && h >= 0.03 && h < 0.1 && l < 0.55) return { key: 'brickBrown', tint: WHITE };
+    if (CLASSICAL.has(this.key)) return { key: 'stone', tint: WHITE.clone().lerp(col, 0.4).multiplyScalar(1.1) };
+    if (INDUSTRIAL.has(this.key)) return { key: this.hv % 2 ? 'brickRed' : 'brickBrown', tint: WHITE };
+    if (CAT[this.key]?.res || this.key.startsWith('house') || this.key === 'cottage') {
+      const k = this.hv % 4;
+      if (k === 1) return { key: 'brickRed', tint: WHITE };
+      if (k === 2) return { key: this.hv % 8 < 4 ? 'brickYellow' : 'brickBrown', tint: WHITE };
+    }
+    if (l < 0.35) return { key: 'render', tint: col.clone().multiplyScalar(1.3) };
+    return { key: 'render', tint: col.clone().lerp(WHITE, 0.12) };
+  }
+
   /** a walled block with windows on every face; returns its top */
   block(x0: number, z0: number, x1: number, z1: number, y0: number, floors: number, wall: string, o: { door?: boolean; doorC?: string; glass?: boolean; noWin?: boolean; winGap?: number; band?: string; floorH?: number } = {}): number {
     const fh = o.floorH || FLOOR;
     const y1 = y0 + floors * fh;
-    this.body.box(x0, y0, z0, x1, y1, z1, this.c(wall), this.c(wall, -0.25));
+    const glass = !!o.glass;
+    const w = glass ? { key: hslOf(hex(wall)).s > 0.15 ? 'metal' : 'render', tint: hex(wall).lerp(WHITE, 0.2) } : this.wallFor(wall);
+    this.wall = w;
     this.solid(x0, z0, x1, z1);
-    if (o.band) for (let f = 1; f < floors; f++) this.body.box(x0 - 0.05, y0 + f * fh - 0.15, z0 - 0.05, x1 + 0.05, y0 + f * fh + 0.1, z1 + 0.05, this.c(o.band));
-    if (!o.noWin) this.windows(x0, z0, x1, z1, y0, floors, fh, o.glass ? 0.85 : 0, o.winGap || 2.6, !!o.door);
-    if (o.door) this.door(0, z1, y0, o.doorC);
+    const gap = o.winGap || 2.6;
+    const ww = glass ? gap - 0.28 : 1.15, wh = glass ? fh - 0.75 : 1.45;
+    const faces: { F: Frame; len: number; front: boolean }[] = [
+      { F: new Frame(V(x0, 0, z1), V(1, 0, 0), V(0, 0, 1)), len: x1 - x0, front: true },
+      { F: new Frame(V(x1, 0, z0), V(-1, 0, 0), V(0, 0, -1)), len: x1 - x0, front: false },
+      { F: new Frame(V(x1, 0, z1), V(0, 0, -1), V(1, 0, 0)), len: z1 - z0, front: false },
+      { F: new Frame(V(x0, 0, z0), V(0, 0, 1), V(-1, 0, 0)), len: z1 - z0, front: false },
+    ];
+    const trim = glass ? new THREE.Color(0.12, 0.13, 0.14) : TRIM;
+    const kind = glass ? (this.winK === 1 && !['office', 'skyscraper', 'airport'].includes(this.key) ? 1 : 3) : this.winK === 0 ? 0 : 3;
+    faces.forEach(({ F, len, front }, fi) => {
+      const holes: Hole[] = [];
+      const wins: { h: Hole; floorY: number; k: number }[] = [];
+      let door: Hole | null = null;
+      // the door sits at the centre of the front (x = 0 in plot space)
+      const doorA = x0 < 0 && x1 > 0 ? -x0 : len / 2;
+      if (front && o.door) {
+        const dw = this.winK >= 1 || glass ? 1.9 : 1.15;
+        door = { a0: doorA - dw / 2, b0: y0, a1: doorA + dw / 2, b1: y0 + Math.min(fh - 0.4, glass ? 2.7 : 2.45) };
+        holes.push(door);
+      }
+      if (!o.noWin) {
+        for (let f = 0; f < floors; f++) {
+          const wy = y0 + f * fh + (glass ? 0.4 : 0.95);
+          const n = Math.max(1, Math.floor((len - 1) / gap));
+          const start = (len - (n - 1) * gap) / 2;
+          for (let k = 0; k < n; k++) {
+            const a = start + k * gap;
+            if (door && f === 0 && Math.abs(a - doorA) < (door.a1 - door.a0) / 2 + ww / 2 + 0.15) continue;
+            if (a - ww / 2 < 0.25 || a + ww / 2 > len - 0.25) continue;
+            const h = { a0: a - ww / 2, b0: wy, a1: a + ww / 2, b1: Math.min(wy + wh, y0 + (f + 1) * fh - 0.25) };
+            holes.push(h);
+            wins.push({ h, floorY: y0 + f * fh, k: fi * 400 + f * 20 + k });
+          }
+        }
+      }
+      wallFace(this.kit, w.key, F, 0, y0, len, y1, holes, w.tint, glass ? 0.08 : 0.14);
+      for (const wn of wins) {
+        const seed = this.hv * 31 + wn.k;
+        const lit = TX.hash(this.hv, wn.k, 5) > 0.42;
+        if (glass) {
+          glassPane(this.kit, F, wn.h, -0.06, wn.floorY, seed, lit, kind);
+          for (const a of [wn.h.a0, wn.h.a1]) obox(this.kit, 'metal', F, a - 0.04, wn.h.b0, -0.08, a + 0.04, wn.h.b1, 0.03, trim);
+          obox(this.kit, 'metal', F, wn.h.a0, wn.h.b0 - 0.04, -0.08, wn.h.a1, wn.h.b0 + 0.03, 0.03, trim);
+          obox(this.kit, 'metal', F, wn.h.a0, wn.h.b1 - 0.03, -0.08, wn.h.a1, wn.h.b1 + 0.04, 0.03, trim);
+        } else {
+          sashWindow(this.kit, F, wn.h, wn.floorY, seed, lit, trim, { lintel: w.key === 'render' ? 'trim' : 'stone', sill: 'stone', bars: this.winK === 0 ? 2 : 1 });
+        }
+      }
+      if (door) {
+        if (this.winK >= 1 || glass) {
+          // a glazed entrance: double doors in a dark frame, a canopy over
+          const fc = new THREE.Color(0.1, 0.1, 0.11);
+          glassPane(this.kit, F, { a0: door.a0 + 0.08, b0: door.b0 + 0.02, a1: door.a1 - 0.08, b1: door.b1 - 0.08 }, -0.12, door.b0, this.hv + 7, true, 1);
+          for (const a of [door.a0, (door.a0 + door.a1) / 2 - 0.03, door.a1 - 0.08]) obox(this.kit, 'metal', F, a, door.b0, -0.16, a + 0.08, door.b1, -0.06, fc);
+          obox(this.kit, 'metal', F, door.a0, door.b1 - 0.08, -0.16, door.a1, door.b1, -0.06, fc);
+          obox(this.kit, 'metal', F, door.a0 - 0.5, door.b1 + 0.05, 0, door.a1 + 0.5, door.b1 + 0.18, 1.1, fc);
+        } else {
+          frontDoor(this.kit, F, door, hex(o.doorC || ['#1f3a5f', '#7a1f1f', '#1f4a2f', '#2a2a2a', '#5a3e2b'][this.hv % 5]), TRIM, this.hv, TX.hash(this.hv, 99, 5) > 0.4, w.key.startsWith('brick') && this.hv % 3 === 0);
+        }
+      }
+      // plinth and string courses
+      if (!glass) {
+        const plinth = w.key === 'render' ? 'stone' : 'brickBrown';
+        const spans: [number, number][] = door ? [[0, door.a0 - 0.12], [door.a1 + 0.12, len]] : [[0, len]];
+        for (const [a, b2] of spans) if (b2 - a > 0.05) obox(this.kit, plinth, F, a, y0, -0.02, b2, y0 + 0.42, 0.035, plinth === 'stone' ? new THREE.Color(0.85, 0.83, 0.8) : new THREE.Color(0.7, 0.66, 0.64));
+      }
+      if (o.band) for (let f = 1; f < floors; f++) obox(this.kit, glass ? 'metal' : 'stone', F, -0.05, y0 + f * fh - 0.14, -0.01, len + 0.05, y0 + f * fh + 0.04, 0.05, glass ? trim : WHITE.clone().lerp(hex(o.band), 0.4));
+    });
     this.height = Math.max(this.height, y1);
     return y1;
   }
-  windows(x0: number, z0: number, x1: number, z1: number, y0: number, floors: number, fh: number, glass: number, gap: number, doorFront: boolean): void {
-    const wb = this.win[this.winK];
-    const wc = hex('#ffffff');
-    const ww = glass ? gap - 0.25 : 1.1, wh = glass ? fh - 0.7 : 1.35, e = 0.05;
-    for (let f = 0; f < floors; f++) {
-      const wy = y0 + f * fh + (glass ? 0.35 : 1.0);
-      const run = (len: number, place: (t: number) => void) => {
-        const n = Math.max(1, Math.floor((len - 1) / gap));
-        const start = (len - (n - 1) * gap) / 2;
-        for (let k = 0; k < n; k++) place(start + k * gap);
-      };
-      run(x1 - x0, (t) => {
-        const x = x0 + t;
-        if (!(doorFront && f === 0 && Math.abs(x) < 1.4)) wb.quad([x - ww / 2, wy, z1 + e], [x + ww / 2, wy, z1 + e], [x + ww / 2, wy + wh, z1 + e], [x - ww / 2, wy + wh, z1 + e], wc);
-        wb.quad([x + ww / 2, wy, z0 - e], [x - ww / 2, wy, z0 - e], [x - ww / 2, wy + wh, z0 - e], [x + ww / 2, wy + wh, z0 - e], wc);
-      });
-      run(z1 - z0, (t) => {
-        const z = z0 + t;
-        wb.quad([x1 + e, wy, z + ww / 2], [x1 + e, wy, z - ww / 2], [x1 + e, wy + wh, z - ww / 2], [x1 + e, wy + wh, z + ww / 2], wc);
-        wb.quad([x0 - e, wy, z - ww / 2], [x0 - e, wy, z + ww / 2], [x0 - e, wy + wh, z + ww / 2], [x0 - e, wy + wh, z - ww / 2], wc);
-      });
-    }
+  windows(): void {
+    /* V2: windows are cut into the walls by block() */
   }
+  /** a door set proud of an existing wall (where the builder didn't cut one) */
   door(x: number, z: number, y0: number, col = '#5a3e2b', w = 1.4, h = 2.3): void {
-    this.body.quad([x - w / 2, y0, z + 0.06], [x + w / 2, y0, z + 0.06], [x + w / 2, y0 + h, z + 0.06], [x - w / 2, y0 + h, z + 0.06], this.c(col));
-    this.body.box(x - w / 2 - 0.15, y0 + h, z, x + w / 2 + 0.15, y0 + h + 0.18, z + 0.12, this.c('#3a3a3a'));
+    const F = new Frame(V(x - w / 2, 0, z), V(1, 0, 0), V(0, 0, 1));
+    const c = hex(col);
+    obox(this.kit, 'trim', F, -0.12, y0, 0, 0, y0 + h + 0.12, 0.08, TRIM);
+    obox(this.kit, 'trim', F, w, y0, 0, w + 0.12, y0 + h + 0.12, 0.08, TRIM);
+    obox(this.kit, 'trim', F, -0.12, y0 + h, 0, w + 0.12, y0 + h + 0.12, 0.08, TRIM);
+    obox(this.kit, 'paint', F, 0, y0, 0, w, y0 + h, 0.05, c);
+    const pw = (w - 0.3) / 2;
+    for (const [a, b0, b1] of [[0.1, y0 + 0.15, y0 + h * 0.42], [0.2 + pw, y0 + 0.15, y0 + h * 0.42], [0.1, y0 + h * 0.5, y0 + h - 0.12], [0.2 + pw, y0 + h * 0.5, y0 + h - 0.12]] as [number, number, number][])
+      obox(this.kit, 'paint', F, a, b0, 0.05, a + pw, b1, 0.07, c);
+    obox(this.kit, 'brass', F, w - 0.2, y0 + 1.0, 0.05, w - 0.14, y0 + 1.07, 0.1);
+    obox(this.kit, 'stone', F, -0.15, y0 - 0.12, 0, w + 0.15, y0, 0.4);
   }
   flatRoof(x0: number, z0: number, x1: number, z1: number, y: number, col = '#8a8f96', parapet = 0.5): void {
-    const c = this.c(col);
-    this.body.box(x0, y, z0, x1, y + 0.15, z1, c);
+    this.kit.box('gravel', x0, y, z0, x1, y + 0.12, z1, hex(col).lerp(new THREE.Color(0.45, 0.45, 0.45), 0.6));
     if (parapet) {
-      const p = this.c(col, -0.15);
-      this.body.box(x0, y, z0, x1, y + parapet, z0 + 0.3, p);
-      this.body.box(x0, y, z1 - 0.3, x1, y + parapet, z1, p);
-      this.body.box(x0, y, z0, x0 + 0.3, y + parapet, z1, p);
-      this.body.box(x1 - 0.3, y, z0, x1, y + parapet, z1, p);
+      const k = this.wall.key, t = this.wall.tint;
+      this.kit.box(k, x0 - 0.02, y, z0 - 0.02, x1 + 0.02, y + parapet, z0 + 0.28, t);
+      this.kit.box(k, x0 - 0.02, y, z1 - 0.28, x1 + 0.02, y + parapet, z1 + 0.02, t);
+      this.kit.box(k, x0 - 0.02, y, z0, x0 + 0.28, y + parapet, z1, t);
+      this.kit.box(k, x1 - 0.28, y, z0, x1 + 0.02, y + parapet, z1, t);
+      const cp = new THREE.Color(0.86, 0.85, 0.82);
+      this.kit.box('stone', x0 - 0.08, y + parapet, z0 - 0.08, x1 + 0.08, y + parapet + 0.08, z0 + 0.36, cp);
+      this.kit.box('stone', x0 - 0.08, y + parapet, z1 - 0.36, x1 + 0.08, y + parapet + 0.08, z1 + 0.08, cp);
+      this.kit.box('stone', x0 - 0.08, y + parapet, z0, x0 + 0.36, y + parapet + 0.08, z1, cp);
+      this.kit.box('stone', x1 - 0.36, y + parapet, z0, x1 + 0.08, y + parapet + 0.08, z1, cp);
     }
-    // rooftop AC units
+    // rooftop plant: AC units with fans, a vent stack
     const n = 1 + (this.hv % 3);
+    const plant = new THREE.Color(0.72, 0.74, 0.76);
     for (let i = 0; i < n && x1 - x0 > 5; i++) {
-      const ax = x0 + 1.5 + ((this.hv >> (i * 3)) % 7) / 7 * (x1 - x0 - 4);
-      const az = z0 + 1.5 + ((this.hv >> (i * 5)) % 5) / 5 * (z1 - z0 - 4);
-      this.body.box(ax, y + 0.15, az, ax + 1.6, y + 1.1, az + 1.2, this.c('#b9bcc2'));
+      const ax = x0 + 1.5 + (((this.hv >> (i * 3)) % 7) / 7) * (x1 - x0 - 4);
+      const az = z0 + 1.5 + (((this.hv >> (i * 5)) % 5) / 5) * (z1 - z0 - 4);
+      this.kit.box('metal', ax, y + 0.12, az, ax + 1.6, y + 1.0, az + 1.2, plant);
+      this.kit.cyl('metal', 0.38, 0.06, 16, new THREE.Matrix4().makeTranslation(ax + 0.8, y + 1.03, az + 0.6), new THREE.Color(0.15, 0.15, 0.16));
     }
     this.height = Math.max(this.height, y + parapet);
   }
-  gable(x0: number, z0: number, x1: number, z1: number, y: number, rise: number, roof: string, wall: string, alongX = true): void {
-    const o = 0.45; // eaves overhang
-    if (alongX) this.body.gableX(x0 - o, x1 + o, y, y + rise, z0 - o, z1 + o, this.c(roof), this.c(wall));
-    else this.body.gableZ(x0 - o, x1 + o, y, y + rise, z0 - o, z1 + o, this.c(roof), this.c(wall));
+  /** a tiled roof with overhangs, fascias, gutters and ridge tiles; gable ends in the wall finish */
+  gable(x0: number, z0: number, x1: number, z1: number, y: number, rise: number, roof: string, _wall: string, alongX = true): void {
+    const key = roofKey(hex(roof));
+    const tint = key === 'clay' ? WHITE.clone().lerp(hex(roof), 0.25).multiplyScalar(1.1) : WHITE.clone().lerp(hex(roof), 0.3).multiplyScalar(1.05);
+    const base = this.kit.base.clone();
+    // a local frame where the ridge runs along +x and the front eave is at z = 0
+    const L = alongX ? x1 - x0 : z1 - z0, D = alongX ? z1 - z0 : x1 - x0;
+    const local = alongX ? new THREE.Matrix4().makeTranslation(x0, 0, z1) : new THREE.Matrix4().makeTranslation(x0, 0, z0).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2));
+    this.kit.base = base.clone().multiply(local);
+    const ov = 0.35, t = rise / (D / 2);
+    const ye = y - ov * t, R = y + rise;
+    const vx0 = -0.25, vx1 = L + 0.25;
+    this.kit.slab(key, V(vx0, ye, ov), V(vx1, ye, ov), V(vx1, R, -D / 2), V(vx0, R, -D / 2), 0.07, tint);
+    this.kit.slab(key, V(vx1, ye, -D - ov), V(vx0, ye, -D - ov), V(vx0, R, -D / 2), V(vx1, R, -D / 2), 0.07, tint);
+    const ridge = new THREE.CylinderGeometry(0.13, 0.13, vx1 - vx0, 10, 1, false, 0, Math.PI);
+    ridge.rotateZ(Math.PI / 2);
+    ridge.translate((vx0 + vx1) / 2, R - 0.02, -D / 2);
+    this.kit.add(key === 'clay' ? 'pot' : 'lead', ridge);
+    // gable ends in the wall finish, with bargeboards
+    for (const x of [0, L]) {
+      const nx = x === 0 ? -1 : 1;
+      this.kit.tri(this.wall.key, V(x, y, 0), V(x, y, -D), V(x, R, -D / 2), V(nx, 0, 0), this.wall.tint);
+    }
+    for (const [z, s] of [[ov, 1], [-D - ov, -1]] as [number, number][]) {
+      this.kit.box('trim', vx0, ye - 0.22, z - 0.03, vx1, ye - 0.02, z + 0.03, TRIM);
+      const zw = s > 0 ? 0 : -D;
+      this.kit.quad('trim', V(vx0, ye - 0.2, zw), V(vx1, ye - 0.2, zw), V(vx1, ye - 0.2, z), V(vx0, ye - 0.2, z), V(0, -1, 0), TRIM);
+      const g = new THREE.CylinderGeometry(0.065, 0.065, vx1 - vx0, 8, 1, true, Math.PI, Math.PI);
+      g.rotateZ(Math.PI / 2);
+      g.translate((vx0 + vx1) / 2, ye - 0.12, z + s * 0.08);
+      this.kit.add('metal', g, new THREE.Color(0.06, 0.065, 0.07));
+    }
+    this.kit.base = base;
     this.height = Math.max(this.height, y + rise);
   }
   awning(x0: number, x1: number, z: number, y: number, a: string, b2: string): void {
-    const n = Math.max(2, Math.round((x1 - x0) / 0.9));
-    const w = (x1 - x0) / n;
-    for (let i = 0; i < n; i++) {
-      const c = this.c(i % 2 ? a : b2);
-      const xa = x0 + i * w, xb = xa + w;
-      this.body.quad([xa, y - 0.7, z + 1.5], [xb, y - 0.7, z + 1.5], [xb, y, z], [xa, y, z], c);
-      this.body.quad([xb, y - 0.7, z + 1.5], [xa, y - 0.7, z + 1.5], [xa, y, z], [xb, y, z], c);
-    }
+    const pal = this.kit.pal;
+    const k = pal.custom(`awn:${a}|${b2}`, TX.awningCanvas(a, b2), { roughness: 0.85, side: THREE.DoubleSide });
+    const rep = (x1 - x0) / 2;
+    const depth = 1.5;
+    this.kit.quad(k, V(x0, y, z), V(x1, y, z), V(x1, y - 0.7, z + depth), V(x0, y - 0.7, z + depth), V(0, 1, 0.45), WHITE, [0, 0, rep, 0, rep, 1, 0, 1]);
+    this.kit.quad(k, V(x0, y - 0.7, z + depth), V(x1, y - 0.7, z + depth), V(x1, y - 0.98, z + depth), V(x0, y - 0.98, z + depth), V(0, 0, 1), WHITE, [0, 0, rep, 0, rep, 0.3, 0, 0.3]);
+    for (const x of [x0 + 0.05, x1 - 0.05]) this.kit.rod('metal', V(x, y - 0.6, z + 0.05), V(x, y - 0.7, z + depth - 0.05), 0.018, new THREE.Color(0.1, 0.1, 0.1));
   }
+  /** a painted name board, lit after dusk */
   sign(x: number, z: number, y: number, w: number, col: string, h = 0.9): void {
-    this.glow.box(x - w / 2, y, z, x + w / 2, y + h, z + 0.25, this.c(col));
+    const name = (CAT[this.key]?.name as string) || this.key;
+    const bg = hex(col);
+    const light = hslOf(bg).l > 0.6;
+    const k = this.kit.pal.sign(name, '#' + bg.getHexString(), light ? '#1a1a1a' : hslOf(bg).s < 0.2 ? '#c9a64a' : '#ffffff');
+    this.kit.box('paint', x - w / 2 - 0.06, y - 0.06, z, x + w / 2 + 0.06, y + h + 0.06, z + 0.16, bg.clone().multiplyScalar(0.5));
+    this.kit.quad(k, V(x - w / 2, y, z + 0.17), V(x + w / 2, y, z + 0.17), V(x + w / 2, y + h, z + 0.17), V(x - w / 2, y + h, z + 0.17), V(0, 0, 1), WHITE, [0, 0, 1, 0, 1, 1, 0, 1]);
   }
   chimney(x: number, z: number, y: number, h: number, r = 0.5, col = '#8a5a4a'): void {
-    this.body.box(x - r, y, z - r, x + r, y + h, z + r, this.c(col));
+    const brick = hslOf(hex(col)).s > 0.15;
+    brickChimney(this.kit, brick ? 'brickBrown' : 'stone', brick ? WHITE : hex(col).lerp(WHITE, 0.5), x, z, y - 0.4, y + h, r > 0.52 ? 2 : 2 + (this.hv % 2));
     this.height = Math.max(this.height, y + h);
   }
-  smokestack(x: number, z: number, h: number, r: number, col = '#9a8f86'): void {
-    this.body.cyl(x, 0, z, r, h, 8, this.c(col), this.c('#3a3a3a'), r * 0.85);
-    this.body.cyl(x, h * 0.82, z, r * 0.92, h * 0.06, 8, this.c('#c0392b'));
+  smokestack(x: number, z: number, h: number, r: number, _col = '#9a8f86'): void {
+    this.kit.cyl('brickRed', r, h, 20, new THREE.Matrix4().makeTranslation(x, h / 2, z), WHITE, false, Math.PI * 2, r * 0.82);
+    for (const f of [0.35, 0.7, 0.92]) this.kit.cyl('metal', r * (1.02 - f * 0.18) + 0.03, 0.18, 20, new THREE.Matrix4().makeTranslation(x, h * f, z), new THREE.Color(0.12, 0.12, 0.12));
+    this.kit.cyl('metal', r * 0.86, 0.3, 20, new THREE.Matrix4().makeTranslation(x, h + 0.1, z), new THREE.Color(0.08, 0.08, 0.08), true);
     this.solid(x - r, z - r, x + r, z + r);
     this.height = Math.max(this.height, h);
   }
+  /** a real tree (it joins the forest layer) */
   tree(x: number, z: number, s = 1): void {
-    this.body.cyl(x, 0, z, 0.25 * s, 2 * s, 5, this.c('#6e4f33'));
-    const crown = Weather.season === 3 ? null : Weather.season === 2 ? '#d38a2e' : '#4e9a3e';
-    if (crown) this.body.blob(x, 3.2 * s, z, 1.8 * s, 1.7 * s, 1.8 * s, this.c(crown, ((this.hv + x * 3) % 7 - 3) * 0.03));
+    const p = V(x, 0, z).applyMatrix4(this.kit.base);
+    const pick: Species[] = ['lime', 'oak', 'birch', 'lime', 'oak'];
+    const k = Math.abs(Math.round(this.hv + x * 3 + z * 7));
+    this.trees.push({ x: p.x, z: p.z, y: 0.1, species: pick[k % pick.length], scale: s * 0.62, rot: (k % 628) / 100 });
   }
   bench(x: number, z: number, yaw = 0): void {
     const m = new THREE.Matrix4().makeRotationY(yaw).setPosition(x, 0, z);
     this.body.mat = m;
-    this.body.box(-0.9, 0.4, -0.25, 0.9, 0.5, 0.25, this.c('#8a5a3a'));
-    this.body.box(-0.9, 0.5, -0.3, 0.9, 0.95, -0.2, this.c('#8a5a3a'));
-    this.body.box(-0.8, 0, -0.2, -0.7, 0.4, 0.2, this.c('#444'));
-    this.body.box(0.7, 0, -0.2, 0.8, 0.4, 0.2, this.c('#444'));
+    const iron = new THREE.Color(0.04, 0.04, 0.045), wood = new THREE.Color(0.72, 0.55, 0.38);
+    this.body.force = 'metal';
+    for (const sx of [-0.8, 0.8]) {
+      this.body.box(sx - 0.03, 0, -0.25, sx + 0.03, 0.44, 0.22, iron);
+      this.body.box(sx - 0.03, 0.44, -0.27, sx + 0.03, 0.9, -0.21, iron);
+    }
+    this.body.force = 'timber';
+    for (let i = 0; i < 4; i++) this.body.box(-0.95, 0.42, -0.2 + i * 0.105, 0.95, 0.46, -0.2 + i * 0.105 + 0.085, wood);
+    for (let i = 0; i < 3; i++) this.body.box(-0.95, 0.55 + i * 0.12, -0.27, 0.95, 0.64 + i * 0.12, -0.235, wood);
+    this.body.force = null;
     this.body.mat = null;
   }
   columns(x0: number, x1: number, z: number, y0: number, h: number, n: number, col = '#efe9dc'): void {
+    const t = WHITE.clone().lerp(hex(col), 0.4).multiplyScalar(1.05);
     for (let i = 0; i < n; i++) {
       const x = x0 + ((x1 - x0) * (i + 0.5)) / n;
-      this.body.cyl(x, y0, z, 0.32, h, 8, this.c(col));
+      this.kit.box('stone', x - 0.45, y0, z - 0.45, x + 0.45, y0 + 0.3, z + 0.45, t);
+      this.kit.cyl('stone', 0.32, h - 0.75, 20, new THREE.Matrix4().makeTranslation(x, y0 + 0.3 + (h - 0.75) / 2, z), t, false, Math.PI * 2, 0.28);
+      this.kit.cyl('stone', 0.36, 0.15, 20, new THREE.Matrix4().makeTranslation(x, y0 + h - 0.38, z), t);
+      this.kit.box('stone', x - 0.46, y0 + h - 0.3, z - 0.46, x + 0.46, y0 + h, z + 0.46, t);
     }
   }
   pediment(x0: number, x1: number, z0: number, z1: number, y: number, rise: number, col = '#e8e2d2'): void {
-    this.body.gableZ(x0, x1, y, y + rise, z0, z1, this.c(col), this.c(col, -0.06));
+    const t = WHITE.clone().lerp(hex(col), 0.4).multiplyScalar(1.05);
+    const xm = (x0 + x1) / 2;
+    this.kit.box('stone', x0 - 0.15, y - 0.1, z0, x1 + 0.15, y + 0.12, z1 + 0.15, t);
+    this.kit.tri('stone', V(x0, y + 0.12, z1), V(x1, y + 0.12, z1), V(xm, y + rise, z1), V(0, 0, 1), t);
+    this.kit.slab('slate', V(x1 + 0.2, y + 0.1, z1 + 0.2), V(x1 + 0.2, y + 0.1, z0), V(xm, y + rise + 0.12, z0), V(xm, y + rise + 0.12, z1 + 0.2), 0.08, new THREE.Color(0.8, 0.82, 0.84));
+    this.kit.slab('slate', V(x0 - 0.2, y + 0.1, z0), V(x0 - 0.2, y + 0.1, z1 + 0.2), V(xm, y + rise + 0.12, z1 + 0.2), V(xm, y + rise + 0.12, z0), 0.08, new THREE.Color(0.8, 0.82, 0.84));
     this.height = Math.max(this.height, y + rise);
   }
   fence(x0: number, z0: number, x1: number, z1: number, col = '#a5824f', h = 0.9): void {
-    const c = this.c(col);
-    this.body.box(x0, 0.4, z0, x1, 0.55, z0 + 0.08, c).box(x0, 0.4, z1 - 0.08, x1, 0.55, z1, c);
-    this.body.box(x0, 0.4, z0, x0 + 0.08, 0.55, z1, c).box(x1 - 0.08, 0.4, z0, x1, 0.55, z1, c);
-    for (let x = x0; x <= x1; x += 1.6) { this.body.box(x - 0.05, 0, z0, x + 0.05, h, z0 + 0.1, c); this.body.box(x - 0.05, 0, z1 - 0.1, x + 0.05, h, z1, c); }
-    for (let z = z0; z <= z1; z += 1.6) { this.body.box(x0, 0, z - 0.05, x0 + 0.1, h, z + 0.05, c); this.body.box(x1 - 0.1, 0, z - 0.05, x1, h, z + 0.05, c); }
+    const c = hex(col);
+    const iron = hslOf(c).l < 0.3;
+    const runs: [number, number, number, number][] = [[x0, z0, x1, z0], [x0, z1, x1, z1], [x0, z0, x0, z1], [x1, z0, x1, z1]];
+    for (const [ax, az, bx, bz] of runs) {
+      const len = Math.hypot(bx - ax, bz - az);
+      if (iron) {
+        for (const y of [0.1, h - 0.08]) this.kit.rod('metal', V(ax, y, az), V(bx, y, bz), 0.015, c, 5);
+        const n = Math.max(1, Math.round(len / 0.16));
+        for (let i = 0; i <= n; i++) {
+          const t = i / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+          const g = new THREE.CylinderGeometry(0.011, 0.011, h, 4);
+          g.translate(x, h / 2, z);
+          this.kit.add('metal', g, c);
+        }
+      } else {
+        const paint = c.clone().lerp(WHITE, 0.55);
+        for (const y of [0.25, h - 0.2]) this.kit.box('paint', Math.min(ax, bx) - 0.02, y, Math.min(az, bz) - 0.02, Math.max(ax, bx) + 0.02, y + 0.07, Math.max(az, bz) + 0.02, paint);
+        const n = Math.max(1, Math.round(len / 0.24));
+        for (let i = 0; i <= n; i++) {
+          const t = i / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+          this.kit.box('paint', x - 0.04, 0, z - 0.04, x + 0.04, h, z + 0.04, paint);
+        }
+      }
+    }
   }
 }
 
@@ -786,9 +1129,9 @@ function buildLodge(c: Ctx): void {
 }
 
 /* ---------- dispatch ---------- */
-export function buildFor(b: any): Built {
+export function buildFor(b: any, kit?: Kit): Built {
   const key = b.type;
-  const c = new Ctx(b, key);
+  const c = new Ctx(b, key, kit);
   c.winK = 0;
   switch (key) {
     case 'house': case 'cottage': buildHouse(c, key === 'house' ? b.level || 1 : 1); break;
@@ -853,57 +1196,81 @@ export function buildFor(b: any): Built {
 }
 
 /* ---------- ruins & construction props ---------- */
-function rubble(b: any): MeshBuilder {
-  const m = new MeshBuilder();
+function rubble(kit: Kit, b: any): void {
   const W = b.w * TM, D = b.h * TM;
-  m.box(-W / 2 + 0.3, 0, -D / 2 + 0.3, W / 2 - 0.3, 0.12, D / 2 - 0.3, hex('#5a564e'));
-  for (let i = 0; i < 14; i++) {
+  kit.box('gravel', -W / 2 + 0.3, 0, -D / 2 + 0.3, W / 2 - 0.3, 0.14, D / 2 - 0.3, new THREE.Color(0.55, 0.52, 0.5));
+  for (let i = 0; i < 18; i++) {
     const h = hash2(b.id, i);
     const x = ((h % 1000) / 1000 - 0.5) * (W - 3), z = (((h >> 10) % 1000) / 1000 - 0.5) * (D - 3);
-    const s = 0.6 + ((h >> 20) % 10) / 6;
-    m.boxC(x, s / 2, z, s * 1.4, s, s, hex(i % 3 ? '#4a4540' : '#2a2622'));
+    const s = 0.5 + ((h >> 20) % 10) / 6;
+    const g = new THREE.BoxGeometry(s * 1.4, s, s);
+    g.rotateY((h % 628) / 100).rotateZ(((h >> 4) % 60) / 100);
+    g.translate(x, s / 2, z);
+    kit.add(i % 3 ? 'brickBrown' : 'stone', g, new THREE.Color(0.6, 0.55, 0.5));
   }
-  m.box(-W / 2 + 1, 0, -D / 2 + 1, -W / 2 + 1.5, 4.5, -D / 2 + 1.5, hex('#3a3632'));
-  return m;
+  // a gable end still standing, blackened
+  kit.box('brickBrown', -W / 2 + 1, 0, -D / 2 + 1, -W / 2 + 1.4, 4.5, -D / 2 + 3.5, new THREE.Color(0.35, 0.32, 0.3));
 }
-function scaffold(W: number, D: number, H: number): MeshBuilder {
-  const m = new MeshBuilder();
-  const pole = hex('#c0a060'), plank = hex('#8a6a42');
+function scaffold(kit: Kit, W: number, D: number, H: number): void {
+  const pole = new THREE.Color(0.7, 0.72, 0.74), plank = new THREE.Color(0.8, 0.68, 0.5);
   const x0 = -W / 2 + 0.4, x1 = W / 2 - 0.4, z0 = -D / 2 + 0.4, z1 = D / 2 - 0.4;
-  for (let x = x0; x <= x1 + 0.01; x += Math.max(2, (x1 - x0) / Math.ceil((x1 - x0) / 3)))
-    for (const z of [z0, z1]) m.box(x - 0.07, 0, z - 0.07, x + 0.07, H, z + 0.07, pole);
-  for (let z = z0; z <= z1 + 0.01; z += Math.max(2, (z1 - z0) / Math.ceil((z1 - z0) / 3)))
-    for (const x of [x0, x1]) m.box(x - 0.07, 0, z - 0.07, x + 0.07, H, z + 0.07, pole);
-  for (let y = 2; y < H; y += 2.4) {
-    m.box(x0, y, z0 - 0.3, x1, y + 0.08, z0 + 0.3, plank).box(x0, y, z1 - 0.3, x1, y + 0.08, z1 + 0.3, plank);
-    m.box(x0 - 0.3, y, z0, x0 + 0.3, y + 0.08, z1, plank).box(x1 - 0.3, y, z0, x1 + 0.3, y + 0.08, z1, plank);
+  const tube = (ax: number, az: number): void => {
+    const g = new THREE.CylinderGeometry(0.03, 0.03, H, 6);
+    g.translate(ax, H / 2, az);
+    kit.add('metal', g, pole);
+  };
+  for (let x = x0; x <= x1 + 0.01; x += Math.max(2, (x1 - x0) / Math.ceil((x1 - x0) / 2.6))) for (const z of [z0, z1]) tube(x, z);
+  for (let z = z0; z <= z1 + 0.01; z += Math.max(2, (z1 - z0) / Math.ceil((z1 - z0) / 2.6))) for (const x of [x0, x1]) tube(x, z);
+  for (let y = 2; y < H; y += 2.0) {
+    kit.box('timber', x0, y, z0 - 0.3, x1, y + 0.05, z0 + 0.3, plank);
+    kit.box('timber', x0, y, z1 - 0.3, x1, y + 0.05, z1 + 0.3, plank);
+    kit.box('timber', x0 - 0.3, y, z0, x0 + 0.3, y + 0.05, z1, plank);
+    kit.box('timber', x1 - 0.3, y, z0, x1 + 0.3, y + 0.05, z1, plank);
+    for (const z of [z0 - 0.3, z1 + 0.3]) kit.rod('metal', V(x0, y + 1, z), V(x1, y + 1, z), 0.025, pole, 5);
   }
-  return m;
 }
-function crane(H: number, W: number): MeshBuilder {
-  const m = new MeshBuilder();
-  const y = hex('#e0a020');
-  m.box(-0.5, 0, -0.5, 0.5, H, 0.5, y);
-  m.box(-W * 0.3, H, -0.35, W * 0.8, H + 0.7, 0.35, y);
-  m.box(-W * 0.3, H - 1, -0.6, -W * 0.3 + 2, H + 0.7, 0.6, hex('#7a7f86'));
-  m.box(W * 0.6 - 0.05, H - 6, -0.05, W * 0.6 + 0.05, H, 0.05, hex('#333'));
-  return m;
+function crane(kit: Kit, H: number, W: number, ox: number, oz: number): void {
+  const y = new THREE.Color(0.95, 0.68, 0.12);
+  const m = new THREE.Matrix4().makeTranslation(ox, 0, oz);
+  const save = kit.base.clone();
+  kit.base = save.clone().multiply(m);
+  // lattice mast: four chords with cross bracing
+  for (const [x, z] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) kit.box('paint', x - 0.06, 0, z - 0.06, x + 0.06, H, z + 0.06, y);
+  for (let h = 0; h < H; h += 1.6) {
+    kit.rod('paint', V(-0.6, h, -0.6), V(0.6, h + 1.6, -0.6), 0.03, y, 4);
+    kit.rod('paint', V(0.6, h, 0.6), V(-0.6, h + 1.6, 0.6), 0.03, y, 4);
+  }
+  kit.box('paint', -W * 0.3, H, -0.35, W * 0.8, H + 0.7, 0.35, y);
+  kit.box('metal', -W * 0.3, H - 1, -0.6, -W * 0.3 + 2, H + 0.7, 0.6, new THREE.Color(0.5, 0.52, 0.55));
+  kit.box('glassPlain', -0.7, H - 1.6, 0.3, 0.7, H - 0.2, 1.4);
+  kit.rod('metal', V(W * 0.6, H - 6, 0), V(W * 0.6, H, 0), 0.03, new THREE.Color(0.2, 0.2, 0.2), 4);
+  kit.base = save;
 }
 
 /* ---------- the layer ---------- */
+const BCH = 16; // tiles per building chunk
+const NBCX = Math.ceil(256 / BCH);
 interface Entry {
   sig: string;
-  group: THREE.Group;
-  body?: THREE.Object3D;
-  scaf?: THREE.Object3D;
+  b: any;
+  parts: Map<string, THREE.BufferGeometry[]> | null;
   height: number;
   solids: Box2[]; // world-space AABBs
+  box: THREE.Box3;
+  chunk: number;
+  dyn: THREE.Group | null;
+  trees: TreeInstance[];
 }
 
 export class BuildingLayer {
   group = new THREE.Group();
   entries = new Map<number, Entry>();
-  private season = -1;
+  private chunkMeshes = new Map<number, THREE.Mesh[]>();
+  private dirty = new Set<number>();
+  private pal: Palette = sharedPalette();
+  private first = true;
+  /** bumps when the trees planted by buildings change */
+  treesVersion = 0;
 
   constructor(scene: THREE.Scene) {
     scene.add(this.group);
@@ -912,107 +1279,171 @@ export class BuildingLayer {
   /** the coarse look signature: rebuild only when it changes */
   private sigOf(b: any): string {
     const k = b.type === 'house' && b.level > 1 ? 'house' + Math.min(3, b.level) : b.type;
-    return `${k}|${b.x},${b.y}|${b.variant}|${b.facing || 0}|${b.ruined ? 'R' : ''}|${b.construction > 0 ? 'C' : ''}|${b.upgrading > 0 || b.renovating > 0 ? 'S' : ''}|${this.season}`;
+    const seasonal = k === 'farm' || k === 'pool' || k === 'park' || k === 'grandpark' || k === 'zoo' || k === 'plaza';
+    return `${k}|${b.x},${b.y}|${b.variant}|${b.facing || 0}|${b.ruined ? 'R' : ''}|${b.construction > 0 ? 'C' : ''}|${b.upgrading > 0 || b.renovating > 0 ? 'S' : ''}|${seasonal ? Weather.season : ''}`;
   }
 
   sync(): void {
-    const season = Weather.season;
-    const seasonChanged = season !== this.season;
-    this.season = season;
     const seen = new Set<number>();
+    let treesChanged = false;
     for (const b of World.buildings) {
       seen.add(b.id);
       let e = this.entries.get(b.id);
       const sig = this.sigOf(b);
-      if (!e || e.sig !== sig || seasonChanged) {
-        if (e) this.dispose(e);
+      if (!e || e.sig !== sig) {
+        if (e) { this.drop(e); treesChanged ||= e.trees.length > 0; }
         e = this.make(b, sig);
         this.entries.set(b.id, e);
+        treesChanged ||= e.trees.length > 0;
       }
       // a construction site rises inside its scaffold
-      if (b.construction > 0 && e.body) {
-        const p = Math.max(0.04, 1 - b.construction / Math.max(1, b.conTotal || 40 + b.w * b.h * 22));
-        e.body.scale.y = p;
-      } else if (e.body && e.body.scale.y !== 1) e.body.scale.y = 1;
+      if (e.dyn) {
+        const body = e.dyn.userData.body as THREE.Object3D | undefined;
+        if (body) {
+          const p = b.construction > 0 ? Math.max(0.04, 1 - b.construction / Math.max(1, b.conTotal || 40 + b.w * b.h * 22)) : 1;
+          body.scale.y = p;
+        }
+      }
     }
     for (const [id, e] of this.entries)
       if (!seen.has(id)) {
-        this.dispose(e);
+        this.drop(e);
         this.entries.delete(id);
+        treesChanged ||= e.trees.length > 0;
       }
+    if (treesChanged) this.treesVersion++;
+    // re-merge changed chunks (all at once on the first sync, then a couple per frame)
+    let budget = this.first ? 1e9 : 2;
+    this.first = false;
+    for (const ci of this.dirty) {
+      if (budget-- <= 0) break;
+      this.dirty.delete(ci);
+      this.mergeChunk(ci);
+    }
+  }
+
+  private chunkOf(b: any): number {
+    const cx = Math.floor((b.x + b.w / 2) / BCH), cy = Math.floor((b.y + b.h / 2) / BCH);
+    return cy * NBCX + cx;
   }
 
   private make(b: any, sig: string): Entry {
-    const g = new THREE.Group();
-    g.position.set((b.x + b.w / 2) * TM, 0, (b.y + b.h / 2) * TM);
-    g.rotation.y = ((b.facing || 0) * Math.PI) / 2;
-    g.userData.bid = b.id;
-    const e: Entry = { sig, group: g, height: 4, solids: [] };
+    const place = new THREE.Matrix4().makeRotationY(((b.facing || 0) * Math.PI) / 2).setPosition((b.x + b.w / 2) * TM, 0, (b.y + b.h / 2) * TM);
+    const kit = new Kit(this.pal);
+    kit.base = place.clone();
+    const e: Entry = { sig, b, parts: null, height: 4, solids: [], box: new THREE.Box3(), chunk: this.chunkOf(b), dyn: null, trees: [] };
     if (b.ruined) {
-      const r = new THREE.Mesh(rubble(b).build(), MAT.solid);
-      r.castShadow = r.receiveShadow = true;
-      r.rotation.y = -g.rotation.y; // rubble uses world-aligned w/h
-      g.add(r);
-      e.height = 1;
+      // rubble uses world-aligned w/h
+      kit.base = new THREE.Matrix4().setPosition((b.x + b.w / 2) * TM, 0, (b.y + b.h / 2) * TM);
+      rubble(kit, b);
+      e.height = 2;
     } else {
       const key = b.type === 'house' && b.level > 1 ? 'house' + Math.min(3, b.level) : b.type;
-      const built = buildFor({ ...b, type: key });
-      const body = new THREE.Group();
-      const add = (mb: MeshBuilder, mat: THREE.Material, shadow: boolean) => {
-        if (mb.empty) return;
-        const m = new THREE.Mesh(mb.build(), mat);
-        m.castShadow = shadow;
-        m.receiveShadow = shadow;
-        m.userData.bid = b.id;
-        body.add(m);
-      };
-      add(built.body, MAT.solid, true);
-      add(built.win[0], MAT.windowA, false);
-      add(built.win[1], MAT.windowB, false);
-      add(built.win[2], MAT.windowC, false);
-      add(built.glow, MAT.glow, false);
-      g.add(body);
-      e.body = body;
-      e.height = built.height;
-      const d = CAT[b.type];
-      const W = (d.w || 1) * TM, D = (d.h || 1) * TM;
-      if (b.construction > 0 || b.upgrading > 0 || b.renovating > 0) {
-        const sc = new THREE.Mesh(scaffold(W, D, Math.max(4, built.height * (b.construction > 0 ? 1 : 0.9))).build(), MAT.solid);
-        sc.castShadow = true;
-        g.add(sc);
-        e.scaf = sc;
-        if (b.construction > 0 && W * D >= 9 * 64) {
-          const cr = new THREE.Mesh(crane(Math.max(14, built.height + 6), W).build(), MAT.solid);
-          cr.position.set(W / 2 - 1.5, 0, -D / 2 + 1.5);
-          cr.castShadow = true;
-          g.add(cr);
-        }
-      }
+      const c = buildFor({ ...b, type: key }, kit);
+      e.height = c.height;
+      e.trees = c.trees;
       // collision boxes, rotated into world space (quarter turns stay axis-aligned)
       const f = (b.facing || 0) & 3;
-      for (const [x0, z0, x1, z1] of built.solids) {
+      const gx = (b.x + b.w / 2) * TM, gz = (b.y + b.h / 2) * TM;
+      for (const [x0, z0, x1, z1] of c.solids) {
         const pts = [[x0, z0], [x1, z1]].map(([x, z]) => {
           const [rx, rz] = f === 0 ? [x, z] : f === 1 ? [z, -x] : f === 2 ? [-x, -z] : [-z, x];
-          return [rx + g.position.x, rz + g.position.z];
+          return [rx + gx, rz + gz];
         });
         e.solids.push([Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])]);
       }
     }
-    this.group.add(g);
+    e.box.set(V(b.x * TM, 0, b.y * TM), V((b.x + b.w) * TM, e.height + 1, (b.y + b.h) * TM));
+    const building = b.construction > 0 || b.upgrading > 0 || b.renovating > 0;
+    if (building && !b.ruined) {
+      // a live site: its own meshes, so the body can rise inside the scaffold
+      for (const list of kit.take().values()) for (const geo of list) geo.dispose();
+      const g = new THREE.Group();
+      const body = new THREE.Group();
+      g.applyMatrix4(place);
+      e.dyn = g;
+      g.add(body);
+      g.userData.body = body;
+      // the body scales up from the ground in its own frame: build it again without placement
+      const local = new Kit(this.pal);
+      const key = b.type === 'house' && b.level > 1 ? 'house' + Math.min(3, b.level) : b.type;
+      buildFor({ ...b, type: key }, local);
+      meshesFromParts(this.pal, local.take(), body, true);
+      const d = CAT[b.type];
+      const W = (d.w || 1) * TM, D = (d.h || 1) * TM;
+      const sk = new Kit(this.pal);
+      scaffold(sk, W, D, Math.max(4, e.height * (b.construction > 0 ? 1 : 0.9)));
+      if (b.construction > 0 && W * D >= 9 * 64) crane(sk, Math.max(14, e.height + 6), W, W / 2 - 1.5, -D / 2 + 1.5);
+      meshesFromParts(this.pal, sk.take(), g, true);
+      g.traverse((o) => (o.userData.bid = b.id));
+      this.group.add(g);
+    } else {
+      e.parts = kit.take();
+      this.dirty.add(e.chunk);
+    }
     return e;
   }
 
-  private dispose(e: Entry): void {
-    this.group.remove(e.group);
-    e.group.traverse((o) => {
-      if ((o as THREE.Mesh).geometry) (o as THREE.Mesh).geometry.dispose();
-    });
+  private drop(e: Entry): void {
+    if (e.dyn) {
+      this.group.remove(e.dyn);
+      e.dyn.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      e.dyn = null;
+    }
+    if (e.parts) {
+      for (const list of e.parts.values()) for (const g of list) g.dispose();
+      e.parts = null;
+      this.dirty.add(e.chunk);
+    }
+  }
+
+  /** one mesh per material for every finished building in the chunk */
+  private mergeChunk(ci: number): void {
+    const old = this.chunkMeshes.get(ci);
+    if (old) for (const m of old) { this.group.remove(m); m.geometry.dispose(); }
+    const all = new Map<string, THREE.BufferGeometry[]>();
+    for (const e of this.entries.values()) {
+      if (e.chunk !== ci || !e.parts) continue;
+      for (const [k, list] of e.parts) {
+        if (!all.has(k)) all.set(k, []);
+        all.get(k)!.push(...list);
+      }
+    }
+    const meshes = meshesFromParts(this.pal, all, this.group, true);
+    // the merged copy lives on the GPU; drop its CPU arrays after upload
+    for (const m of meshes) {
+      for (const a of Object.values(m.geometry.attributes)) (a as THREE.BufferAttribute).onUpload(function (this: THREE.BufferAttribute) { (this as unknown as { array: unknown }).array = null; });
+      m.userData.chunk = ci;
+    }
+    this.chunkMeshes.set(ci, meshes);
   }
 
   /** drop every mesh (a new map or a loaded save reuses building ids) */
   clear(): void {
-    for (const e of this.entries.values()) this.dispose(e);
+    for (const e of this.entries.values()) this.drop(e);
     this.entries.clear();
+    for (const ci of [...this.dirty, ...this.chunkMeshes.keys()]) this.mergeChunk(ci);
+    this.dirty.clear();
+    this.treesVersion++;
+  }
+
+  /** the building a ray hits first (Planner clicks) */
+  pick(ray: THREE.Ray): any | null {
+    let best: any = null, bd = Infinity;
+    const p = new THREE.Vector3();
+    for (const e of this.entries.values()) {
+      if (!ray.intersectBox(e.box, p)) continue;
+      const d = p.distanceToSquared(ray.origin);
+      if (d < bd) { bd = d; best = e.b; }
+    }
+    return best;
+  }
+
+  /** every tree planted by a building (parks, gardens, the zoo) */
+  trees(): TreeInstance[] {
+    const out: TreeInstance[] = [];
+    for (const e of this.entries.values()) out.push(...e.trees);
+    return out;
   }
 
   /** world-space collision boxes near a point (metres) */

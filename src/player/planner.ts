@@ -184,15 +184,9 @@ export class Planner {
     }
     if (best) { this.onPerson(best); return; }
     this.ray.setFromCamera(this.mouse, this.cam);
-    const hits = this.ray.intersectObjects(this.buildings.group.children, true);
-    for (const h of hits) {
-      let o: THREE.Object3D | null = h.object;
-      while (o && o.userData.bid === undefined) o = o.parent;
-      if (o) {
-        const b = World.buildings.find((q: any) => q.id === o!.userData.bid);
-        if (b) { this.onBuilding(b); return; }
-      }
-    }
+    // buildings are merged per chunk now: pick by their boxes
+    const hit = this.buildings.pick(this.ray.ray);
+    if (hit) { this.onBuilding(hit); return; }
     const t = this.groundTile();
     if (t) {
       const b = World.buildingAt(t.x, t.y);

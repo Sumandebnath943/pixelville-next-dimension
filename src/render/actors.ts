@@ -20,6 +20,20 @@ import { InstancedPool, MAT, hex, hash2 } from './kit';
 import { HAIR, PANTS, PERSON, PROPS, SHIRT, SKIN, VEHICLES } from './models';
 import { heightAt } from './terrain';
 import type { BuildingLayer } from './buildings';
+import { Person, Look, randomLook, Pose } from '../gfx/person';
+import { Car as CarModel, CarStyle } from '../gfx/car';
+import { ENV } from '../gfx/env';
+import { FireFX } from '../gfx/fire';
+import { XmasPlaza } from '../gfx/festive';
+import { interiorDay } from '../gfx/architecture';
+
+/* V2 detail tiers: the nearest villagers are skinned, gait-animated people and the
+   nearest cars are full models; everything farther stays light instanced figures */
+const NEAR_PEOPLE = 32, NEAR_PEOPLE_R = 48;
+const NEAR_CARS = 22, NEAR_CARS_R = 80;
+const CAR_STYLES: CarStyle[] = ['hatch', 'sedan', 'estate', 'suv', 'hatch', 'sedan'];
+interface CarWant { type: string; x: number; y: number; z: number; yaw: number; paint: THREE.Color; siren: boolean; pitch: number; roll: number }
+interface CarSlot { car: CarModel; kind: string; x: number; z: number; yaw: number; v: number; a: number; used: boolean; seen: number }
 
 const PX = 0.5;
 const TM = 8;
@@ -66,22 +80,41 @@ const bubbleTex = new Map<string, THREE.Texture>();
 function emojiTexture(e: string): THREE.Texture {
   let t = bubbleTex.get(e);
   if (t) return t;
+  // V2 thought bubble: a soft frosted pill with a hairline border and a little tail
+  const W = 128, H = 96;
   const cv = document.createElement('canvas');
-  cv.width = cv.height = 64;
+  cv.width = W; cv.height = H;
   const g = cv.getContext('2d')!;
-  g.fillStyle = 'rgba(255,255,255,0.92)';
-  g.beginPath();
-  g.arc(32, 30, 26, 0, Math.PI * 2);
+  const pill = (x: number, y: number, w: number, h: number, r: number): void => {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  };
+  g.shadowColor = 'rgba(0,0,0,0.28)';
+  g.shadowBlur = 8;
+  g.shadowOffsetY = 2;
+  g.fillStyle = 'rgba(250,250,247,0.94)';
+  pill(14, 8, W - 28, 62, 30);
   g.fill();
   g.beginPath();
-  g.moveTo(26, 52); g.lineTo(32, 63); g.lineTo(38, 52);
+  g.moveTo(W / 2 - 9, 66); g.quadraticCurveTo(W / 2 - 2, 78, W / 2 - 6, 88); g.quadraticCurveTo(W / 2 + 6, 76, W / 2 + 9, 66);
   g.fill();
-  g.font = '34px system-ui, "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+  g.shadowColor = 'transparent';
+  g.strokeStyle = 'rgba(30,34,44,0.12)';
+  g.lineWidth = 1.5;
+  pill(14, 8, W - 28, 62, 30);
+  g.stroke();
+  g.font = '40px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", system-ui, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(e, 32, 32);
+  g.fillText(e, W / 2, 41);
   t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
   bubbleTex.set(e, t);
   return t;
 }
@@ -112,9 +145,14 @@ export class Actors {
   private range = 260;
   private t = 0;
 
+  private fireFX: FireFX;
+  private plaza: XmasPlaza;
+
   constructor(scene: THREE.Scene, private buildings: BuildingLayer) {
     scene.add(this.group);
     const g = this.group;
+    this.fireFX = new FireFX(scene);
+    this.plaza = new XmasPlaza(scene);
     this.legs = new InstancedPool(PERSON.leg, MAT.tint, PEOPLE_CAP * 2, g);
     this.arms = new InstancedPool(PERSON.arm, MAT.tint, PEOPLE_CAP * 2, g);
     this.torso = new InstancedPool(PERSON.torso, MAT.tint, PEOPLE_CAP, g);
@@ -133,7 +171,7 @@ export class Actors {
       };
     }
     for (const [k, p] of Object.entries(PROPS)) {
-      const cap = k === 'puddle' ? 260 : k === 'bulb' ? 1500 : k === 'diya' ? 1200 : k === 'smoke' || k === 'flame' ? 200 : 160;
+      const cap = k === 'puddle' ? 8 : k === 'bulb' ? 6000 : k === 'diya' ? 1200 : k === 'smoke' || k === 'flame' ? 8 : 160;
       this.props[k] = new InstancedPool(p.geo, p.glow ? this.glowTint : p.tinted ? MAT.tint : MAT.solid, cap, g, !p.glow && k !== 'puddle');
     }
     // fireworks & celebration sparks
@@ -170,6 +208,17 @@ export class Actors {
     this.people.push(p);
   }
   vehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: { siren?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number } = {}): void {
+    // nearby cars, cabs and patrol cars are drawn as full models
+    if ((type === 'car' || type === 'taxi' || type === 'police') && !opts.scale && this.carWant.length < NEAR_CARS * 2) {
+      const d2 = (x - this.camX) ** 2 + (z - this.camZ) ** 2;
+      if (d2 < NEAR_CARS_R * NEAR_CARS_R) {
+        this.carWant.push({ type, x, y, z, yaw, paint: paint.clone(), siren: !!opts.siren, pitch: opts.pitch || 0, roll: opts.roll || 0 });
+        return;
+      }
+    }
+    this.instancedVehicle(type, x, y, z, yaw, paint, opts);
+  }
+  private instancedVehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: { siren?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number } = {}): void {
     const v = this.veh[type];
     if (!v) return;
     const s = opts.scale || 1;
@@ -189,6 +238,9 @@ export class Actors {
   /* ---------- per-frame update ---------- */
   update(dt: number, camX: number, camZ: number, range: number, now: number, night: number): void {
     this.t += dt;
+    this.dt = dt;
+    this.night = night;
+    this.carWant.length = 0;
     this.camX = camX;
     this.camZ = camZ;
     this.range = range;
@@ -200,7 +252,8 @@ export class Actors {
     }
     for (const p of Object.values(this.props)) p.begin();
     this.lightsMat.color.setScalar(0.5 + night * 0.9);
-    this.glowTint.color.setScalar(1);
+    // festive bulbs, diyas and torches: bright enough to bloom after dark
+    this.glowTint.color.setScalar(0.3 + night * 0.5);
 
     this.collectVillagers(now);
     this.collectParked();
@@ -212,6 +265,7 @@ export class Actors {
     this.collectFires(night);
     this.collectSky();
     this.drawPeople();
+    this.drawCars();
     this.drawBubbles(now);
     this.drawSparks();
 
@@ -530,11 +584,7 @@ export class Actors {
       const flap = Math.sin(b.ph) * 0.6;
       this.props.bird.add(x, 32 + Math.sin(b.ph * 0.3) * 2, z, b.vx > 0 ? Math.PI / 2 : -Math.PI / 2, 1.4, null, 0, flap);
     }
-    for (const p of Weather.puddles) {
-      const x = p.x * PX, z = p.y * PX;
-      if (!this.near(x, z)) continue;
-      this.prop('puddle', x, 0, z, 0, 0.5 + p.r * 1.4, hex('#5a6878'));
-    }
+    // V2: puddles are part of the wet-surface shader (they mirror the street), not discs
     const tn = Calamity.tornado;
     if (tn) {
       const x = tn.x * PX, z = tn.y * PX;
@@ -551,6 +601,7 @@ export class Actors {
   private collectFestive(night: number): void {
     const F = Festivals;
     const tree = F.tree;
+    let plazaShown = false;
     if (tree) {
       const x = tree.x * TM + 8, z = tree.y * TM + 8;
       if (tree.phase === 'hauling' && tree.haulPath && tree.haulPath.length > 1) {
@@ -561,18 +612,12 @@ export class Actors {
         this.vehicle('car', hx + Math.sin(yaw) * 7, 0.03, hz + Math.cos(yaw) * 7, yaw, hex('#5a6a3a'), { scale: 1.2 });
       } else if (tree.phase === 'raising' || tree.phase === 'lit') {
         const s = tree.phase === 'raising' ? 0.3 + tree.prog * 0.7 : 1;
-        this.prop('xtree', x, 0, z, 0, 1, null, s);
-        if (tree.phase === 'lit') {
-          this.prop('xstar', x, 0, z, this.t * 0.5, 1, hex('#ffe060'));
-          for (let i = 0; i < 70; i++) {
-            const h = 1.5 + (i / 70) * 10.5, r = 4.2 * (1 - h / 13) + 0.2;
-            const a = i * 2.4;
-            const twinkle = (Math.sin(this.t * 3 + i) + 1) / 2;
-            this.prop('bulb', x + Math.cos(a) * r, h, z + Math.sin(a) * r, 0, 1, hex(['#ff4040', '#ffd040', '#40c0ff', '#80ff90'][i % 4]).multiplyScalar(0.5 + twinkle * 0.5 + night * 0.3));
-          }
-        }
+        // V2: the tree stands in its own square (gfx/festive), rising while it's raised
+        plazaShown = true;
+        this.plaza.update(this.dt, true, x, z, s, tree.phase === 'lit', night, this.t);
       }
     }
+    if (!plazaShown) this.plaza.update(this.dt, false, 0, 0, 0, false, night, this.t);
     for (const mk of F.markets) {
       const x0 = mk.x * TM, z0 = mk.y * TM;
       if (!this.near(x0, z0)) continue;
@@ -609,12 +654,23 @@ export class Actors {
           const dx = b.door.x * TM + 4, dz = b.door.y * TM + 4;
           for (let k = -2; k <= 2; k++) this.prop('diya', (dx + bx) / 2 + k * 0.6, 0.15, (dz + bz) / 2 + k * 0.1, 0, 1, hex('#ffb040').multiplyScalar(0.8 + 0.2 * Math.sin(this.t * 6 + k)));
         }
-        if (xmas) {
-          const h = this.buildings.heightOf(b.id) * 0.62;
-          const W = b.w * TM * 0.42, D = b.h * TM * 0.42;
-          for (let k = 0; k < 10; k++) {
-            const a = (k / 10) * Math.PI * 2;
-            this.prop('bulb', bx + Math.cos(a) * W, h, bz + Math.sin(a) * D, 0, 0.8, hex(['#ff4040', '#ffd040', '#40c0ff', '#80ff90'][(k + b.id) % 4]));
+        if (xmas && Math.hypot(bx - this.camX, bz - this.camZ) < 140) {
+          // a string of lights along the eaves, all the way round
+          const h = this.buildings.heightOf(b.id) * 0.68;
+          const W = b.w * TM * 0.4, D = b.h * TM * 0.4;
+          const per = 2 * (W + D) * 2;
+          const n = Math.min(90, Math.round(per / 0.45));
+          const warm = b.id % 3 !== 0;
+          for (let k = 0; k < n; k++) {
+            let u = (k / n) * per;
+            let px: number, pz: number;
+            if (u < 2 * W) { px = bx - W + u; pz = bz + D; }
+            else if ((u -= 2 * W) < 2 * D) { px = bx + W; pz = bz + D - u; }
+            else if ((u -= 2 * D) < 2 * W) { px = bx + W - u; pz = bz - D; }
+            else { u -= 2 * W; px = bx - W; pz = bz - D + u; }
+            const sag = Math.abs(Math.sin((k / n) * Math.PI * 16)) * 0.12;
+            const col = warm ? hex('#ffd9a0') : hex(['#ff4040', '#ffd040', '#40c0ff', '#80ff90', '#ff6ad0'][(k + b.id) % 5]);
+            this.prop('bulb', px, h - sag, pz, 0, 1.5, col.multiplyScalar(0.8 + 0.2 * Math.sin(this.t * 2.5 + k)));
           }
         }
       }
@@ -637,32 +693,27 @@ export class Actors {
     }
   }
 
-  /* burning buildings: flames, smoke and a flickering glow */
+  /* burning buildings: GPU flames, embers and smoke, and a flickering glow */
   private collectFires(night: number): void {
     const fires: { x: number; z: number; d: number }[] = [];
-    for (const b of World.buildings) {
+    this.fireFX.begin();
+    const near = World.buildings
+      .filter((b: any) => b.fire || (CAT[b.type].smoke && !b.ruined && !b.construction && b.workers.length))
+      .map((b: any) => ({ b, d: Math.hypot((b.x + b.w / 2) * TM - this.camX, (b.y + b.h / 2) * TM - this.camZ) }))
+      .filter((o: { d: number }) => o.d < this.range + 80)
+      .sort((p: { b: any }, q: { b: any }) => (q.b.fire ? 1 : 0) - (p.b.fire ? 1 : 0));
+    for (const { b, d } of near) {
       const bx = (b.x + b.w / 2) * TM, bz = (b.y + b.h / 2) * TM;
-      const smoky = CAT[b.type].smoke && !b.ruined && !b.construction && b.workers.length;
-      if (!b.fire && !smoky) continue;
-      if (!this.near(bx, bz, 80)) continue;
       const h = this.buildings.heightOf(b.id);
       if (b.fire) {
-        fires.push({ x: bx, z: bz, d: Math.hypot(bx - this.camX, bz - this.camZ) });
-        for (let i = 0; i < 9; i++) {
-          const hv = hash2(b.id, i);
-          const ox = ((hv % 100) / 100 - 0.5) * b.w * TM * 0.6, oz = (((hv >> 8) % 100) / 100 - 0.5) * b.h * TM * 0.6;
-          const fl = 0.8 + Math.sin(this.t * 9 + i) * 0.25;
-          this.prop('flame', bx + ox, h * 0.55, bz + oz, this.t * 2 + i, fl, hex(i % 3 ? '#ff7a1a' : '#ffd040'), fl * 1.4);
-        }
-      }
-      const n = b.fire ? 8 : 4;
-      for (let i = 0; i < n; i++) {
-        const ph = (this.t * 0.18 + i / n) % 1;
-        const s = (b.fire ? 2 : 1.1) * (0.6 + ph * 1.6);
-        const c = b.fire ? 0.18 + ph * 0.25 : 0.62 + ph * 0.25;
-        this.prop('smoke', bx + ph * 6 + Math.sin(i) * 1.5, h + ph * (b.fire ? 22 : 14), bz + Math.cos(i * 1.7) * 1.5, ph * 3, s, new THREE.Color(c, c, c));
+        fires.push({ x: bx, z: bz, d });
+        this.fireFX.fire(bx, h * 0.45, bz, b.w * TM * 0.55, b.h * TM * 0.55, h, Math.min(1.6, 0.8 + b.w * b.h * 0.08));
+      } else {
+        const hv = hash2(b.id, 3);
+        this.fireFX.plume(bx + ((hv % 100) / 100 - 0.5) * b.w * 3, h, bz + (((hv >> 8) % 100) / 100 - 0.5) * b.h * 3, 1 + b.w * 0.15);
       }
     }
+    this.fireFX.end(interiorDay.value / 0.07);
     fires.sort((a, b) => a.d - b.d);
     this.fireLights.forEach((l, i) => {
       const f = fires[i];
@@ -693,10 +744,116 @@ export class Actors {
     }
   }
 
-  /* ---------- people → instances ---------- */
+  /* ---------- people: skinned near, instanced far ---------- */
+  private dt = 1 / 60;
+  private night = 0;
+  private nearPeople = new Map<string, { person: Person; seen: number }>();
+  private carWant: CarWant[] = [];
+  private carSlots: CarSlot[] = [];
+
+  /** a villager's look, stable for their seed, honouring uniforms */
+  private lookFor(p: PersonDraw): Look {
+    let s = (p.seed >>> 0) || 1;
+    const rnd = (): number => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+    const look = randomLook(rnd, Weather.season === 3);
+    look.female = p.kind === 'woman';
+    if (p.kind === 'kid') look.height = 1.12 + rnd() * 0.3;
+    else if (look.height < 1.5) look.height = look.female ? 1.62 : 1.74;
+    else if (!look.female && look.height < 1.66) look.height += 0.1;
+    if (!look.female) { look.skirt = false; look.longHair = rnd() < 0.05; }
+    if (p.shirt) { look.top = p.shirt.clone(); look.coat = undefined; }
+    if (p.pants) look.legs = p.pants.clone();
+    if (p.hair) look.hair = p.hair.clone();
+    return look;
+  }
+
   private drawPeople(): void {
+    const rain = ENV.rain.value;
+    const sorted = this.people.map((p) => ({ p, d: (p.x - this.camX) ** 2 + (p.z - this.camZ) ** 2 })).sort((a, b) => a.d - b.d);
+    const far: PersonDraw[] = [];
+    let near = 0, created = 0;
+    for (const { p, d } of sorted) {
+      if (near >= NEAR_PEOPLE || d > NEAR_PEOPLE_R * NEAR_PEOPLE_R) { far.push(p); continue; }
+      const key = `${p.kind}|${p.seed}`;
+      let e = this.nearPeople.get(key);
+      if (!e) {
+        if (created >= 3) { far.push(p); continue; } // spread new bodies over frames
+        e = { person: new Person(this.lookFor(p)), seen: this.t };
+        this.group.add(e.person.root);
+        this.nearPeople.set(key, e);
+        created++;
+      }
+      near++;
+      e.seen = this.t;
+      const r = e.person.root;
+      r.visible = true;
+      const pose: Pose = p.mode === 'walk' || p.mode === 'run' ? 'walk' : p.mode === 'sit' ? 'sit' : p.mode === 'lie' ? 'lie' : 'idle';
+      r.position.set(p.x, p.y + (p.mode === 'lie' ? 0.14 : 0), p.z);
+      r.rotation.set(p.mode === 'lie' ? -Math.PI / 2 : 0, p.yaw, 0, 'YXZ');
+      if (p.mode === 'sit') r.position.y -= 0.02;
+      e.person.animate(this.dt, pose, p.mode === 'run' ? 3.1 : 1.35, rain);
+    }
+    for (const [k, e] of this.nearPeople) {
+      if (e.seen === this.t) continue;
+      e.person.root.visible = false;
+      if (this.t - e.seen > 20) {
+        this.group.remove(e.person.root);
+        e.person.mesh.geometry.dispose();
+        e.person.mesh.skeleton.dispose();
+        this.nearPeople.delete(k);
+      }
+    }
+    this.drawFarPeople(far);
+  }
+
+  /** full car models for the nearest traffic, matched frame to frame so they don't swap */
+  private drawCars(): void {
+    const dt = Math.max(1e-3, this.dt);
+    for (const s of this.carSlots) s.used = false;
+    const wants = this.carWant.map((w) => ({ w, d: (w.x - this.camX) ** 2 + (w.z - this.camZ) ** 2 })).sort((a, b) => a.d - b.d);
+    let shown = 0;
+    for (const { w } of wants) {
+      if (shown >= NEAR_CARS) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, pitch: w.pitch, roll: w.roll }); continue; }
+      const style = w.type === 'taxi' ? 'sedan' : w.type === 'police' ? 'estate' : CAR_STYLES[(Math.round(w.paint.r * 7) + Math.round(w.paint.g * 5) + Math.round(w.paint.b * 3)) % CAR_STYLES.length];
+      const kind = `${w.type}:${style}`;
+      // the same car as last frame: the nearest slot of this kind within a few metres
+      let best: CarSlot | null = null, bd = 36;
+      for (const s of this.carSlots) {
+        if (s.used || s.kind !== kind) continue;
+        const d = (s.x - w.x) ** 2 + (s.z - w.z) ** 2;
+        if (d < bd) { bd = d; best = s; }
+      }
+      if (!best) best = this.carSlots.find((s) => !s.used && s.kind === kind && this.t - s.seen > 0.4) || null;
+      if (!best) {
+        if (this.carSlots.length >= NEAR_CARS + 8) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren }); continue; }
+        const car = new CarModel(style, w.paint, w.type !== 'taxi', w.type === 'taxi' ? 'taxi' : w.type === 'police' ? 'police' : undefined);
+        this.group.add(car.root);
+        best = { car, kind, x: w.x, z: w.z, yaw: w.yaw, v: 0, a: 0, used: false, seen: this.t };
+        this.carSlots.push(best);
+      }
+      if (this.t - best.seen > 0.4) { best.x = w.x; best.z = w.z; best.yaw = w.yaw; best.v = 0; best.a = 0; best.car.setPaint(w.paint); }
+      best.used = true;
+      shown++;
+      const dist = Math.hypot(w.x - best.x, w.z - best.z);
+      const v = dist < 10 ? dist / dt : 0;
+      const vs = best.v + (v - best.v) * Math.min(1, dt * 6);
+      best.a += ((vs - best.v) / dt - best.a) * Math.min(1, dt * 4);
+      let dy = w.yaw - best.yaw;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      best.v = vs;
+      best.x = w.x; best.z = w.z; best.yaw = w.yaw; best.seen = this.t;
+      best.car.root.visible = true;
+      best.car.drive(dt, w.x, w.z, w.yaw, vs, best.a, dy / dt, w.y);
+      best.car.lights(this.night > 0.2 || Weather.isRaining() || Weather.isSnowing(), this.night);
+      best.car.setSiren(w.siren, this.t);
+    }
+    for (const s of this.carSlots) if (!s.used) s.car.root.visible = false;
+  }
+
+  private drawFarPeople(list: PersonDraw[]): void {
     const tmpC = new THREE.Color();
-    for (const p of this.people) {
+    for (const p of list) {
       const kid = p.kind === 'kid';
       const s = (p.scale || 1) * (kid ? 0.64 : p.kind === 'woman' ? 0.95 : 1);
       const seed = p.seed >>> 0;
@@ -733,15 +890,22 @@ export class Actors {
   private bubbleWant: { x: number; y: number; z: number; e: string; d: number }[] = [];
   private wantBubble(x: number, y: number, z: number, e: string): void {
     const d = Math.hypot(x - this.camX, z - this.camZ);
-    if (d < 70) this.bubbleWant.push({ x, y, z, e, d });
+    if (d < 60) this.bubbleWant.push({ x, y, z, e, d });
   }
   private drawBubbles(_now: number): void {
     this.bubbleWant.sort((a, b) => a.d - b.d);
+    // one thought per head: drop any bubble that would sit on top of a nearer one
+    const kept: typeof this.bubbleWant = [];
+    for (const w of this.bubbleWant) if (!kept.some((k) => Math.abs(k.x - w.x) < 0.9 && Math.abs(k.z - w.z) < 0.9)) kept.push(w);
     this.bubbles.forEach((s, i) => {
-      const w = this.bubbleWant[i];
+      const w = kept[i];
       if (!w) { s.visible = false; return; }
       s.visible = true;
-      s.position.set(w.x, w.y + 0.4, w.z);
+      // float a little above the head, gently bobbing; fade out with distance
+      s.position.set(w.x, w.y + 0.55 + Math.sin(this.t * 1.6 + i) * 0.04, w.z);
+      const k = THREE.MathUtils.clamp(1 - (w.d - 30) / 30, 0, 1);
+      s.material.opacity = 0.95 * k;
+      s.scale.set(0.95, 0.7, 1);
       const tex = emojiTexture(w.e);
       if (s.material.map !== tex) { s.material.map = tex; s.material.needsUpdate = true; }
     });

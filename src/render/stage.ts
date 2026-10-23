@@ -1,8 +1,11 @@
 /* ============================================================
-   Stage: the WebGL renderer, camera, sun & moon, sky colour,
-   fog, stars, clouds, rain/snow, lightning, rainbows, lit
-   windows and street lamps — all driven by the sim's clock,
-   season and weather.
+   Stage: the V2 renderer. A physical sky and sun (src/gfx/sky)
+   lighting everything through an environment map, HDR post
+   (AO on high, bloom, filmic grade), GPU rain and snow, wet
+   streets that mirror the town, settling snow, leaf fall and
+   wind — all driven by the sim's clock, season and weather.
+   The public surface (scene, camera, night, update, render) is
+   what the rest of the game has always used.
    ============================================================ */
 import * as THREE from 'three';
 import { Sim } from '../sim/agents';
@@ -10,301 +13,269 @@ import { Weather } from '../sim/weather';
 import { Festivals } from '../sim/festivals';
 import { Calamity } from '../sim/calamity';
 import { Settings } from '../sim/settings';
-import { MAT, snowUniform, nightUniform, InstancedPool, hex } from './kit';
 import { GW, GH } from '../sim/world';
+import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, detectQuality, QualityProfile } from '../gfx/pipeline';
+import { SkySystem } from '../gfx/sky';
+import { ENV } from '../gfx/env';
+import { Precipitation } from '../gfx/precip';
+import { setTextureScale } from '../gfx/textures';
+import { interiorDay, lightsOn } from '../gfx/architecture';
+import { GLOW } from '../gfx/props';
+import { leafFall } from '../gfx/vegetation';
+import { setHeadlightPool } from '../gfx/car';
+import { snowUniform, MAT } from './kit';
 
-export type Quality = 'low' | 'medium' | 'high';
+export type { Quality } from '../gfx/pipeline';
 
-/** 0 = full day, 1 = deep night (V1's darkness curve, plus weather gloom) */
-export function darkness(clock: number): number {
-  const h = clock / 60;
-  let d: number;
-  if (h >= 7 && h < 18.5) d = 0;
-  else if (h >= 18.5 && h < 20.5) d = (h - 18.5) / 2;
-  else if (h >= 20.5 || h < 4.5) d = 1;
-  else if (h >= 4.5 && h < 7) d = 1 - (h - 4.5) / 2.5;
-  else d = 0;
-  return Math.min(1, d * 0.92 + Weather.gloom());
+/** 0 = full day, 1 = deep night: the sky's own darkness plus weather gloom */
+let lastNight = 0;
+export function darkness(_clock?: number): number {
+  return lastNight;
+}
+
+interface Wx { overcast: number; clouds: number; rain: number; snowfall: number; fog: number; wind: number }
+function weatherTarget(): Wx {
+  const k = Weather.kind as string, i = Weather.intensity as number;
+  switch (k) {
+    case 'clouds': return { overcast: 0.45, clouds: 0.8, rain: 0, snowfall: 0, fog: 0.9, wind: 0.42 };
+    case 'rain': return { overcast: 0.7 + i * 0.2, clouds: 1, rain: Math.min(1, i * 1.4), snowfall: 0, fog: 0.72, wind: 0.5 };
+    case 'heavy': return { overcast: 0.95, clouds: 1, rain: Math.min(1, 0.4 + i * 0.7), snowfall: 0, fog: 0.6, wind: 0.8 };
+    case 'snow': return { overcast: 0.75 + i * 0.1, clouds: 1, rain: 0, snowfall: Math.min(1, i * 1.15), fog: 0.55, wind: 0.3 };
+    default: return { overcast: 0, clouds: 0.22, rain: 0, snowfall: 0, fog: 1, wind: 0.22 };
+  }
+}
+/** a believable day of the year for the season and the day within it */
+function dayOfYear(): number {
+  const mids = [105, 196, 288, 15];
+  const within = (((Sim.day - 1) % 7) + (Sim.clock / 1440)) / 7 - 0.5;
+  return (mids[Weather.season] + within * 91 + 365) % 365;
 }
 
 export class Stage {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
-  sun: THREE.DirectionalLight;
-  moon: THREE.DirectionalLight;
-  hemi: THREE.HemisphereLight;
   quality: Quality;
+  profile: QualityProfile;
+  pipe: Pipeline;
+  sky: SkySystem;
   night = 0;
-  private stars: THREE.Points;
-  private moonDisc: THREE.Mesh;
-  private rain: THREE.LineSegments;
-  private rainPos: Float32Array;
-  private snow: THREE.Points;
-  private snowPos: Float32Array;
-  private clouds: InstancedPool;
-  private rainbow: THREE.Mesh;
-  private lampLights: THREE.PointLight[] = [];
-  private skyDay = hex('#8ec5ef');
-  private skyDusk = hex('#e9a37a');
-  private skyNight = hex('#0a1022');
-  private skyStorm = hex('#6a7480');
   shake = 0;
+  private precip: Precipitation;
+  private groundRefl: PlanarReflection;
+  private groundReady = false;
+  private lampLights: THREE.PointLight[] = [];
+  private flashLight: THREE.AmbientLight;
+  private rainbow: THREE.Mesh;
+  private st: Wx = weatherTarget();
+  private frameNo = 0;
+  /** extra mirrors (the water) rendered before the frame; set by the terrain */
+  waterUpdate: ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, cam: THREE.PerspectiveCamera, ambient: number, reflect: boolean) => void) | null = null;
+  lost = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.quality = Stage.pickQuality();
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.quality !== 'low', powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.quality === 'high' ? 2 : this.quality === 'medium' ? 1.5 : 1));
-    this.renderer.shadowMap.enabled = this.quality !== 'low';
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
-    this.camera = new THREE.PerspectiveCamera(Settings.get('fov') || 70, 1, 0.2, 4000);
-    this.scene.fog = new THREE.Fog(0x8ec5ef, 300, this.viewDistance());
-
-    this.hemi = new THREE.HemisphereLight(0xcfe6ff, 0x5a6a3a, 0.9);
-    this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff2dc, 2.2);
-    this.sun.castShadow = this.quality !== 'low';
-    const sm = this.quality === 'high' ? 4096 : 2048;
-    this.sun.shadow.mapSize.set(sm, sm);
-    const sc = this.sun.shadow.camera;
-    sc.left = -140; sc.right = 140; sc.top = 140; sc.bottom = -140; sc.near = 10; sc.far = 900;
-    this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.6;
-    this.scene.add(this.sun, this.sun.target);
-    this.moon = new THREE.DirectionalLight(0x9fb4ff, 0);
-    this.scene.add(this.moon, this.moon.target);
-
-    // stars
-    const sp = new Float32Array(1600 * 3);
-    for (let i = 0; i < 1600; i++) {
-      const a = Math.random() * Math.PI * 2, e = Math.acos(Math.random() * 0.95);
-      sp[i * 3] = Math.cos(a) * Math.sin(e) * 3000;
-      sp[i * 3 + 1] = Math.cos(e) * 3000;
-      sp[i * 3 + 2] = Math.sin(a) * Math.sin(e) * 3000;
+    this.camera = new THREE.PerspectiveCamera(Settings.get('fov') || 70, 1, 0.25, 4000);
+    this.camera.layers.enable(LAYER_NO_REFLECT);
+    this.pipe = new Pipeline(canvas, this.quality, this.scene, this.camera);
+    this.profile = this.pipe.profile;
+    this.renderer = this.pipe.renderer;
+    setTextureScale(this.quality === 'high' ? 1 : 0.5);
+    this.sky = new SkySystem(this.renderer, this.scene, this.pipe.shadowSize);
+    this.precip = new Precipitation(this.scene);
+    this.groundRefl = new PlanarReflection(0.03, this.profile.reflScale || 0.25);
+    for (let i = 0; i < this.profile.pointLights; i++) {
+      const l = new THREE.PointLight(0xffc68a, 0, 28, 2);
+      this.scene.add(l);
+      this.lampLights.push(l);
     }
-    const sg = new THREE.BufferGeometry();
-    sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-    this.stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 4, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
-    this.scene.add(this.stars);
-    this.moonDisc = new THREE.Mesh(new THREE.CircleGeometry(60, 24), new THREE.MeshBasicMaterial({ color: 0xf2f0e4, fog: false, transparent: true }));
-    this.scene.add(this.moonDisc);
+    this.flashLight = new THREE.AmbientLight(0xdde6ff, 0);
+    this.scene.add(this.flashLight);
 
-    // precipitation lives in a box around the camera
-    const RN = 2600;
-    this.rainPos = new Float32Array(RN * 6);
-    for (let i = 0; i < RN; i++) {
-      const x = (Math.random() - 0.5) * 90, y = Math.random() * 40, z = (Math.random() - 0.5) * 90;
-      this.rainPos.set([x, y, z, x + 0.15, y - 1.1, z], i * 6);
-    }
-    const rg = new THREE.BufferGeometry();
-    rg.setAttribute('position', new THREE.BufferAttribute(this.rainPos, 3));
-    this.rain = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0xaac4e2, transparent: true, opacity: 0.55, depthWrite: false }));
-    this.rain.frustumCulled = false;
-    this.scene.add(this.rain);
-    const SN = 2400;
-    this.snowPos = new Float32Array(SN * 3);
-    for (let i = 0; i < SN; i++) this.snowPos.set([(Math.random() - 0.5) * 90, Math.random() * 40, (Math.random() - 0.5) * 90], i * 3);
-    const ng = new THREE.BufferGeometry();
-    ng.setAttribute('position', new THREE.BufferAttribute(this.snowPos, 3));
-    this.snow = new THREE.Points(ng, new THREE.PointsMaterial({ color: 0xf4f8ff, size: 0.22, transparent: true, opacity: 0.95, depthWrite: false }));
-    this.snow.frustumCulled = false;
-    this.scene.add(this.snow);
-
-    // clouds: clusters of soft blobs drifting overhead
-    const cb = new THREE.IcosahedronGeometry(1, 2);
-    cb.scale(1, 0.62, 1);
-    const cm = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.88, emissive: 0x9aa4b8, emissiveIntensity: 0.35 });
-    this.clouds = new InstancedPool(cb, cm, 80, this.scene, false);
-
-    // rainbow arc
+    // rainbow arc after a shower
     const rb = new THREE.TorusGeometry(700, 26, 6, 48, Math.PI);
     const cols: number[] = [];
     const pos = rb.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const v = new THREE.Vector3().fromBufferAttribute(pos, i);
-      const r = Math.hypot(v.x, v.y);
-      const t = (r - 674) / 52;
+      const t = (Math.hypot(v.x, v.y) - 674) / 52;
       const c = new THREE.Color().setHSL(Math.max(0, Math.min(0.78, t * 0.78)), 1, 0.55);
       cols.push(c.r, c.g, c.b);
     }
     rb.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-    this.rainbow = new THREE.Mesh(rb, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, fog: false, depthWrite: false }));
+    this.rainbow = new THREE.Mesh(rb, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, fog: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.rainbow.layers.set(LAYER_NO_REFLECT);
     this.scene.add(this.rainbow);
 
-    for (let i = 0; i < (this.quality === 'low' ? 4 : 10); i++) {
-      const l = new THREE.PointLight(0xffd59a, 0, 26, 1.7);
-      this.scene.add(l);
-      this.lampLights.push(l);
-    }
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.lost = true;
+      // come back one preset lighter next time
+      if (Settings.get('quality') === 'auto' || Settings.get('quality') === this.quality) Settings.set('quality', this.quality === 'high' ? 'medium' : 'low');
+      console.error('[stage] WebGL context lost; quality lowered for the next load');
+    });
+    this.pipe.onResize = () => this.resize();
     this.resize();
-    window.addEventListener('resize', () => this.resize());
   }
 
   static pickQuality(): Quality {
     const q = Settings.get('quality');
     if (q === 'low' || q === 'medium' || q === 'high') return q;
-    const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && window.innerWidth < 1100);
-    return mobile ? 'low' : 'medium';
+    return detectQuality();
   }
   viewDistance(): number {
-    return this.quality === 'high' ? 1500 : this.quality === 'medium' ? 1100 : 700;
+    return this.quality === 'high' ? 2600 : this.quality === 'medium' ? 2000 : 1400;
   }
 
   resize(): void {
-    const w = this.renderer.domElement.clientWidth || window.innerWidth;
-    const h = this.renderer.domElement.clientHeight || window.innerHeight;
-    this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
+    const w = this.renderer.domElement.width, h = this.renderer.domElement.height;
+    this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
+    this.groundRefl.setSize(w, h);
+    this.onResize?.(w, h);
+  }
+  onResize?: (w: number, h: number) => void;
+
+  /** light everything once so shaders compile with the environment map, then compile them off-frame */
+  async warmUp(): Promise<void> {
+    this.update(1 / 60, this.camera.position, []);
+    this.renderer.setRenderTarget(this.pipe.composer.readBuffer);
+    try { await this.renderer.compileAsync(this.scene, this.camera); } catch { /* compile lazily */ }
+    // one frame with shadows so the shadow map exists before any mirror pass samples it
+    this.renderer.shadowMap.needsUpdate = true;
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
   }
 
-  /** per frame: lighting & weather around the focus point */
+  /** per frame: sky, light and weather around the focus point */
   update(dt: number, focus: THREE.Vector3, lamps: { x: number; z: number }[]): void {
-    const clock = Sim.clock;
-    const night = darkness(clock);
-    this.night = night;
-    nightUniform.value = night;
-    snowUniform.value += ((Weather.season === 3 ? 1 : Weather.isSnowing() ? 0.6 : 0) - snowUniform.value) * Math.min(1, dt * 0.2);
+    this.frameNo++;
+    ENV.time.value += dt;
+    const P = this.profile;
 
-    // the sun crosses from east to west between 06:00 and 19:00
-    const t = (clock - 360) / (1140 - 360);
-    const elev = Math.sin(Math.max(0, Math.min(1, t)) * Math.PI);
-    const az = Math.PI * (1 - Math.max(0, Math.min(1, t)));
-    const sunDir = new THREE.Vector3(Math.cos(az) * 0.8, Math.max(0.08, elev), 0.45).normalize();
-    this.sun.position.copy(focus).addScaledVector(sunDir, 400);
-    this.sun.target.position.copy(focus);
+    // weather drifts towards the sim's state; surfaces respond on their own time
+    const tg = weatherTarget();
+    const st = this.st, k = Math.min(1, dt * 0.35);
+    st.overcast += (tg.overcast - st.overcast) * k;
+    st.clouds += (tg.clouds - st.clouds) * k;
+    st.rain += (tg.rain - st.rain) * Math.min(1, dt * 0.5);
+    st.snowfall += (tg.snowfall - st.snowfall) * Math.min(1, dt * 0.5);
+    st.fog += (tg.fog - st.fog) * k;
+    st.wind += (tg.wind - st.wind) * Math.min(1, dt * 0.3);
+    ENV.rain.value = st.rain;
+    ENV.wind.value = st.wind;
+    ENV.windDir.value.set(Math.cos(ENV.time.value * 0.013) * 0.8 + 0.2, Math.sin(ENV.time.value * 0.011) * 0.6 + 0.5).normalize();
+    const sunny = this.sky.sunAbove ? Math.max(0, ENV.sunDir.value.y) * (1 - st.overcast) : 0;
+    if (st.rain > 0.15) ENV.wet.value = Math.min(1, ENV.wet.value + dt * 0.08 * st.rain);
+    else ENV.wet.value = Math.max(ENV.snow.value > 0.3 ? 0.12 : 0, ENV.wet.value - dt * (0.004 + sunny * 0.02));
+    // winter keeps its snow; it settles while it falls and melts once the season turns
+    const winter = Weather.season === 3;
+    if (st.snowfall > 0.15) ENV.snow.value = Math.min(1, ENV.snow.value + dt * 0.02 * st.snowfall);
+    else if (!winter) ENV.snow.value = Math.max(0, ENV.snow.value - dt * (0.006 + sunny * 0.01));
+    else ENV.snow.value = Math.max(0.35, ENV.snow.value - dt * sunny * 0.002);
+    snowUniform.value = ENV.snow.value;
+    // leaves colour through autumn and are gone by winter; spring brings them back
+    const within = ((Sim.day - 1) % 7) / 7;
+    const fallTarget = Weather.season === 2 ? 0.15 + within * 0.75 : winter ? 1 : 0;
+    leafFall.value += (fallTarget - leafFall.value) * Math.min(1, dt * 0.1);
+
+    // sky, sun and exposure (shadows refresh on alternate frames on the lighter presets)
+    const doShadow = (this.frameNo + 1) % P.shadowEvery === 0;
+    this.sky.holdShadow = !doShadow;
+    const hour = Sim.clock / 60;
+    this.sky.update(dt, hour, dayOfYear(), { overcast: st.overcast, clouds: st.clouds, fog: st.fog, snow: ENV.snow.value }, focus, this.camera);
+    if (this.sky.envTexture) this.scene.environment = this.sky.envTexture;
     const gloom = Weather.gloom();
-    const dayK = Math.max(0, 1 - night);
-    this.sun.intensity = 2.4 * dayK * (1 - gloom * 2.2) * Math.min(1, elev * 3 + 0.15);
-    this.sun.color.setHSL(0.09, 0.6, 0.62 + elev * 0.3);
-    const moonDir = new THREE.Vector3(-sunDir.x, Math.max(0.3, 0.8 - elev), -0.3).normalize();
-    this.moon.position.copy(focus).addScaledVector(moonDir, 400);
-    this.moon.target.position.copy(focus);
-    this.moon.intensity = 0.55 * night;
-    this.hemi.intensity = 0.35 + dayK * 0.65 - gloom * 0.4;
-    this.hemi.color.setRGB(0.6 + dayK * 0.2, 0.68 + dayK * 0.2, 0.9);
-    this.hemi.groundColor.set(Weather.season === 3 ? 0x9aa8b8 : 0x4a5a32);
+    this.night = Math.min(1, this.sky.nightK * 0.95 + gloom * 0.5);
+    lastNight = this.night;
 
-    // sky colour: day → dusk glow → night; storms grey it out; lightning whitens it
-    const duskK = Math.max(0, 1 - Math.abs(night - 0.45) * 2.6) * (clock > 900 || clock < 500 ? 1 : 0);
-    const sky = this.skyDay.clone().lerp(this.skyStorm, Math.min(1, gloom * 3.5)).lerp(this.skyNight, night).lerp(this.skyDusk, duskK * 0.55);
-    if (Weather.flash > 0) sky.lerp(new THREE.Color(0xeef2ff), Weather.flash * 0.8);
-    this.scene.background = sky;
-    const fog = this.scene.fog as THREE.Fog;
-    fog.color.copy(sky);
-    const vd = this.viewDistance();
-    fog.far = vd * (1 - Weather.intensity * (Weather.kind === 'heavy' || Weather.kind === 'snow' ? 0.55 : 0.2));
-    fog.near = fog.far * 0.3;
-    if (Weather.flash > 0) this.hemi.intensity += Weather.flash * 2.5;
+    // shadows cover more ground when the camera is high
+    const sc = this.sky.sun.shadow.camera;
+    const reach = THREE.MathUtils.clamp(70 + Math.max(0, this.camera.position.y - focus.y) * 0.9, 70, 320);
+    if (Math.abs(sc.right - reach) > 4) {
+      sc.left = -reach; sc.right = reach; sc.top = reach; sc.bottom = -reach;
+      sc.updateProjectionMatrix();
+    }
 
-    (this.stars.material as THREE.PointsMaterial).opacity = Math.max(0, night - 0.35) * (1 - Weather.intensity) * 1.4;
-    this.stars.position.copy(this.camera.position);
-    this.moonDisc.position.copy(this.camera.position).addScaledVector(moonDir, 2600);
-    this.moonDisc.lookAt(this.camera.position);
-    (this.moonDisc.material as THREE.MeshBasicMaterial).opacity = Math.max(0, night - 0.2) * 1.2;
+    // lightning: the whole town flashes
+    this.flashLight.intensity = Weather.flash * 6;
 
-    this.updatePrecip(dt);
-    this.updateClouds();
-    const rbK = Weather.rainbowT > 0 ? Math.min(1, Weather.rainbowT / 8) * 0.5 * Math.max(0, 1 - night * 2.5) : 0;
+    // interiors, lamps, signs
+    interiorDay.value = this.sky.ambient * 0.07;
+    const festive = Festivals.decorated() || Festivals.diyasTonight();
+    const blackout = Calamity.active && Calamity.active.type === 'quake' ? 0.5 : 1;
+    lightsOn.value = THREE.MathUtils.smoothstep(this.sky.nightK + st.overcast * 0.22, 0.12, 0.5) * blackout * (festive ? 1.15 : 1);
+    // M1-style flat windows still in use (props, vehicles) glow with the same rhythm
+    MAT.windowA.emissiveIntensity = lightsOn.value * 1.4;
+    MAT.windowB.emissiveIntensity = lightsOn.value * 1.2;
+    MAT.windowC.emissiveIntensity = lightsOn.value * 1.4;
+    const lampK = THREE.MathUtils.smoothstep(this.sky.nightK + st.overcast * 0.25, 0.2, 0.55);
+    GLOW.lantern.emissiveIntensity = lampK * 5;
+    this.updateLamps(focus, lamps, lampK);
+    setHeadlightPool(0.06 * this.sky.nightK);
+
+    // precipitation and the rainbow
+    this.precip.update(st.rain, st.snowfall, this.sky.ambient);
+    const rbK = Weather.rainbowT > 0 ? Math.min(1, Weather.rainbowT / 8) * 0.35 * Math.max(0, 1 - this.night * 2.5) : 0;
     const rbm = this.rainbow.material as THREE.MeshBasicMaterial;
     rbm.opacity += (rbK - rbm.opacity) * Math.min(1, dt);
     this.rainbow.visible = rbm.opacity > 0.01;
-    this.rainbow.position.set(this.camera.position.x - sunDir.x * 900, -40, this.camera.position.z - 900);
+    const sd = ENV.sunDir.value;
+    this.rainbow.position.set(this.camera.position.x - sd.x * 900, -40, this.camera.position.z - sd.z * 900);
+    this.rainbow.lookAt(this.camera.position.x, -40, this.camera.position.z);
 
-    this.updateWindows(clock, night);
-    this.updateLamps(focus, lamps, night);
+    // grade: cooler and flatter in rain and snow, warmer in low sun
+    const g = this.pipe.grade.uniforms;
+    const warm = this.sky.sunAbove ? (1 - THREE.MathUtils.smoothstep(sd.y, 0.05, 0.4)) * (1 - st.overcast) : 0;
+    (g.tint.value as THREE.Vector3).set(1 + warm * 0.04 - st.snowfall * 0.02, 1, 1 - warm * 0.05 + st.overcast * 0.03 + st.snowfall * 0.03);
+    g.saturation.value = 1.06 - st.overcast * 0.16;
+    g.contrast.value = 1.05 - st.overcast * 0.06;
   }
 
-  private updatePrecip(dt: number): void {
-    const cam = this.camera.position;
-    const raining = (Weather.kind === 'rain' || Weather.kind === 'heavy') && Weather.intensity > 0.05;
-    this.rain.visible = raining;
-    if (raining) {
-      const n = Math.floor((this.rainPos.length / 6) * Math.min(1, Weather.intensity * (Weather.kind === 'heavy' ? 1 : 0.55)));
-      this.rain.geometry.setDrawRange(0, n * 2);
-      const fall = 26 * dt;
-      for (let i = 0; i < n; i++) {
-        const k = i * 6;
-        this.rainPos[k + 1] -= fall;
-        this.rainPos[k + 4] -= fall;
-        if (this.rainPos[k + 4] < -2) {
-          const x = (Math.random() - 0.5) * 90, z = (Math.random() - 0.5) * 90, y = 36 + Math.random() * 6;
-          this.rainPos.set([x, y, z, x + 0.15, y - 1.1, z], k);
-        }
-      }
-      this.rain.geometry.attributes.position.needsUpdate = true;
-      this.rain.position.set(cam.x, cam.y - 20, cam.z);
-    }
-    const snowing = Weather.kind === 'snow' && Weather.intensity > 0.05;
-    this.snow.visible = snowing;
-    if (snowing) {
-      const n = Math.floor((this.snowPos.length / 3) * Math.min(1, Weather.intensity));
-      this.snow.geometry.setDrawRange(0, n);
-      for (let i = 0; i < n; i++) {
-        const k = i * 3;
-        this.snowPos[k + 1] -= 2.2 * dt;
-        this.snowPos[k] += Math.sin(this.snowPos[k + 1] * 0.7 + i) * 0.6 * dt;
-        if (this.snowPos[k + 1] < -2) this.snowPos.set([(Math.random() - 0.5) * 90, 38, (Math.random() - 0.5) * 90], k);
-      }
-      this.snow.geometry.attributes.position.needsUpdate = true;
-      this.snow.position.set(cam.x, cam.y - 20, cam.z);
-    }
-  }
-
-  private updateClouds(): void {
-    this.clouds.begin();
-    const cover = { clear: 0.45, clouds: 1, rain: 1, heavy: 1, snow: 1 }[Weather.kind as 'clear'] || 0.6;
-    const grey = new THREE.Color().setScalar(Weather.kind === 'heavy' ? 0.55 : Weather.kind === 'rain' ? 0.72 : 1).lerp(new THREE.Color(0.18, 0.2, 0.28), this.night);
-    for (let i = 0; i < Weather.clouds.length; i++) {
-      if (i / Weather.clouds.length > cover) break;
-      const c = Weather.clouds[i];
-      const x = c.x * 0.5, z = c.y * 0.5, s = c.s * 0.32;
-      for (let k = 0; k < 7; k++) {
-        const ox = Math.cos(k * 1.9 + i) * s * 0.85, oz = Math.sin(k * 2.3 + i) * s * 0.45;
-        this.clouds.add(x + ox, 160 + (k % 3) * 6, z + oz, k, s * (0.55 + (k % 3) * 0.18), grey);
-      }
-    }
-    this.clouds.end();
-  }
-
-  /** homes glow in the evening, businesses through working dusk, services all night */
-  private updateWindows(clock: number, night: number): void {
-    const festive = Festivals.decorated() || Festivals.diyasTonight();
-    const h = clock / 60;
-    const homeHours = (h >= 17 && h < 23.5) || (h >= 5 && h < 7.5) ? 1 : 0.18;
-    const workHours = h >= 7 && h < 20 ? 1 : 0.12;
-    const blackout = Calamity.active && Calamity.active.type === 'quake' ? 0.5 : 1;
-    MAT.windowA.emissiveIntensity = night * (festive ? 1.2 : homeHours) * 1.1 * blackout;
-    MAT.windowB.emissiveIntensity = night * (festive ? 1 : workHours) * 1.0 * blackout;
-    MAT.windowC.emissiveIntensity = night * 1.1 * blackout;
-  }
-
-  private updateLamps(focus: THREE.Vector3, lamps: { x: number; z: number }[], night: number): void {
-    if (night < 0.15) {
+  private updateLamps(focus: THREE.Vector3, lamps: { x: number; z: number }[], lampK: number): void {
+    if (lampK < 0.01 || !this.lampLights.length) {
       for (const l of this.lampLights) l.intensity = 0;
       return;
     }
+    const cam = this.camera.position;
     const near = lamps
-      .map((l) => ({ l, d: (l.x - focus.x) ** 2 + (l.z - focus.z) ** 2 }))
-      .filter((o) => o.d < 120 * 120)
+      .map((l) => ({ l, d: (l.x - cam.x) ** 2 + (l.z - cam.z) ** 2 + ((l.x - focus.x) ** 2 + (l.z - focus.z) ** 2) * 0.5 }))
+      .filter((o) => o.d < 160 * 160)
       .sort((a, b) => a.d - b.d);
     this.lampLights.forEach((pl, i) => {
       const o = near[i];
       if (!o) { pl.intensity = 0; return; }
-      pl.position.set(o.l.x, 5.6, o.l.z);
-      pl.intensity = 28 * night;
+      pl.position.set(o.l.x, 4.3, o.l.z);
+      pl.intensity = 11 * lampK;
     });
   }
 
   render(): void {
+    if (this.lost) return;
     if (this.shake > 0 || Calamity.shakeT > 0) {
       const k = Math.max(this.shake, Math.min(1, Calamity.shakeT)) * 0.6;
       this.camera.position.x += (Math.random() - 0.5) * k;
       this.camera.position.y += (Math.random() - 0.5) * k;
     }
-    this.renderer.render(this.scene, this.camera);
+    this.camera.updateMatrixWorld();
+    const P = this.profile;
+    const doShadow = (this.frameNo + 1) % P.shadowEvery === 0;
+    const doWater = this.frameNo % P.reflEvery === 0;
+    const doGround = (this.frameNo + 1) % P.reflEvery === 0;
+    // mirrors first: the water every frame it's on screen, the streets only when wet
+    ENV.reflOn.value = 0;
+    ENV.reflTex.value = null;
+    this.waterUpdate?.(this.renderer, this.scene, this.camera, this.sky.ambient, doWater);
+    if (ENV.wet.value > 0.04 && P.reflScale > 0) {
+      if (doGround || !this.groundReady) {
+        this.groundRefl.update(this.renderer, this.scene, this.camera);
+        ENV.reflMat.value.copy(this.groundRefl.textureMatrix);
+        this.groundReady = true;
+      }
+      ENV.reflTex.value = this.groundRefl.rt.texture;
+      ENV.reflOn.value = 1;
+    } else this.groundReady = false;
+    this.pipe.render(this.sky.exposure, 1 / 60, doShadow);
   }
 
   /** map bounds in metres (for clamping cameras) */

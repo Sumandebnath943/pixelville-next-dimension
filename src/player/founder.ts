@@ -10,10 +10,12 @@ import { Settings } from '../sim/settings';
 import { Input } from '../input/input';
 import { heightAt, isWaterAt, treeSpot } from '../render/terrain';
 import type { BuildingLayer } from '../render/buildings';
-import { MAT } from '../render/kit';
 import { emit } from '../sim/core';
-import { PERSON, VEHICLES } from '../render/models';
 import type { FounderSave } from '../sim/game';
+import { Person } from '../gfx/person';
+import { Car as CarModel } from '../gfx/car';
+import { surface } from '../gfx/surface';
+import { ENV } from '../gfx/env';
 
 const TM = 8;
 const R_BODY = 0.38;
@@ -35,7 +37,6 @@ export class Founder {
   wallet = 120;
   mesh = new THREE.Group();
   carMesh = new THREE.Group();
-  private limbs: Record<string, THREE.Object3D> = {};
   private phase = 0;
   private camPos = new THREE.Vector3();
   private camInit = false;
@@ -48,42 +49,45 @@ export class Founder {
   }
 
   /* the Founder: a deep-violet coat, a gold scarf, a wide-brimmed hat */
+  private person!: Person;
+  private carModel!: CarModel;
+  private lastCar = { speed: 0, yaw: 0 };
   private buildBody(): void {
-    const mk = (geo: THREE.BufferGeometry, col: string, y: number, x = 0) => {
-      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: col, flatShading: true, roughness: 0.7 }));
-      m.position.set(x, y, 0);
-      m.castShadow = true;
-      this.mesh.add(m);
-      return m;
-    };
-    this.limbs.legL = mk(PERSON.leg, '#2a2238', 0.86, -0.11);
-    this.limbs.legR = mk(PERSON.leg, '#2a2238', 0.86, 0.11);
-    this.limbs.torso = mk(PERSON.torso, '#4a2a6a', 0.86);
-    this.limbs.torso.scale.set(1.08, 1.05, 1.15);
-    this.limbs.armL = mk(PERSON.arm, '#4a2a6a', 1.5, -0.31);
-    this.limbs.armR = mk(PERSON.arm, '#4a2a6a', 1.5, 0.31);
-    this.limbs.head = mk(PERSON.head, '#e0ac85', 1.55);
-    const scarf = mk(new THREE.BoxGeometry(0.5, 0.12, 0.32), '#e0b040', 1.5);
-    scarf.position.z = 0.01;
-    const brim = mk(new THREE.CylinderGeometry(0.42, 0.42, 0.05, 10), '#1e1a24', 1.86);
-    brim.castShadow = true;
-    mk(new THREE.CylinderGeometry(0.2, 0.22, 0.32, 10), '#1e1a24', 2.02);
+    const c = (h: string): THREE.Color => new THREE.Color(h);
+    this.person = new Person({
+      height: 1.83, build: 1.04, female: false, skin: c('#e0ac85'), hair: c('#3a2618'),
+      top: c('#4a2a6a'), legs: c('#2a2238'), shoes: c('#16121a'), longHair: false, longSleeves: true, skirt: false, coat: c('#4a2a6a'),
+    });
+    this.person.carriesUmbrella = false;
+    this.mesh.add(this.person.root);
+    const felt = surface(new THREE.MeshStandardMaterial({ color: 0x1e1a24, roughness: 0.75 }), { snow: 0.8, wet: 0.5 }, 'felt');
+    const gold = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.35, metalness: 0.6 });
+    const hat = new THREE.Group();
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.022, 28), felt);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.125, 0.16, 24), felt);
+    crown.position.y = 0.085;
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.127, 0.127, 0.035, 24), gold);
+    band.position.y = 0.03;
+    hat.add(brim, crown, band);
+    hat.position.set(0, 0.185, 0.005);
+    hat.rotation.x = -0.05;
+    hat.traverse((o) => (o.castShadow = true));
+    this.person.bones.head.add(hat);
+    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.016, 8, 24), surface(new THREE.MeshStandardMaterial({ color: 0xb8902e, roughness: 0.9 }), { snow: 0.6, wet: 0.6 }, 'scarf'));
+    scarf.rotation.x = Math.PI / 2;
+    scarf.scale.set(1.15, 1, 0.95);
+    scarf.position.set(0, 0.0, 0.008);
+    this.person.bones.neck.add(scarf);
     // a faint golden glow at the Founder's feet — villagers say buildings rise where it walks
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 24), new THREE.MeshBasicMaterial({ color: 0xffd060, transparent: true, opacity: 0.35, depthWrite: false }));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 32), new THREE.MeshBasicMaterial({ color: 0xffd060, transparent: true, opacity: 0.3, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.04;
     this.mesh.add(ring);
   }
 
   private buildCar(): void {
-    const v = VEHICLES.car;
-    const paint = new THREE.Mesh(v.paint, new THREE.MeshStandardMaterial({ color: 0x5a2a7a, flatShading: true, roughness: 0.35, metalness: 0.4 }));
-    const fixed = new THREE.Mesh(v.fixed, MAT.solid);
-    const lights = new THREE.Mesh(v.lights, new THREE.MeshBasicMaterial({ vertexColors: true }));
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 4.2), new THREE.MeshStandardMaterial({ color: 0xe0b040 }));
-    stripe.position.y = 1.49;
-    paint.castShadow = fixed.castShadow = true;
-    this.carMesh.add(paint, fixed, lights, stripe);
+    this.carModel = new CarModel('sedan', new THREE.Color('#3e1a5e'), true);
+    this.carMesh.add(this.carModel.root);
     const head = new THREE.SpotLight(0xfff2d0, 0, 60, 0.5, 0.5, 1.2);
     head.position.set(0, 0.8, 2.2);
     head.target.position.set(0, 0, 14);
@@ -314,15 +318,20 @@ export class Founder {
     this.mesh.position.copy(this.pos);
     this.mesh.rotation.y = this.yaw;
     const moving = !!this.mesh.userData.moving;
-    const sw = moving ? Math.sin(this.phase) * (this.mesh.userData.run ? 0.9 : 0.55) : 0;
-    this.limbs.legL.rotation.x = sw;
-    this.limbs.legR.rotation.x = -sw;
-    this.limbs.armL.rotation.x = -sw * 0.8;
-    this.limbs.armR.rotation.x = sw * 0.8;
+    const speed = moving ? Math.max(0.6, this.speedKmh / 3.6) : 0;
+    if (this.mesh.visible) this.person.animate(dt, moving ? 'walk' : 'idle', speed, ENV.rain.value);
     const c = this.car;
     this.carMesh.position.set(c.x, c.y, c.z);
     this.carMesh.rotation.set(c.pitch, c.yaw, 0, 'YXZ');
-    void dt;
+    // the car's own suspension, wheels and lights
+    const accel = (c.speed - this.lastCar.speed) / Math.max(dt, 1e-3);
+    let dy = c.yaw - this.lastCar.yaw;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    this.lastCar.speed = c.speed;
+    this.lastCar.yaw = c.yaw;
+    this.carModel.drive(dt, 0, 0, 0, c.speed, accel, dy / Math.max(dt, 1e-3), 0);
+    this.carModel.lights(this.driving && ENV.night.value > 0.2, ENV.night.value);
   }
 
   /** place the street camera: third-person orbit with collision, or eyes */

@@ -8,6 +8,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { PX_M, TILE_M } from '../sim/core';
+import { surface, fogOnly } from '../gfx/surface';
 
 /* ---------- coordinates ---------- */
 export const tileM = (t: number): number => t * TILE_M;
@@ -164,43 +165,27 @@ export class MeshBuilder {
 }
 
 /* ---------- materials ---------- */
+/** settled snow 0..1 (mirrors ENV.snow; kept for older callers) */
 export const snowUniform = { value: 0 };
 export const nightUniform = { value: 0 };
 
-/** Patch a standard material so upward-facing surfaces whiten in winter. */
-function snowy(m: THREE.MeshStandardMaterial, strength = 1): THREE.MeshStandardMaterial {
-  m.onBeforeCompile = (shader) => {
-    shader.uniforms.uSnow = snowUniform;
-    shader.uniforms.uSnowK = { value: strength };
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vUpN;')
-      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvUpN = normalize(mat3(modelMatrix) * objectNormal).y;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vUpN;\nuniform float uSnow;\nuniform float uSnowK;')
-      .replace(
-        '#include <color_fragment>',
-        '#include <color_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 0.99), uSnow * uSnowK * smoothstep(0.3, 0.72, vUpN));',
-      );
-  };
-  m.customProgramCacheKey = () => 'snowy' + strength;
-  return m;
-}
-
+/* V2: every flat-coloured material goes through the shared surface patch, so even
+   simple geometry is lit by the sky, gets wet, takes snow and sits in the haze */
 export const MAT = {
-  solid: snowy(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.88, metalness: 0 })),
-  ground: snowy(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95, metalness: 0 })),
-  road: snowy(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0 }), 0.25),
-  water: new THREE.MeshStandardMaterial({ color: 0x3f86c8, transparent: true, opacity: 0.82, roughness: 0.12, metalness: 0.1 }),
-  ice: new THREE.MeshStandardMaterial({ color: 0xdfeaf4, roughness: 0.3, metalness: 0 }),
+  solid: surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }), { snow: 1, wet: 0.7 }, 'm1solid'),
+  ground: surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }), { snow: 1, wet: 0.5, antiTile: 0.2 }, 'm1ground'),
+  road: surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }), { snow: 0.9, wet: 1, puddles: true }, 'm1road'),
+  water: surface(new THREE.MeshStandardMaterial({ color: 0x1d4a5a, transparent: true, opacity: 0.9, roughness: 0.06, metalness: 0 }), {}, 'm1water'),
+  ice: surface(new THREE.MeshStandardMaterial({ color: 0xdfeaf4, roughness: 0.3, metalness: 0 }), { snow: 1 }, 'm1ice'),
   /** vertex-coloured, unlit: signs, lamps, flames, lights */
-  glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
+  glow: fogOnly(new THREE.MeshBasicMaterial({ vertexColors: true }), 'm1glow') as THREE.MeshBasicMaterial,
   /** windows: dark glass by day, warm light by night (emissive driven per frame) */
-  windowA: new THREE.MeshStandardMaterial({ color: 0x4a6a8a, roughness: 0.2, metalness: 0.3, emissive: 0xffc870, emissiveIntensity: 0 }),
-  windowB: new THREE.MeshStandardMaterial({ color: 0x4a6a8a, roughness: 0.2, metalness: 0.3, emissive: 0xffd890, emissiveIntensity: 0 }),
-  windowC: new THREE.MeshStandardMaterial({ color: 0x4a6a8a, roughness: 0.2, metalness: 0.3, emissive: 0xfff0c0, emissiveIntensity: 0 }),
+  windowA: surface(new THREE.MeshStandardMaterial({ color: 0x1a2430, roughness: 0.08, metalness: 0.2, emissive: 0xffc870, emissiveIntensity: 0 }), { wet: 0.1 }, 'm1win'),
+  windowB: surface(new THREE.MeshStandardMaterial({ color: 0x1a2430, roughness: 0.08, metalness: 0.2, emissive: 0xffd890, emissiveIntensity: 0 }), { wet: 0.1 }, 'm1win'),
+  windowC: surface(new THREE.MeshStandardMaterial({ color: 0x1a2430, roughness: 0.08, metalness: 0.2, emissive: 0xfff0c0, emissiveIntensity: 0 }), { wet: 0.1 }, 'm1win'),
   /** instanced things tinted per instance (cars, people) */
-  tint: snowy(new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 0.75, metalness: 0.05 }), 0.6),
-  tintGlow: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+  tint: surface(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.05 }), { snow: 0.6, wet: 0.4 }, 'm1tint'),
+  tintGlow: fogOnly(new THREE.MeshBasicMaterial({ color: 0xffffff }), 'm1tglow') as THREE.MeshBasicMaterial,
 };
 
 /* ---------- InstancedPool ---------- */

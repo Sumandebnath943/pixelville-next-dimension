@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0d1117" />
+    <title>PixelVille — Look Lab</title>
+    <link rel="stylesheet" href="/src/slice/slice.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <aside id="lab">
+      <header>
+        <div class="brand"><b>PixelVille</b><span>Next Dimension</span></div>
+        <div class="tag">Look lab · one street block</div>
+      </header>
+
+      <section>
+        <div class="row"><label for="time">Time of day</label><output id="t-out">17:24</output></div>
+        <input id="time" type="range" min="0" max="23.99" step="0.01" value="17.4" />
+        <div class="seg" id="speed">
+          <button data-s="0" class="on" title="Hold the clock">Hold</button>
+          <button data-s="1" title="One minute per second">1 min/s</button>
+          <button data-s="10" title="Ten minutes per second">10 min/s</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="row"><label>Weather</label><button id="settle" class="link" title="Skip the wait: puddles, snow cover and leaf fall arrive instantly">Settle now</button></div>
+        <div class="seg" id="wx">
+          <button data-w="clear" class="on">Clear</button>
+          <button data-w="cloudy">Cloudy</button>
+          <button data-w="rain">Rain</button>
+          <button data-w="snow">Snow</button>
+        </div>
+        <div class="row"><label for="wind">Wind</label><output id="w-out">Breeze</output></div>
+        <input id="wind" type="range" min="0" max="1" step="0.01" value="0.22" />
+      </section>
+
+      <section>
+        <div class="row"><label>View</label></div>
+        <div class="seg wrap" id="cam">
+          <button data-v="street" class="on">Street</button>
+          <button data-v="shops">Shops</button>
+          <button data-v="junction">Junction</button>
+          <button data-v="river">River</button>
+          <button data-v="aerial">Aerial</button>
+        </div>
+        <p class="hint">Street views: drag to look, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to walk, <kbd>Shift</kbd> to hurry, wheel to zoom. Aerial: drag to orbit. <kbd>H</kbd> hides this panel.</p>
+      </section>
+
+      <footer>
+        <span id="fps">—</span>
+        <button id="quality" class="link">Quality: High</button>
+      </footer>
+    </aside>
+
+    <div id="loading">
+      <div class="title"><b>PixelVille</b><span>Next Dimension · look lab</span></div>
+      <p id="loading-text">Preparing the street…</p>
+      <div class="bar"><i></i></div>
+    </div>
+    <script type="module" src="/src/slice/main.ts"></script>
+  </body>
+</html>

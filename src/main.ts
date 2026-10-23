@@ -30,7 +30,10 @@ const TM = 8;
 /* ---------- the world ---------- */
 Game.boot();
 const stage = new Stage(canvas);
-const terrain = new Terrain(stage.scene);
+const terrain = new Terrain(stage.scene, stage.profile);
+stage.waterUpdate = (r, s, c, ambient, reflect) => terrain.water.update(r, s, c, ambient, reflect, terrain.ice);
+stage.onResize = (w, h) => terrain.water.reflection.setSize(w, h);
+stage.resize();
 const buildings = new BuildingLayer(stage.scene);
 const actors = new Actors(stage.scene, buildings);
 const founder = new Founder(stage.scene, buildings);
@@ -94,7 +97,7 @@ get(AUTO)
 
 /* ---------- the frame loop ---------- */
 let last = performance.now();
-let lastHud = 0, lastPanel = 0, lastVersion = -1;
+let lastHud = 0, lastPanel = 0, lastVersion = -1, lastTrees = -1;
 const tmpCam = new THREE.PerspectiveCamera();
 const focus = new THREE.Vector3();
 
@@ -161,6 +164,7 @@ function frame(now: number): void {
   Game.tick(dt);
   if (Game.mapVersion !== lastVersion) { lastVersion = Game.mapVersion; terrain.update(); }
   buildings.sync();
+  if (buildings.treesVersion !== lastTrees) { lastTrees = buildings.treesVersion; terrain.setExtraTrees(buildings.trees()); }
   if (Sim.welcomeAt) { // the founding moment: fly over the first doorstep
     if (planner.active) planner.focus(Sim.welcomeAt.x * 0.5, Sim.welcomeAt.y * 0.5);
     Sim.welcomeAt = null;
@@ -198,7 +202,7 @@ function frame(now: number): void {
 
   const range = planner.active ? Math.min(700, planner.dist * 1.6 + 120) : 240;
   stage.update(dt, focus, terrain.lampSpots);
-  terrain.frame(stage.night);
+  terrain.frame(stage.night, stage.camera.position);
   actors.update(dt, focus.x, focus.z, range, now, stage.night);
   stage.render();
 
@@ -239,15 +243,19 @@ setInterval(() => {
   if (document.hidden) Game.catchUp(elapsed);
 }, 1000);
 
-/* first paint */
+/* first paint: build the town, light it, compile every shader off-frame (a cold
+   compile on frame one can stall an integrated GPU long enough to lose the context) */
 terrain.update(true);
 buildings.sync();
-requestAnimationFrame((t) => {
-  last = t;
-  frame(t);
-  const l = $('loading');
-  l.style.opacity = '0';
-  setTimeout(() => l.remove(), 700);
+$('loading-text').textContent = 'Lighting the village…';
+stage.warmUp().finally(() => {
+  requestAnimationFrame((t) => {
+    last = t;
+    frame(t);
+    const l = $('loading');
+    l.style.opacity = '0';
+    setTimeout(() => l.remove(), 700);
+  });
 });
 
 // debugging handle for the console
