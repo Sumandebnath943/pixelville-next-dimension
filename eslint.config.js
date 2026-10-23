@@ -8,6 +8,8 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // sim entities are V1's dynamic objects; typed interfaces come with the typing pass
+      '@typescript-eslint/no-explicit-any': 'warn',
     },
   },
   {

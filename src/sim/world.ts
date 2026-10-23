@@ -15,11 +15,14 @@ export const MSIZE = 11; // mountain footprint (tiles) — mountains are MASSIVE
 
 /* V2: buildings face a side of their plot. 0 = south (V1's only option),
    1 = east, 2 = north, 3 = west. East/west facings swap the footprint. */
-export function footprint(key, f) {
+/* V2: an airport always runs its runway east–west — V1's planes fly along x */
+export function normFacing(key, f): number { return key === 'airport' ? 0 : (f || 0) & 3; }
+export function footprint(key, f?): { w: number; h: number } {
+  f = normFacing(key, f);
   const d = CAT[key];
   return (f & 1) ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
 }
-export function doorOf(x, y, w, h, f) {
+export function doorOf(x, y, w, h, f): { x: number; y: number } {
   switch (f & 3) {
     case 1: return { x: x + w, y: y + (h >> 1) };
     case 2: return { x: x + (w >> 1), y: y - 1 };
@@ -28,7 +31,7 @@ export function doorOf(x, y, w, h, f) {
   }
 }
 /* the plot origin that puts the door of a (key, f) building on tile (tx, ty) */
-export function originForDoor(key, f, tx, ty) {
+export function originForDoor(key, f, tx, ty): { x: number; y: number } {
   const { w, h } = footprint(key, f);
   switch (f & 3) {
     case 1: return { x: tx - w, y: ty - (h >> 1) };
@@ -246,6 +249,7 @@ export const World: any = {
 
   /* ---------- buildings ---------- */
   canPlace(key, x, y, f = 0) {
+    f = normFacing(key, f);
     const d = CAT[key];
     if (!d || !d.building) return false;
     const { w, h } = footprint(key, f);
@@ -269,7 +273,7 @@ export const World: any = {
   },
 
   placeBuilding(key, x, y, instant, f = 0) {
-    f = (f || 0) & 3;
+    f = normFacing(key, f);
     if (!this.canPlace(key, x, y, f)) return null;
     const d = CAT[key];
     const { w, h } = footprint(key, f);
@@ -306,7 +310,7 @@ export const World: any = {
     for (let tries = 0; tries < 140 && roads.length; tries++) {
       const r = roads[(Math.random() * roads.length) | 0];
       const rx = r % GW, ry = (r / GW) | 0;
-      const f = (Math.random() * 4) | 0; // V2: any side may face the street
+      const f = normFacing(key, (Math.random() * 4) | 0); // V2: any side may face the street
       const { x, y } = originForDoor(key, f, rx, ry);
       if (this.canPlace(key, x, y, f)) return { x, y, f };
     }
@@ -357,7 +361,7 @@ export const World: any = {
     for (let tries = 0; tries < 240; tries++) {
       let x, y, ox = 0, oy = 0;
       // V2: each candidate also picks which side of the plot faces the street
-      const f = (Math.random() * 4) | 0;
+      const f = normFacing(key, (Math.random() * 4) | 0);
       const fp = footprint(key, f);
       if (shoreline) {
         const [sx2, sy2] = shoreline[(Math.random() * shoreline.length) | 0];
@@ -408,7 +412,7 @@ export const World: any = {
       const y = 2 + ((Math.random() * (GH - d.h - 5)) | 0);
       const dist = Math.abs(x - cx) + Math.abs(y - cy);
       if (dist < minDist) continue;
-      const f = (Math.random() * 4) | 0;
+      const f = normFacing(key, (Math.random() * 4) | 0);
       if (!this.canPlace(key, x, y, f)) continue;
       const fp = footprint(key, f), door = doorOf(x, y, fp.w, fp.h, f);
       if (this.enterCost(door.x, door.y) === Infinity) continue;

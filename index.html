@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#14182a" />
+    <title>PixelVille — Next Dimension</title>
+    <meta name="description" content="The living village sim, now in 3D: walk, drive and build a village whose people think, remember and vote." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏘️</text></svg>" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="hud">
+      <div id="topbar">
+        <span id="village-name">PixelVille</span>
+        <span id="clock">Day 1 · 07:00</span>
+        <span class="chip" id="chip-season"></span>
+        <span class="chip" id="chip-weather" title="Weather (and what's coming next)"></span>
+        <span class="chip" id="chip-tier" title="Village tier"></span>
+        <span class="stats">
+          <span title="Population">👥 <b id="stat-pop">0</b></span>
+          <span title="Employed / adults">💼 <b id="stat-jobs">0/0</b></span>
+          <span title="Combined household wealth">💰 <b id="stat-wealth">$0</b></span>
+          <span title="Town safety">🛡️ <b id="stat-safe">92%</b></span>
+          <span title="Happiness"><span id="stat-hap-emoji">😊</span> <b id="stat-hap">100%</b></span>
+          <button class="chip" id="stat-leader" title="Village leadership — open the mayor's report">🗳️ Self-governing</button>
+        </span>
+        <span id="speed" title="Game speed (fast-forward in the Planner)">
+          <button data-s="0" title="Pause">⏸</button><button data-s="1" title="1×">▶</button><button data-s="2" title="2×">⏩</button><button data-s="3" title="4×">⏭</button><button data-s="4" title="8×">⏭⏭</button>
+        </span>
+        <span id="filebtns">
+          <button id="btn-planner" title="Planner — rise up and build (P)">🏗️</button>
+          <button id="btn-journal" title="Task book & village news (J)">📖<span id="journal-badge"></span></button>
+          <button id="btn-stats" title="Village history charts">📈</button>
+          <button id="btn-sound" title="Sound on/off">🔊</button>
+          <button id="btn-save" title="Save village">💾</button>
+          <button id="btn-load" title="Load village">📂</button>
+          <button id="btn-new" title="New map">🗺️</button>
+          <button id="btn-settings" title="Settings">⚙️</button>
+          <button id="btn-help" title="Help (F1)">❔</button>
+        </span>
+      </div>
+
+      <aside id="palette"></aside>
+      <div id="hint"></div>
+      <div id="prompt"></div>
+      <div id="streethud">
+        <span id="wallet" title="The Founder's wallet">👛 $120</span>
+        <span id="speedo"></span>
+        <span id="modebadge"></span>
+      </div>
+      <div id="crosshair"></div>
+      <div id="info"></div>
+      <div id="toasts"></div>
+
+      <div id="sc-panel">
+        <div id="tv" title="PVTV — the village news channel">
+          <div id="tv-head"><span>📺 PVTV</span><span class="tv-live"><i></i>LIVE</span></div>
+          <div id="tv-headline">PVTV signs on — good morning!</div>
+          <div id="tv-ticker"><span id="tv-ticker-text">PVTV · village news &amp; markets</span></div>
+        </div>
+        <div id="mapwrap">
+          <canvas id="minimap" width="256" height="256" title="Click to jump (Planner)"></canvas>
+          <div id="rci" title="Demand: Residential · Commercial · Industrial (jobs)">
+            <div class="rci-col"><div class="rci-track"><i id="rci-r"></i></div><b>R</b></div>
+            <div class="rci-col"><div class="rci-track"><i id="rci-c"></i></div><b>C</b></div>
+            <div class="rci-col"><div class="rci-track"><i id="rci-i"></i></div><b>I</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="journal" class="panel">
+        <div class="panel-head"><span>📖 Village Task Book</span><button class="x" data-close="journal">✕</button></div>
+        <div id="journal-tabs"><button data-tab="tasks" class="active">📋 Tasks</button><button data-tab="news">📰 News</button></div>
+        <div id="journal-list"></div>
+      </div>
+
+      <div id="touch">
+        <div id="stick"><i></i></div>
+        <div id="lookpad"></div>
+        <div id="tbtns">
+          <button data-a="jump">⤒</button>
+          <button data-a="interact">E</button>
+          <button data-a="vehicle">🚗</button>
+          <button data-a="camera">👁️</button>
+          <button data-a="planner">🏗️</button>
+          <button data-hold="run">🏃</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modals">
+      <div id="settings" class="modal"><div class="modal-card">
+        <h1>⚙️ Settings</h1>
+        <div class="set-row"><label>Village name</label><input id="set-name" maxlength="24" spellcheck="false" /></div>
+        <div class="set-row"><label>Growth pace</label><select id="set-pace">
+          <option value="cozy">Cozy — slow &amp; steady (recommended)</option><option value="normal">Normal</option><option value="bustling">Bustling — fast growth</option></select></div>
+        <div class="set-row"><label>Christmas fast-forward lock</label><select id="set-xmas">
+          <option value="eve">Only Christmas Eve &amp; Day</option><option value="season">The whole festive week</option><option value="off">Never lock</option></select></div>
+        <div class="set-row"><label>Graphics quality</label><select id="set-quality">
+          <option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+        <div class="set-row"><label>Field of view</label><input id="set-fov" type="range" min="55" max="95" step="1" /></div>
+        <div class="set-row"><label>Look sensitivity</label><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" /></div>
+        <div class="set-row"><label>Invert look up/down</label><input id="set-invert" type="checkbox" /></div>
+        <div class="set-row"><label>Sound volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" /></div>
+        <div class="set-row"><label>Autosave</label><select id="set-autosave">
+          <option value="2">Every 2 minutes</option><option value="5">Every 5 minutes</option><option value="0">Off</option></select></div>
+        <p class="note">Graphics quality applies after a reload.</p>
+        <button class="primary" data-close="settings">Done</button>
+      </div></div>
+
+      <div id="saveui" class="modal"><div class="modal-card">
+        <h1 id="saveui-title">💾 Save village</h1>
+        <div id="saveui-slots"></div>
+        <div class="set-row">
+          <button id="saveui-export">⬇️ Export to file</button>
+          <button id="saveui-import">⬆️ Import file (V1 saves too)</button>
+          <input id="saveui-file" type="file" accept=".json,application/json" hidden />
+        </div>
+        <button data-close="saveui">Close</button>
+      </div></div>
+
+      <div id="newmap" class="modal"><div class="modal-card">
+        <h1>🗺️ Found a new village</h1>
+        <div class="set-row"><label>Village name</label><input id="nm-name" maxlength="24" spellcheck="false" value="PixelVille" /></div>
+        <div class="set-row"><label>Mode</label><select id="nm-mode">
+          <option value="sandbox">Sandbox — no goals, just life</option>
+          <option value="first100">💯 The First Hundred — reach 100 residents</option>
+          <option value="railage">🚂 The Rail Age — get trains running</option>
+          <option value="festive">🕯️ A Year Without Loss — 28 days, no building lost</option></select></div>
+        <div class="row-end"><button data-close="newmap">Cancel</button><button class="primary" id="nm-start">Found the village ▶</button></div>
+      </div></div>
+
+      <div id="statsui" class="modal"><div class="modal-card wide">
+        <h1>📈 Village history</h1>
+        <canvas id="stats-canvas" width="560" height="320"></canvas>
+        <button data-close="statsui">Close</button>
+      </div></div>
+
+      <div id="help" class="modal"><div class="modal-card wide">
+        <h1>🏘️ PixelVille — Next Dimension</h1>
+        <p>You are <b>the Founder</b>: walk your village at street level, drive its roads, and rise into the sky to build — <b>the village figures out the rest</b>. Families move in, find work, fall in love, vote, gossip and remember.</p>
+        <div class="help-grid">
+          <div><h3>🚶 On the street</h3>
+            <p><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look (click the view first)<br />
+            <kbd>V</kbd> first/third person · <kbd>E</kbd> look at a building or villager nearby<br />
+            <kbd>F</kbd> get into / out of your car (it's parked at the Lodge) · <kbd>W/S</kbd> gas &amp; brake · <kbd>Space</kbd> handbrake</p></div>
+          <div><h3>🏗️ The Planner</h3>
+            <p><kbd>P</kbd> rise into the Planner and back down · <kbd>WASD</kbd> glide · wheel zoom · <kbd>Q</kbd>/<kbd>E</kbd> or right-drag rotate<br />
+            Pick from the palette, click to place · <kbd>R</kbd> turns the door side · drag roads, rails, rivers &amp; bulldoze<br />
+            Click any building or villager to inspect · right-click/<kbd>Esc</kbd> cancels · <kbd>Ctrl+Z</kbd> undo · speeds up to 8×</p></div>
+          <div><h3>🎮 Gamepad &amp; touch</h3>
+            <p>Sticks move &amp; look · A jump · X interact · Y car · R3 camera · Start Planner · triggers drive.<br />
+            On phones: left thumb moves, right thumb looks, buttons for the rest. In the Planner, drag to pan and pinch to zoom.</p></div>
+          <div><h3>🛖 Getting started</h3>
+            <p>Open the Planner, drop a <b>house</b> near the highway — a road connects itself and the first family moves in. Add jobs, shops and a school, then come back down and watch the morning commute.</p></div>
+        </div>
+        <button class="primary" data-close="help">Start ▶</button>
+      </div></div>
+    </div>
+
+    <div id="loading"><div>🏘️ PixelVille <small>Next Dimension</small></div><p id="loading-text">Raising the village…</p></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
