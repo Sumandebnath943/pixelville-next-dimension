@@ -1,0 +1,121 @@
+/* ============================================================
+   PixelVille — Next Dimension · the building catalog.
+   Data extracted verbatim from V1 (js/sprites.js CAT) minus the
+   2D draw functions. `building` marks placeable structures
+   (V1 tested `d.draw`); `ex` is V1's sprite overhang in px and
+   doubles as a relative-height hint for the 3D builders.
+   cat: res | work | shop | leisure | civic | transport | nature | tool | hidden
+   hours {s,e} in game-minutes; wkd=true → also open Sundays.
+   ============================================================ */
+
+export interface CatDef {
+  key: string; name: string; emoji: string; cat: string;
+  w?: number; h?: number; ex?: number; vars?: number;
+  building: boolean; founder?: boolean;
+  res?: 'family' | 'block'; fams?: number; cars?: number; rich?: boolean;
+  jobs?: number; hours?: { s: number; e: number }; wkd?: boolean;
+  visit?: 'shop' | 'leisure'; school?: boolean; college?: boolean;
+  noroof?: boolean; smoke?: boolean; needsWater?: boolean; sandOk?: boolean;
+  tool?: string; drag?: boolean;
+}
+
+export const CAT: Record<string, CatDef> = {
+  house: {name:"House",emoji:"🏠",cat:"res",w:2,h:2,ex:10,vars:4,res:"family",cars:1,key:"house",building:true},
+  house2: {name:"Family House +",emoji:"🏠",cat:"hidden",w:2,h:2,ex:20,vars:4,key:"house2",building:true},
+  house3: {name:"Family Villa",emoji:"🏡",cat:"hidden",w:2,h:2,ex:26,vars:4,key:"house3",building:true},
+  cottage: {name:"Cottage",emoji:"🛖",cat:"res",w:2,h:2,ex:8,vars:3,res:"family",cars:1,key:"cottage",building:true},
+  apartment: {name:"Apartments",emoji:"🏢",cat:"res",w:3,h:3,ex:24,vars:3,res:"block",cars:2,key:"apartment",building:true},
+  office: {name:"Office",emoji:"🏬",cat:"work",w:3,h:3,ex:26,jobs:12,hours:{s:480,e:1020},vars:3,key:"office",building:true},
+  skyscraper: {name:"Skyscraper",emoji:"🏙️",cat:"work",w:4,h:4,ex:86,jobs:48,hours:{s:480,e:1050},key:"skyscraper",building:true},
+  factory: {name:"Factory",emoji:"🏭",cat:"work",w:4,h:3,ex:14,jobs:16,hours:{s:420,e:990},smoke:true,key:"factory",building:true},
+  airport: {name:"Airport",emoji:"✈️",cat:"work",w:13,h:8,ex:12,jobs:30,hours:{s:0,e:1440},wkd:true,key:"airport",building:true},
+  farm: {name:"Farm",emoji:"🌾",cat:"work",w:7,h:5,ex:8,jobs:8,hours:{s:360,e:960},wkd:true,key:"farm",building:true},
+  shop: {name:"Shop",emoji:"🏪",cat:"shop",w:2,h:2,ex:8,jobs:3,hours:{s:540,e:1140},wkd:true,visit:"shop",vars:3,key:"shop",building:true},
+  market: {name:"Supermarket",emoji:"🛒",cat:"shop",w:3,h:2,ex:10,jobs:6,hours:{s:480,e:1260},wkd:true,visit:"shop",key:"market",building:true},
+  mall: {name:"Mall",emoji:"🏦",cat:"shop",w:5,h:3,ex:16,jobs:24,hours:{s:540,e:1290},wkd:true,visit:"shop",key:"mall",building:true},
+  restaurant: {name:"Restaurant",emoji:"🍽️",cat:"shop",w:2,h:2,ex:8,jobs:5,hours:{s:660,e:1380},wkd:true,visit:"leisure",key:"restaurant",building:true},
+  cafe: {name:"Café",emoji:"☕",cat:"shop",w:2,h:2,ex:8,jobs:3,hours:{s:420,e:1200},wkd:true,visit:"leisure",key:"cafe",building:true},
+  bakery: {name:"Bakery",emoji:"🥐",cat:"shop",w:2,h:2,ex:8,jobs:3,hours:{s:330,e:1080},wkd:true,visit:"shop",key:"bakery",building:true},
+  hotel: {name:"Hotel",emoji:"🏨",cat:"shop",w:3,h:3,ex:30,jobs:10,hours:{s:0,e:1440},wkd:true,key:"hotel",building:true},
+  bank: {name:"Bank",emoji:"🏛️",cat:"shop",w:3,h:2,ex:12,jobs:6,hours:{s:540,e:1020},key:"bank",building:true},
+  gas: {name:"Gas Station",emoji:"⛽",cat:"shop",w:2,h:2,ex:6,jobs:2,hours:{s:0,e:1440},wkd:true,key:"gas",building:true},
+  school: {name:"School",emoji:"🏫",cat:"civic",w:4,h:3,ex:14,jobs:8,hours:{s:460,e:960},school:true,key:"school",building:true},
+  college: {name:"College",emoji:"🎓",cat:"civic",w:5,h:3,ex:18,jobs:15,hours:{s:520,e:1000},college:true,key:"college",building:true},
+  hospital: {name:"Hospital",emoji:"🏥",cat:"civic",w:4,h:3,ex:20,jobs:14,hours:{s:0,e:1440},wkd:true,key:"hospital",building:true},
+  police: {name:"Police",emoji:"🚓",cat:"civic",w:3,h:2,ex:10,jobs:6,hours:{s:0,e:1440},wkd:true,key:"police",building:true},
+  fire: {name:"Fire Station",emoji:"🚒",cat:"civic",w:3,h:2,ex:10,jobs:6,hours:{s:0,e:1440},wkd:true,key:"fire",building:true},
+  townhall: {name:"Town Hall",emoji:"🏛️",cat:"civic",w:3,h:3,ex:24,jobs:8,hours:{s:510,e:1020},key:"townhall",building:true},
+  church: {name:"Church",emoji:"⛪",cat:"civic",w:3,h:3,ex:34,jobs:3,hours:{s:420,e:1260},wkd:true,visit:"leisure",key:"church",building:true},
+  temple: {name:"Temple",emoji:"⛪",cat:"civic",w:3,h:2,ex:24,hours:{s:480,e:1200},wkd:true,visit:"leisure",key:"temple",building:true},
+  library: {name:"Library",emoji:"📚",cat:"civic",w:3,h:2,ex:10,jobs:4,hours:{s:540,e:1140},visit:"leisure",key:"library",building:true},
+  courthouse: {name:"Courthouse",emoji:"⚖️",cat:"civic",w:4,h:3,ex:18,jobs:10,hours:{s:540,e:1020},key:"courthouse",building:true},
+  park: {name:"Park",emoji:"🌳",cat:"leisure",w:4,h:4,ex:6,hours:{s:360,e:1320},wkd:true,visit:"leisure",noroof:true,key:"park",building:true},
+  playground: {name:"Playground",emoji:"🛝",cat:"leisure",w:2,h:2,ex:6,hours:{s:420,e:1200},wkd:true,visit:"leisure",noroof:true,key:"playground",building:true},
+  amusement: {name:"Amusement Park",emoji:"🎡",cat:"leisure",w:6,h:5,ex:32,jobs:10,hours:{s:600,e:1350},wkd:true,visit:"leisure",noroof:true,key:"amusement",building:true},
+  stadium: {name:"Stadium",emoji:"🏟️",cat:"leisure",w:9,h:6,ex:18,jobs:16,hours:{s:900,e:1380},wkd:true,visit:"leisure",noroof:true,key:"stadium",building:true},
+  cinema: {name:"Cinema",emoji:"🎬",cat:"leisure",w:3,h:3,ex:14,jobs:6,hours:{s:720,e:1410},wkd:true,visit:"leisure",key:"cinema",building:true},
+  theater: {name:"Theater",emoji:"🎭",cat:"leisure",w:3,h:3,ex:14,jobs:6,hours:{s:960,e:1410},visit:"leisure",key:"theater",building:true},
+  museum: {name:"Museum",emoji:"🖼️",cat:"leisure",w:3,h:3,ex:12,jobs:5,hours:{s:600,e:1080},wkd:true,visit:"leisure",key:"museum",building:true},
+  gym: {name:"Gym",emoji:"🏋️",cat:"leisure",w:2,h:2,ex:8,jobs:3,hours:{s:360,e:1320},wkd:true,visit:"leisure",key:"gym",building:true},
+  pool: {name:"Swimming Pool",emoji:"🏊",cat:"leisure",w:3,h:2,ex:6,jobs:2,hours:{s:540,e:1200},wkd:true,visit:"leisure",noroof:true,key:"pool",building:true},
+  rowhouse: {name:"Row Houses",emoji:"🏘️",cat:"res",w:3,h:2,ex:14,vars:3,res:"block",fams:2,cars:1,key:"rowhouse",building:true},
+  mansion: {name:"Mansion",emoji:"🏰",cat:"res",w:3,h:3,ex:22,vars:2,res:"family",cars:2,rich:true,key:"mansion",building:true},
+  steelworks: {name:"Steelworks",emoji:"⚙️",cat:"work",w:5,h:3,ex:18,jobs:22,hours:{s:360,e:1080},smoke:true,key:"steelworks",building:true},
+  sawmill: {name:"Sawmill",emoji:"🪵",cat:"work",w:4,h:3,ex:12,jobs:10,hours:{s:400,e:1020},key:"sawmill",building:true},
+  brickworks: {name:"Brickworks",emoji:"🧱",cat:"work",w:3,h:3,ex:14,jobs:8,hours:{s:400,e:1000},smoke:true,key:"brickworks",building:true},
+  textilemill: {name:"Textile Mill",emoji:"🧶",cat:"work",w:4,h:3,ex:16,jobs:14,hours:{s:420,e:1020},key:"textilemill",building:true},
+  cannery: {name:"Cannery",emoji:"🥫",cat:"work",w:3,h:3,ex:12,jobs:10,hours:{s:420,e:1020},key:"cannery",building:true},
+  glassworks: {name:"Glassworks",emoji:"🫙",cat:"work",w:3,h:3,ex:14,jobs:8,hours:{s:400,e:1000},smoke:true,key:"glassworks",building:true},
+  warehouse: {name:"Warehouse",emoji:"📦",cat:"work",w:4,h:3,ex:12,jobs:6,hours:{s:360,e:1200},wkd:true,key:"warehouse",building:true},
+  powerplant: {name:"Power Plant",emoji:"⚡",cat:"work",w:4,h:4,ex:22,jobs:10,hours:{s:0,e:1440},wkd:true,smoke:true,key:"powerplant",building:true},
+  deptstore: {name:"Departmental Store",emoji:"🏬",cat:"shop",w:4,h:3,ex:26,jobs:18,hours:{s:540,e:1290},wkd:true,visit:"shop",key:"deptstore",building:true},
+  pharmacy: {name:"Pharmacy",emoji:"💊",cat:"shop",w:2,h:2,ex:8,jobs:3,hours:{s:480,e:1260},wkd:true,visit:"shop",key:"pharmacy",building:true},
+  barber: {name:"Barber Shop",emoji:"💈",cat:"shop",w:2,h:2,ex:8,jobs:2,hours:{s:540,e:1140},wkd:true,visit:"shop",key:"barber",building:true},
+  florist: {name:"Florist",emoji:"🌸",cat:"shop",w:2,h:2,ex:8,jobs:2,hours:{s:480,e:1140},wkd:true,visit:"shop",key:"florist",building:true},
+  bookshop: {name:"Bookshop",emoji:"📖",cat:"shop",w:2,h:2,ex:8,jobs:2,hours:{s:540,e:1140},visit:"shop",key:"bookshop",building:true},
+  butcher: {name:"Butcher",emoji:"🥩",cat:"shop",w:2,h:2,ex:8,jobs:3,hours:{s:420,e:1080},visit:"shop",key:"butcher",building:true},
+  tailor: {name:"Tailor",emoji:"🧵",cat:"shop",w:2,h:2,ex:8,jobs:2,hours:{s:540,e:1140},visit:"shop",key:"tailor",building:true},
+  electronics: {name:"Electronics Store",emoji:"📺",cat:"shop",w:2,h:2,ex:10,jobs:4,hours:{s:570,e:1200},wkd:true,visit:"shop",key:"electronics",building:true},
+  toyshop: {name:"Toy Shop",emoji:"🧸",cat:"shop",w:2,h:2,ex:8,jobs:2,hours:{s:540,e:1140},wkd:true,visit:"shop",key:"toyshop",building:true},
+  jeweler: {name:"Jeweler",emoji:"💍",cat:"shop",w:2,h:2,ex:8,jobs:2,hours:{s:600,e:1080},visit:"shop",key:"jeweler",building:true},
+  petshop: {name:"Pet Shop",emoji:"🐾",cat:"shop",w:2,h:2,ex:8,jobs:2,hours:{s:540,e:1140},wkd:true,visit:"shop",key:"petshop",building:true},
+  hardware: {name:"Hardware Store",emoji:"🔨",cat:"shop",w:3,h:2,ex:10,jobs:4,hours:{s:450,e:1140},wkd:true,visit:"shop",key:"hardware",building:true},
+  furniture: {name:"Furniture Store",emoji:"🛋️",cat:"shop",w:3,h:2,ex:12,jobs:5,hours:{s:540,e:1140},visit:"shop",key:"furniture",building:true},
+  icecream: {name:"Ice-cream Parlor",emoji:"🍦",cat:"shop",w:2,h:2,ex:10,jobs:2,hours:{s:600,e:1290},wkd:true,visit:"leisure",key:"icecream",building:true},
+  pizzeria: {name:"Pizzeria",emoji:"🍕",cat:"shop",w:2,h:2,ex:8,jobs:4,hours:{s:660,e:1410},wkd:true,visit:"leisure",key:"pizzeria",building:true},
+  arcade: {name:"Arcade",emoji:"🕹️",cat:"shop",w:2,h:2,ex:12,jobs:3,hours:{s:720,e:1410},wkd:true,visit:"leisure",key:"arcade",building:true},
+  laundry: {name:"Laundromat",emoji:"🧺",cat:"shop",w:2,h:2,ex:8,jobs:2,hours:{s:420,e:1290},wkd:true,visit:"shop",key:"laundry",building:true},
+  autoshop: {name:"Auto Garage",emoji:"🔧",cat:"shop",w:3,h:2,ex:10,jobs:4,hours:{s:480,e:1080},visit:"shop",key:"autoshop",building:true},
+  postoffice: {name:"Post Office",emoji:"📮",cat:"civic",w:2,h:2,ex:10,jobs:4,hours:{s:480,e:1050},key:"postoffice",building:true},
+  busstop: {name:"Bus Stop",emoji:"🚏",cat:"transport",w:2,h:1,ex:10,key:"busstop",building:true},
+  taxistand: {name:"Taxi Stand",emoji:"🚕",cat:"transport",w:2,h:1,ex:10,jobs:4,hours:{s:0,e:1440},wkd:true,key:"taxistand",building:true},
+  trainstation: {name:"Train Station",emoji:"🚉",cat:"transport",w:6,h:3,ex:18,jobs:12,hours:{s:300,e:1380},wkd:true,key:"trainstation",building:true},
+  dock: {name:"Dock",emoji:"⚓",cat:"transport",w:3,h:2,ex:8,jobs:6,hours:{s:360,e:1140},wkd:true,needsWater:true,sandOk:true,key:"dock",building:true},
+  heliport: {name:"Heliport",emoji:"🚁",cat:"transport",w:5,h:5,ex:10,jobs:6,hours:{s:360,e:1260},wkd:true,key:"heliport",building:true},
+  grandpark: {name:"Grand Park",emoji:"🏞️",cat:"leisure",w:7,h:6,ex:8,hours:{s:330,e:1350},wkd:true,visit:"leisure",noroof:true,key:"grandpark",building:true},
+  plaza: {name:"Town Plaza",emoji:"⛲",cat:"leisure",w:4,h:4,ex:4,hours:{s:300,e:1440},wkd:true,visit:"leisure",noroof:true,key:"plaza",building:true},
+  zoo: {name:"Zoo",emoji:"🦁",cat:"leisure",w:6,h:5,ex:10,jobs:8,hours:{s:540,e:1080},wkd:true,visit:"leisure",noroof:true,key:"zoo",building:true},
+  burgerpalace: {name:"Burger Kingdom",emoji:"🍔",cat:"shop",w:4,h:2,ex:12,jobs:6,hours:{s:570,e:1410},wkd:true,visit:"leisure",key:"burgerpalace",building:true},
+  goldenarches: {name:"MacRonny's",emoji:"🍟",cat:"shop",w:4,h:2,ex:12,jobs:6,hours:{s:570,e:1410},wkd:true,visit:"leisure",key:"goldenarches",building:true},
+  crispycluck: {name:"Crispy Cluck Chicken",emoji:"🍗",cat:"shop",w:4,h:2,ex:12,jobs:6,hours:{s:570,e:1410},wkd:true,visit:"leisure",key:"crispycluck",building:true},
+  tacobelle: {name:"Taco Belle",emoji:"🌮",cat:"shop",w:4,h:2,ex:12,jobs:6,hours:{s:570,e:1410},wkd:true,visit:"leisure",key:"tacobelle",building:true},
+  pizzapalace: {name:"Pizza Palace",emoji:"🍕",cat:"shop",w:4,h:2,ex:12,jobs:6,hours:{s:570,e:1410},wkd:true,visit:"leisure",key:"pizzapalace",building:true},
+  casino: {name:"Casino",emoji:"🎰",cat:"leisure",w:3,h:3,ex:22,jobs:10,hours:{s:960,e:1440},wkd:true,visit:"leisure",key:"casino",building:true},
+  carshowroom: {name:"Car Showroom",emoji:"🚗",cat:"shop",w:4,h:2,ex:14,jobs:6,hours:{s:540,e:1140},visit:"shop",key:"carshowroom",building:true},
+  motoshowroom: {name:"Motorcycle Showroom",emoji:"🏍️",cat:"shop",w:2,h:2,ex:12,jobs:4,hours:{s:540,e:1140},visit:"shop",key:"motoshowroom",building:true},
+  teastall: {name:"Tea & Smoke Stall",emoji:"☕",cat:"shop",w:1,h:1,ex:10,jobs:1,hours:{s:300,e:1410},wkd:true,visit:"shop",key:"teastall",building:true},
+  fishmarket: {name:"Fish Market",emoji:"🐟",cat:"shop",w:2,h:2,ex:8,jobs:4,hours:{s:330,e:1020},wkd:true,visit:"shop",needsWater:true,sandOk:true,key:"fishmarket",building:true},
+  boatclub: {name:"Boat Club",emoji:"🚣",cat:"leisure",w:3,h:2,ex:8,jobs:3,hours:{s:420,e:1200},wkd:true,visit:"leisure",needsWater:true,sandOk:true,key:"boatclub",building:true},
+  watertower: {name:"Water Pump & Tower",emoji:"💧",cat:"civic",w:2,h:2,ex:26,jobs:2,hours:{s:0,e:1440},wkd:true,key:"watertower",building:true},
+  tvstation: {name:"TV Station (PVTV)",emoji:"📡",cat:"civic",w:3,h:2,ex:26,jobs:8,hours:{s:0,e:1440},wkd:true,key:"tvstation",building:true},
+  exchange: {name:"Stock Exchange",emoji:"📈",cat:"work",w:3,h:2,ex:16,jobs:14,hours:{s:540,e:990},key:"exchange",building:true},
+  forest: {name:"Forest",emoji:"🌲",cat:"nature",tool:"forest",key:"forest",building:false},
+  pond: {name:"Pond",emoji:"💧",cat:"nature",tool:"pond",key:"pond",building:false},
+  lake: {name:"Lake",emoji:"🌊",cat:"nature",tool:"lake",key:"lake",building:false},
+  river: {name:"River",emoji:"🏞️",cat:"nature",tool:"river",drag:true,key:"river",building:false},
+  mountain: {name:"Mountain",emoji:"⛰️",cat:"nature",tool:"mountain",key:"mountain",building:false},
+  road: {name:"Road",emoji:"🛣️",cat:"tool",tool:"road",drag:true,key:"road",building:false},
+  rail: {name:"Railway",emoji:"🛤️",cat:"transport",tool:"rail",drag:true,key:"rail",building:false},
+  bulldoze: {name:"Bulldoze",emoji:"🚜",cat:"tool",tool:"bulldoze",drag:true,key:"bulldoze",building:false},
+  lodge: {name:"Founder's Lodge",emoji:"🛖",cat:"hidden",w:2,h:2,ex:12,key:"lodge",building:true,founder:true},
+};

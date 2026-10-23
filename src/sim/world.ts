@@ -1,0 +1,1027 @@
+// @ts-nocheck — ported verbatim from PixelVille V1 js/world.js (see docs/DESIGN.md §3);
+// typing pass pending. Behaviour changes for 3D are marked "V2:".
+import { mulberry32 } from './core';
+import { CAT } from './catalog';
+import { Tasks } from './tasks';
+import { Life } from './life';
+/* ============================================================
+   PixelVille — world grid, terrain, placement, auto-roads.
+   Ground types: 0 grass, 1 water, 2 rock, 3 sand (beach).
+   ============================================================ */
+
+export const GW = 256, GH = 256; // V2: 128² → 256² (1 tile = 8 m, ~2 km across)
+export const G_GRASS = 0, G_WATER = 1, G_ROCK = 2, G_SAND = 3;
+export const MSIZE = 11; // mountain footprint (tiles) — mountains are MASSIVE now
+
+/* V2: buildings face a side of their plot. 0 = south (V1's only option),
+   1 = east, 2 = north, 3 = west. East/west facings swap the footprint. */
+export function footprint(key, f) {
+  const d = CAT[key];
+  return (f & 1) ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
+}
+export function doorOf(x, y, w, h, f) {
+  switch (f & 3) {
+    case 1: return { x: x + w, y: y + (h >> 1) };
+    case 2: return { x: x + (w >> 1), y: y - 1 };
+    case 3: return { x: x - 1, y: y + (h >> 1) };
+    default: return { x: x + (w >> 1), y: y + h };
+  }
+}
+/* the plot origin that puts the door of a (key, f) building on tile (tx, ty) */
+export function originForDoor(key, f, tx, ty) {
+  const { w, h } = footprint(key, f);
+  switch (f & 3) {
+    case 1: return { x: tx - w, y: ty - (h >> 1) };
+    case 2: return { x: tx - (w >> 1), y: ty + 1 };
+    case 3: return { x: tx + 1, y: ty - (h >> 1) };
+    default: return { x: tx - (w >> 1), y: ty - h };
+  }
+}
+
+
+export const World: any = {
+  name: 'PixelVille',                  // the village's name — travels with the save
+  ground: new Uint8Array(GW * GH),
+  tree: new Uint8Array(GW * GH),      // 0 none, 1..3 tree variant
+  roadMap: new Uint8Array(GW * GH),   // 0/1
+  railMap: new Uint8Array(GW * GH),   // 0/1 — railway tracks
+  reserved: new Uint8Array(GW * GH),  // 0/1 — held for festival stalls etc; roads route around
+  bmap: new Int16Array(GW * GH),      // building index + 1
+  buildings: [],
+  mountains: [],                       // {x,y} 3x3 rock + peak sprite
+  nextId: 1,
+  dirty: true,                         // ground layer needs re-render
+  railStamp: 0,                        // bumped on every rail edit (train line re-check)
+  roadStamp: 0,                        // bumped on every road edit (bus routes re-check)
+  waterStamp: 0,                       // bumped on water edits (ferry route re-check)
+  signals: new Set(),                  // road-junction tiles governed by traffic lights
+  crossings: new Set(),                // rail-over-road tiles with level-crossing gates
+  onChange: null,                      // callback
+
+  idx(x, y) { return y * GW + x; },
+  inB(x, y) { return x >= 0 && y >= 0 && x < GW && y < GH; },
+  /* traffic-signal phase runs on REAL time (8s each way) so lights read as
+     lights at every game speed instead of strobing under fast-forward */
+  nsGreen() { return Math.floor(performance.now() / 8000) % 2 === 0; },
+  isRoad(x, y) { return this.inB(x, y) && this.roadMap[this.idx(x, y)] === 1; },
+  isRail(x, y) { return this.inB(x, y) && this.railMap[this.idx(x, y)] === 1; },
+
+  reset() {
+    this.ground.fill(0); this.tree.fill(0); this.roadMap.fill(0); this.railMap.fill(0); this.bmap.fill(0);
+    this.reserved.fill(0);
+    this.buildings = []; this.mountains = []; this.nextId = 1; this.dirty = true; this.railStamp++;
+    this.roadStamp++; this.waterStamp++; // V2: a new map must invalidate the path caches
+    this.signals.clear(); this.crossings.clear();
+    this.highway = null; this.signalHeads = [];
+  },
+
+  /* ---------- reserved ground (festival stalls, temporary set-pieces) ----------
+     Auto-roads route around reserved tiles and can't be paved over them, so a
+     Christmas market never ends up with a street running through it. Only open
+     grass is ever reserved, so existing roads are untouched. */
+  reserveRect(x, y, w, h) {
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      if (!this.inB(x + i, y + j)) continue;
+      const k = this.idx(x + i, y + j);
+      if (this.ground[k] === G_GRASS && !this.roadMap[k] && !this.railMap[k] && !this.bmap[k]) this.reserved[k] = 1;
+    }
+    this.dirty = true;
+  },
+  clearReserved() { this.reserved.fill(0); this.dirty = true; },
+
+  /* ---------- initial scenery ---------- */
+  /* V2: the starter map is generated for 256² — four times V1's land, the
+     same ingredients. `keep` (a tile rect) is left blank so an imported V1
+     village can be stamped into it. Highways are laid before mountains so
+     the massifs never cut the roads into town. */
+  genStarterMap(seed, keep) {
+    this.reset();
+    const R = mulberry32(seed || (Math.random() * 1e9) | 0);
+    const MX = GW >> 1, MY = GH >> 1;
+    const kept = (x, y, pad) => !!keep && x >= keep.x - pad && y >= keep.y - pad &&
+      x < keep.x + keep.w + pad && y < keep.y + keep.h + pad;
+    const central = (x, y, r) => !keep && Math.abs(x - MX) < r && Math.abs(y - MY) < r;
+    // forest clusters (kept away from the center build zone)
+    for (let c = 0; c < 110; c++) {
+      const cx = 4 + Math.floor(R() * (GW - 8)), cy = 4 + Math.floor(R() * (GH - 8));
+      if (central(cx, cy, 24) || kept(cx, cy, 5)) continue;
+      const r = 2 + R() * 3.5;
+      for (let y = -5; y <= 5; y++) for (let x = -5; x <= 5; x++) {
+        if (x * x + y * y > r * r || R() < 0.35) continue;
+        const tx = cx + x, ty = cy + y;
+        if (this.inB(tx, ty) && this.ground[this.idx(tx, ty)] === G_GRASS)
+          this.tree[this.idx(tx, ty)] = 1 + Math.floor(R() * 6);
+      }
+    }
+    // lakes
+    for (let k = 0; k < 7; k++) {
+      const lx = 14 + Math.floor(R() * (GW - 28)), ly = 12 + Math.floor(R() * (GH - 50));
+      if (central(lx, ly, 34) || kept(lx, ly, 10)) continue;
+      this.stampLake(lx, ly, 4 + R() * 3.5, 3 + R() * 2.5, R);
+    }
+    // a river down the east side into the sea
+    this.carveRiver(GW - 18 - Math.floor(R() * 14), 2 + Math.floor(R() * 8), GW - 70 + Math.floor(R() * 26), GH - 4, R);
+    // V2: highways — V1's country roads become the routes in from the west and
+    // north edges (the off-map gateways), reaching toward the build zone
+    const ry = MY - 8 + Math.floor(R() * 16);
+    for (let x = 0; x < MX - 34; x++) if (!kept(x, ry, 0) && this.enterCost(x, ry) !== Infinity) this.setRoadWide(x, ry, true);
+    const rx = MX - 10 + Math.floor(R() * 20);
+    for (let y = 0; y < MY - 34; y++) if (!kept(rx, y, 0) && this.enterCost(rx, y) !== Infinity) this.setRoadWide(rx, y, false);
+    this.highway = { west: { x: 0, y: ry }, north: { x: rx, y: 0 } };
+    // imposing mountain ranges, each two massive massifs
+    const ranges = [
+      [8 + Math.floor(R() * 20), MY + 26 + Math.floor(R() * 30)],
+      [14 + Math.floor(R() * 30), 10 + Math.floor(R() * 24)],
+      [GW - 64 - Math.floor(R() * 24), 30 + Math.floor(R() * 30)],
+    ];
+    for (const [mx, my] of ranges) {
+      if (kept(mx, my, MSIZE + 8)) continue;
+      this.placeMountain(mx, my);
+      this.placeMountain(mx + 12, my + 6);
+    }
+    // large dense forests spread across the map, each with its own species
+    for (let f = 0; f < 14; f++) {
+      const fx = 10 + Math.floor(R() * (GW - 20)), fy = 8 + Math.floor(R() * (GH - 36));
+      if (central(fx, fy, 26) || kept(fx, fy, 12)) continue; // keep the centre buildable
+      const species = 1 + Math.floor(R() * 6);
+      const fr = 7 + R() * 5;
+      for (let y = -Math.ceil(fr) - 1; y <= fr + 1; y++) for (let x = -Math.ceil(fr) - 1; x <= fr + 1; x++) {
+        const d = x * x + y * y;
+        if (d > fr * fr * (0.8 + R() * 0.4) || R() < 0.16) continue;
+        const tx = fx + x, ty = fy + y;
+        if (!this.inB(tx, ty)) continue;
+        const k = this.idx(tx, ty);
+        if (this.ground[k] === G_GRASS && !this.roadMap[k] && !this.bmap[k])
+          this.tree[k] = R() < 0.75 ? species : 1 + Math.floor(R() * 6);
+      }
+    }
+    // the sea along the southern edge, with a broad sandy beach
+    this.carveSea(R);
+    this.dirty = true;
+  },
+
+  /* a sea fills the southern rim; a wavy white-gold beach runs above it */
+  carveSea(R) {
+    R = R || Math.random;
+    const base = GH - 12; // average waterline row (V2: a deeper bay on the bigger map)
+    for (let x = 0; x < GW; x++) {
+      const wave = Math.sin(x * 0.028) * 3.6 + Math.sin(x * 0.09 + 4) * 2;
+      const waterY = Math.round(base + wave);
+      const sandY = waterY - (4 + Math.round(Math.sin(x * 0.045 + 2) * 1.5 + R() * 1.5));
+      for (let y = sandY; y < GH; y++) {
+        if (!this.inB(x, y) || !this.clearForTerrain(x, y)) continue;
+        const i = this.idx(x, y);
+        if (this.ground[i] === G_ROCK) continue;
+        this.ground[i] = y >= waterY ? G_WATER : G_SAND;
+        this.tree[i] = 0;
+      }
+    }
+    this.dirty = true;
+  },
+
+  /* ---------- terrain stamps ---------- */
+  clearForTerrain(x, y) { // only grass (w/ trees) may become water/rock
+    if (!this.inB(x, y)) return false;
+    const i = this.idx(x, y);
+    return this.bmap[i] === 0 && this.roadMap[i] === 0;
+  },
+  stampWaterDisc(cx, cy, r) {
+    for (let y = Math.floor(-r); y <= r; y++) for (let x = Math.floor(-r); x <= r; x++)
+      if (x * x + y * y <= r * r && this.clearForTerrain(cx + x, cy + y)) {
+        const i = this.idx(cx + x, cy + y);
+        this.ground[i] = G_WATER; this.tree[i] = 0;
+      }
+    this.dirty = true;
+  },
+  stampLake(cx, cy, rx, ry, R) {
+    R = R || Math.random;
+    for (let y = -Math.ceil(ry) - 1; y <= ry + 1; y++) for (let x = -Math.ceil(rx) - 1; x <= rx + 1; x++) {
+      const d = (x * x) / (rx * rx) + (y * y) / (ry * ry);
+      if (d <= 1 + (R() - 0.5) * 0.35 && this.clearForTerrain(cx + x, cy + y)) {
+        const i = this.idx(cx + x, cy + y);
+        this.ground[i] = G_WATER; this.tree[i] = 0;
+      }
+    }
+    this.dirty = true;
+  },
+  carveRiver(x0, y0, x1, y1, R) {
+    R = R || Math.random;
+    let x = x0, y = y0, guard = 0;
+    while ((Math.abs(x - x1) > 1 || Math.abs(y - y1) > 1) && guard++ < 900) {
+      const wide = R() < 0.3 ? 1.6 : 1.1;
+      this.stampWaterDisc(Math.round(x), Math.round(y), wide);
+      const ang = Math.atan2(y1 - y, x1 - x) + (R() - 0.5) * 1.5;
+      x += Math.cos(ang); y += Math.sin(ang);
+      x = Math.max(1, Math.min(GW - 2, x)); y = Math.max(1, Math.min(GH - 2, y));
+    }
+    this.dirty = true;
+  },
+  placeMountain(x, y) { // 5x5 rock footprint + big range sprite
+    for (let j = 0; j < MSIZE; j++) for (let i = 0; i < MSIZE; i++) {
+      if (!this.inB(x + i, y + j)) return false;
+      if (!this.clearForTerrain(x + i, y + j)) return false;
+    }
+    for (let j = 0; j < MSIZE; j++) for (let i = 0; i < MSIZE; i++) {
+      const k = this.idx(x + i, y + j);
+      this.ground[k] = G_ROCK; this.tree[k] = 0;
+    }
+    this.mountains.push({ x, y, v: this.mountains.length % 3 });
+    this.dirty = true;
+    return true;
+  },
+  placeTree(x, y) {
+    if (!this.inB(x, y)) return false;
+    const i = this.idx(x, y);
+    if (this.ground[i] !== G_GRASS || this.bmap[i] || this.roadMap[i]) return false;
+    this.tree[i] = 1 + Math.floor(Math.random() * 6);
+    this.dirty = true;
+    return true;
+  },
+  placeForest(cx, cy) {
+    let n = 0;
+    for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++)
+      if (x * x + y * y <= 9 && Math.random() < 0.55 && this.placeTree(cx + x, cy + y)) n++;
+    return n;
+  },
+
+  /* ---------- buildings ---------- */
+  canPlace(key, x, y, f = 0) {
+    const d = CAT[key];
+    if (!d || !d.building) return false;
+    const { w, h } = footprint(key, f);
+    const door = doorOf(x, y, w, h, f);
+    if (x < 0 || y < 0 || x + w > GW || y + h > GH || !this.inB(door.x, door.y)) return false; // door tile on the map
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const k = this.idx(x + i, y + j);
+      const g = this.ground[k];
+      const groundOk = g === G_GRASS || (d.sandOk && g === G_SAND);
+      if (!groundOk || this.bmap[k] || this.roadMap[k] || this.railMap[k]) return false;
+    }
+    if (d.needsWater) { // docks must touch water on at least one side
+      let wet = false;
+      for (let j = -1; j <= h && !wet; j++) for (let i = -1; i <= w && !wet; i++) {
+        if (i >= 0 && i < w && j >= 0 && j < h) continue;
+        if (this.inB(x + i, y + j) && this.ground[this.idx(x + i, y + j)] === G_WATER) wet = true;
+      }
+      if (!wet) return false;
+    }
+    return true;
+  },
+
+  placeBuilding(key, x, y, instant, f = 0) {
+    f = (f || 0) & 3;
+    if (!this.canPlace(key, x, y, f)) return null;
+    const d = CAT[key];
+    const { w, h } = footprint(key, f);
+    const b = {
+      id: this.nextId++, type: key, x, y, w, h, facing: f,
+      variant: Math.floor(Math.random() * (d.vars || 1)),
+      door: doorOf(x, y, w, h, f),
+      connected: false, visitors: 0, inside: 0, parked: 0,
+      residents: [], workers: [], jobs: d.jobs || 0, cars: [],
+      level: 1, funds: 0, ruined: false, fire: 0,
+      // building work scales with footprint: a cottage goes up in a morning,
+      // a stadium is a season-long project
+      construction: instant ? 0 : 40 + d.w * d.h * 22,
+      upgrading: 0, renovating: 0,
+    };
+    b.conTotal = b.construction; // V2: lets the renderer show how far the site has risen
+    this.buildings.push(b);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const k = this.idx(x + i, y + j);
+      this.bmap[k] = this.buildings.length; // index+1
+      this.tree[k] = 0;
+    }
+    b.connected = this.connectRoad(b);
+    this.dirty = true;
+    if (b.construction > 0)
+      Tasks.add('b' + b.id, '🏗️', `Build the ${d.name}`);
+    return b;
+  },
+
+  /* spot for city-driven growth: footprint whose door lands on an existing road */
+  findBuildSpot(key) {
+    const roads = [];
+    for (let i = 0; i < this.roadMap.length; i++) if (this.roadMap[i]) roads.push(i);
+    for (let tries = 0; tries < 140 && roads.length; tries++) {
+      const r = roads[(Math.random() * roads.length) | 0];
+      const rx = r % GW, ry = (r / GW) | 0;
+      const f = (Math.random() * 4) | 0; // V2: any side may face the street
+      const { x, y } = originForDoor(key, f, rx, ry);
+      if (this.canPlace(key, x, y, f)) return { x, y, f };
+    }
+    return null;
+  },
+
+  /* ---------- CITY PLANNING ----------
+     Villagers and town hall no longer drop buildings on any free plot.
+     Candidate spots along the road network are scored so that industry
+     keeps away from homes, shops sit where customers live, services of
+     the same kind spread across districts, and coverage targets (a new
+     police or fire station for an underserved area) are honoured. */
+  findPlannedSpot(key, target) {
+    const d = CAT[key];
+    if (!d || !d.building) return this.findBuildSpot(key);
+    const roads = [];
+    for (let i = 0; i < this.roadMap.length; i++) if (this.roadMap[i]) roads.push(i);
+    if (!roads.length) return null;
+    const HEAVY = ['factory', 'steelworks', 'sawmill', 'brickworks', 'textilemill', 'cannery',
+      'glassworks', 'warehouse', 'powerplant', 'airport', 'farm'];
+    const isHeavy = HEAVY.includes(key);
+    const isRes = !!d.res;
+    const homes = this.buildings.filter(b => CAT[b.type].res && !b.ruined);
+    const heavies = this.buildings.filter(b => HEAVY.includes(b.type) && !b.ruined);
+    const sameType = this.buildings.filter(b => b.type === key && !b.ruined);
+    const nearestDist = (list, x, y) => {
+      let best = 99;
+      for (const b of list) best = Math.min(best, Math.abs(b.x - x) + Math.abs(b.y - y));
+      return best;
+    };
+    // waterfront buildings (docks) hug the shoreline instead of the streets
+    let shoreline = null;
+    if (d.needsWater) {
+      shoreline = [];
+      for (let i = 0; i < this.ground.length; i++) {
+        if (this.ground[i] !== G_WATER) continue;
+        const wx = i % GW, wy = (i / GW) | 0;
+        for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+          const nx = wx + dx, ny = wy + dy;
+          if (!this.inB(nx, ny)) continue;
+          const ng = this.ground[this.idx(nx, ny)];
+          if (ng === G_GRASS || (d.sandOk && ng === G_SAND)) { shoreline.push([nx, ny]); break; }
+        }
+      }
+      if (!shoreline.length) return null;
+    }
+    let bestSpot = null, bestScore = -Infinity;
+    for (let tries = 0; tries < 240; tries++) {
+      let x, y, ox = 0, oy = 0;
+      // V2: each candidate also picks which side of the plot faces the street
+      const f = (Math.random() * 4) | 0;
+      const fp = footprint(key, f);
+      if (shoreline) {
+        const [sx2, sy2] = shoreline[(Math.random() * shoreline.length) | 0];
+        x = sx2 - ((Math.random() * fp.w) | 0); y = sy2 - ((Math.random() * fp.h) | 0);
+      } else {
+        const r = roads[(Math.random() * roads.length) | 0];
+        const rx = r % GW, ry = (r / GW) | 0;
+        // build NEAR the road network, not only exactly on it — the auto-road
+        // then extends a street to the new door, and the town grows outward
+        const spread = 1 + ((tries / 40) | 0); // widen the search when land gets tight
+        ox = ((Math.random() * (5 + spread * 4)) | 0) - (2 + spread * 2);
+        oy = ((Math.random() * (5 + spread * 4)) | 0) - (2 + spread * 2);
+        ({ x, y } = originForDoor(key, f, rx + ox, ry + oy));
+      }
+      if (!this.canPlace(key, x, y, f)) continue;
+      const door = doorOf(x, y, fp.w, fp.h, f);
+      const doorX = door.x, doorY = door.y;
+      if (this.enterCost(doorX, doorY) === Infinity) continue; // door must be connectable
+      let score = Math.random() * 3; // a pinch of organic randomness
+      if (this.isRoad(doorX, doorY)) score += 2.5; // V2: fronts that open straight onto the street read best
+      score -= (Math.abs(ox) + Math.abs(oy)) * 0.6; // compact streets beat lonely outposts
+      if (target) score -= (Math.abs(x - target.x) + Math.abs(y - target.y)) * 1.6; // coverage gap wants it HERE
+      if (isHeavy) {
+        score += Math.min(nearestDist(homes, x, y), 20) * 1.5;     // industry far from homes
+        score += Math.min(nearestDist(sameType, x, y) * 0.3, 4);   // light clustering is fine
+      } else if (isRes) {
+        score += Math.min(nearestDist(heavies, x, y), 16) * 1.3;   // homes far from industry
+        score += Math.max(0, 20 - nearestDist(homes, x, y)) * 0.5; // but near the neighbourhood
+      } else {
+        // shops, civic & leisure: walkable from homes, spread from twins
+        score += Math.max(0, 26 - nearestDist(homes, x, y)) * 0.9;
+        score += Math.min(nearestDist(sameType, x, y), 14) * 1.1;
+        score += Math.min(nearestDist(heavies, x, y), 10) * 0.4;
+      }
+      if (score > bestScore) { bestScore = score; bestSpot = { x, y, f }; }
+    }
+    return bestSpot || this.findBuildSpot(key);
+  },
+
+  /* pioneers strike out for the far countryside: a buildable plot at least
+     `minDist` manhattan-tiles from (cx, cy) whose door a road can reach */
+  findRemoteSpot(key, cx, cy, minDist) {
+    const d = CAT[key];
+    if (!d || !d.building) return null;
+    let best = null, bestD = -1;
+    for (let tries = 0; tries < 300; tries++) {
+      const x = 2 + ((Math.random() * (GW - d.w - 4)) | 0);
+      const y = 2 + ((Math.random() * (GH - d.h - 5)) | 0);
+      const dist = Math.abs(x - cx) + Math.abs(y - cy);
+      if (dist < minDist) continue;
+      const f = (Math.random() * 4) | 0;
+      if (!this.canPlace(key, x, y, f)) continue;
+      const fp = footprint(key, f), door = doorOf(x, y, fp.w, fp.h, f);
+      if (this.enterCost(door.x, door.y) === Infinity) continue;
+      if (dist > bestD) { bestD = dist; best = { x, y, f }; }
+      if (best && tries > 120) break; // good enough — pioneers aren't picky
+    }
+    return best;
+  },
+
+  /* ---------- railway ---------- */
+  setRail(x, y) {
+    if (!this.inB(x, y)) return;
+    const i = this.idx(x, y);
+    if (this.railMap[i]) return;
+    // rails cross grass, sand and roads (level crossings) and BRIDGE water
+    // on trestles — only rock and buildings stop the line
+    if (this.bmap[i] || this.ground[i] === G_ROCK) return;
+    this.railMap[i] = 1; this.tree[i] = 0; this.railStamp++;
+    this.dirty = true;
+  },
+  layRailLine(x0, y0, x1, y1) {
+    const sx = Math.sign(x1 - x0) || 1, sy = Math.sign(y1 - y0) || 1;
+    for (let x = x0; x !== x1 + sx; x += sx) this.setRail(x, y0);
+    for (let y = y0; y !== y1 + sy; y += sy) this.setRail(x1, y);
+  },
+  railMask(x, y) {
+    let m = 0;
+    if (this.isRail(x, y - 1)) m |= 1;
+    if (this.isRail(x + 1, y)) m |= 2;
+    if (this.isRail(x, y + 1)) m |= 4;
+    if (this.isRail(x - 1, y)) m |= 8;
+    return m;
+  },
+  railPath(ax, ay, bx, by) {
+    if (!this.isRail(ax, ay) || !this.isRail(bx, by)) return null;
+    return this._bfs(ax, ay, bx, by, (x, y) => this.isRail(x, y));
+  },
+
+  /* ---------- government railway builder ----------
+     Lays a full track between two tiles, routing around rock and
+     buildings, bridging water and crossing roads. Returns tile count
+     laid, or -1 when no route exists. */
+  railEnterCost(x, y) {
+    if (!this.inB(x, y)) return Infinity;
+    const i = this.idx(x, y);
+    if (this.bmap[i]) return Infinity;
+    if (this.railMap[i]) return 0.1;   // reuse existing track
+    const g = this.ground[i];
+    if (g === G_ROCK) return Infinity;
+    if (g === G_WATER) return 5;       // trestle bridges are expensive
+    if (this.roadMap[i]) return 2.5;   // level crossings disliked
+    return this.tree[i] ? 1.8 : 1;
+  },
+  connectRail(x0, y0, x1, y1) {
+    if (this.railEnterCost(x0, y0) === Infinity || this.railEnterCost(x1, y1) === Infinity) return -1;
+    const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    const NS = GW * GH * 4;
+    const dist = new Float64Array(NS).fill(Infinity);
+    const prev = new Int32Array(NS).fill(-1);
+    const heap = [];
+    const push = (c, s) => {
+      heap.push([c, s]);
+      let i = heap.length - 1;
+      while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; }
+    };
+    const pop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          let m = i; const l = 2 * i + 1, r = l + 1;
+          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+          if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
+        }
+      }
+      return top;
+    };
+    for (let d = 0; d < 4; d++) { const s = this.idx(x0, y0) * 4 + d; dist[s] = 0; push(0, s); }
+    const goalTile = this.idx(x1, y1);
+    let goal = -1;
+    while (heap.length) {
+      const [c, s] = pop();
+      if (c > dist[s]) continue;
+      const tile = s >> 2, sd = s & 3;
+      if (tile === goalTile) { goal = s; break; }
+      const tx = tile % GW, ty = (tile / GW) | 0;
+      for (let nd = 0; nd < 4; nd++) {
+        const nx = tx + DIRS[nd][0], ny = ty + DIRS[nd][1];
+        const ec = this.railEnterCost(nx, ny);
+        if (ec === Infinity) continue;
+        const turn = nd === sd ? 0 : 1.4; // railways love straight lines
+        const ns = this.idx(nx, ny) * 4 + nd;
+        const ncost = c + ec + turn;
+        if (ncost < dist[ns]) { dist[ns] = ncost; prev[ns] = s; push(ncost, ns); }
+      }
+    }
+    if (goal < 0) return -1;
+    let laid = 0, s = goal;
+    while (s >= 0) {
+      const tile = s >> 2;
+      const tx = tile % GW, ty = (tile / GW) | 0;
+      if (!this.railMap[tile]) laid++;
+      this.setRail(tx, ty);
+      s = prev[s];
+    }
+    return laid;
+  },
+  /* boats & ferries steam along connected water */
+  waterPath(ax, ay, bx, by) {
+    const wet = (x, y) => this.inB(x, y) && this.ground[this.idx(x, y)] === G_WATER;
+    if (!wet(ax, ay) || !wet(bx, by)) return null;
+    return this._bfs(ax, ay, bx, by, wet);
+  },
+  _bfs(ax, ay, bx, by, pass) {
+    if (ax === bx && ay === by) return [[ax, ay]];
+    const prev = new Int32Array(GW * GH).fill(-1);
+    const start = this.idx(ax, ay), goal = this.idx(bx, by);
+    prev[start] = start;
+    const q = [start];
+    let qi = 0;
+    while (qi < q.length) {
+      const cur = q[qi++];
+      if (cur === goal) break;
+      const cx = cur % GW, cy = (cur / GW) | 0;
+      for (const [ddx, ddy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+        const nx = cx + ddx, ny = cy + ddy;
+        if (!pass(nx, ny)) continue;
+        const ni = this.idx(nx, ny);
+        if (prev[ni] !== -1) continue;
+        prev[ni] = cur;
+        q.push(ni);
+      }
+    }
+    if (prev[goal] === -1) return null;
+    const path = [];
+    let cur = goal;
+    while (cur !== start) { path.push([cur % GW, (cur / GW) | 0]); cur = prev[cur]; }
+    path.push([ax, ay]);
+    path.reverse();
+    return path;
+  },
+
+  removeBuilding(b) {
+    const bi = this.buildings.indexOf(b);
+    if (bi < 0) return;
+    // close any journal entries tied to this building so they can't dangle
+    {
+      if (b.construction > 0) Tasks.done('b' + b.id, false, `${CAT[b.type].name} construction cancelled`);
+      if (b.fire) Tasks.done('fire' + b.id, false, `The burning ${CAT[b.type].name} was demolished`);
+    }
+    this.buildings.splice(bi, 1);
+    // rebuild bmap indices
+    this.bmap.fill(0);
+    for (let n = 0; n < this.buildings.length; n++) {
+      const q = this.buildings[n];
+      for (let j = 0; j < q.h; j++) for (let i = 0; i < q.w; i++)
+        this.bmap[this.idx(q.x + i, q.y + j)] = n + 1;
+    }
+    this.dirty = true;
+  },
+
+  buildingAt(x, y) {
+    if (!this.inB(x, y)) return null;
+    const v = this.bmap[this.idx(x, y)];
+    return v ? this.buildings[v - 1] : null;
+  },
+
+  /* ---------- AUTO-ROAD: A* with terrain costs & turn penalty ----------
+     Roads prefer reusing existing roads, avoid water (bridges cost more),
+     and cannot cross rock/buildings — so they carve AROUND mountains. */
+  enterCost(x, y) {
+    if (!this.inB(x, y)) return Infinity;
+    const i = this.idx(x, y);
+    if (this.bmap[i]) return Infinity;
+    if (this.roadMap[i]) return 0.15;
+    if (this.reserved[i]) return Infinity; // festival ground — roads go around
+    const g = this.ground[i];
+    if (g === G_ROCK) return Infinity;
+    if (g === G_WATER) return 7;
+    if (g === G_SAND) return 1.5;
+    return this.tree[i] ? 1.8 : 1;
+  },
+
+  anyRoadExists() {
+    for (let i = 0; i < this.roadMap.length; i++) if (this.roadMap[i]) return true;
+    return false;
+  },
+
+  connectRoad(b) {
+    const dx = b.door.x, dy = b.door.y;
+    if (this.isRoad(dx, dy)) return true;
+    if (this.enterCost(dx, dy) === Infinity) return false;
+
+    if (!this.anyRoadExists()) { // seed the first road segment (a proper avenue)
+      this.setRoadWide(dx, dy, true);
+      for (const dir of [-1, 1]) {
+        for (let s = 1; s <= 3; s++) {
+          const x = dx + dir * s;
+          if (this.inB(x, dy) && this.enterCost(x, dy) <= 1.8 && this.ground[this.idx(x, dy)] === G_GRASS)
+            this.setRoadWide(x, dy, true);
+          else break;
+        }
+      }
+      return true;
+    }
+
+    // Dijkstra over (tile, direction) states with a small turn penalty
+    const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    const NS = GW * GH * 4;
+    const dist = new Float64Array(NS).fill(Infinity);
+    const prev = new Int32Array(NS).fill(-1);
+    // tiny binary heap
+    const heap = []; // [cost, state]
+    const push = (c, s) => {
+      heap.push([c, s]);
+      let i = heap.length - 1;
+      while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; }
+    };
+    const pop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          let m = i; const l = 2 * i + 1, r = l + 1;
+          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+          if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
+        }
+      }
+      return top;
+    };
+    for (let d = 0; d < 4; d++) {
+      const s = (this.idx(dx, dy)) * 4 + d;
+      dist[s] = 0; push(0, s);
+    }
+    let goal = -1;
+    while (heap.length) {
+      const [c, s] = pop();
+      if (c > dist[s]) continue;
+      const tile = s >> 2, sd = s & 3;
+      const tx = tile % GW, ty = (tile / GW) | 0;
+      if (this.roadMap[tile] && !(tx === dx && ty === dy)) { goal = s; break; }
+      for (let nd = 0; nd < 4; nd++) {
+        const nx = tx + DIRS[nd][0], ny = ty + DIRS[nd][1];
+        const ec = this.enterCost(nx, ny);
+        if (ec === Infinity) continue;
+        const turn = nd === sd ? 0 : 0.45;
+        const ns = this.idx(nx, ny) * 4 + nd;
+        const ncost = c + ec + turn;
+        if (ncost < dist[ns]) { dist[ns] = ncost; prev[ns] = s; push(ncost, ns); }
+      }
+    }
+    if (goal < 0) return false;
+    // trace back, lay a two-lane road (the direction of travel tells us
+    // which side to widen toward)
+    let s = goal;
+    while (s >= 0) {
+      const tile = s >> 2, sd = s & 3;
+      this.setRoadWide(tile % GW, (tile / GW) | 0, sd === 1 || sd === 3);
+      s = prev[s];
+    }
+    return true;
+  },
+
+  setRoad(x, y) {
+    if (!this.inB(x, y)) return;
+    const i = this.idx(x, y);
+    if (this.bmap[i] || this.ground[i] === G_ROCK || this.reserved[i]) return;
+    if (!this.roadMap[i]) this.roadStamp++;
+    this.roadMap[i] = 1; this.tree[i] = 0;
+    this.dirty = true;
+  },
+
+  /* every road is a two-tile-wide avenue: lay the tile plus its partner
+     lane (south of horizontal runs, east of vertical runs) */
+  setRoadWide(x, y, horizontal) {
+    this.setRoad(x, y);
+    const wx = horizontal ? x : x + 1, wy = horizontal ? y + 1 : y;
+    if (this.enterCost(wx, wy) !== Infinity) this.setRoad(wx, wy);
+  },
+
+  /* manual road drag: L-shaped (horizontal then vertical) */
+  layRoadLine(x0, y0, x1, y1) {
+    const sx = Math.sign(x1 - x0) || 1, sy = Math.sign(y1 - y0) || 1;
+    for (let x = x0; x !== x1 + sx; x += sx) if (this.enterCost(x, y0) !== Infinity) this.setRoadWide(x, y0, true);
+    for (let y = y0; y !== y1 + sy; y += sy) if (this.enterCost(x1, y) !== Infinity) this.setRoadWide(x1, y, false);
+  },
+
+  /* after road edits, re-check which buildings' doors touch roads — and say
+     so out loud when occupied buildings just LOST their access */
+  refreshConnections() {
+    let lost = 0;
+    for (const b of this.buildings) {
+      const now = this.isRoad(b.door.x, b.door.y);
+      if (b.connected && !now && !b.ruined && !b.construction) lost++;
+      b.connected = now;
+    }
+    if (lost && Life.onEvent)
+      Life.say(`⚠️ ${lost} building${lost > 1 ? 's' : ''} lost road access — look for the red markers`);
+  },
+
+  bulldoze(x, y) {
+    if (!this.inB(x, y)) return null;
+    const b = this.buildingAt(x, y);
+    if (b) { this.removeBuilding(b); return { kind: 'building', b }; }
+    const i = this.idx(x, y);
+    if (this.railMap[i]) { this.railMap[i] = 0; this.railStamp++; this.dirty = true; return { kind: 'rail' }; }
+    if (this.roadMap[i]) { this.roadMap[i] = 0; this.roadStamp++; this.dirty = true; this.refreshConnections(); return { kind: 'road' }; }
+    if (this.tree[i]) { this.tree[i] = 0; this.dirty = true; return { kind: 'tree' }; }
+    if (this.ground[i] === G_WATER) { this.ground[i] = G_GRASS; this.waterStamp++; this.dirty = true; return { kind: 'water' }; }
+    if (this.ground[i] === G_ROCK) {
+      // remove the whole mountain containing this tile
+      const m = this.mountains.find(m => x >= m.x && x < m.x + MSIZE && y >= m.y && y < m.y + MSIZE);
+      if (m) {
+        this.mountains.splice(this.mountains.indexOf(m), 1);
+        for (let j = 0; j < MSIZE; j++) for (let ii = 0; ii < MSIZE; ii++) {
+          const k = this.idx(m.x + ii, m.y + j);
+          // only clear if not overlapped by another mountain
+          if (!this.mountains.some(o => m.x + ii >= o.x && m.x + ii < o.x + MSIZE && m.y + j >= o.y && m.y + j < o.y + MSIZE))
+            this.ground[k] = G_GRASS;
+        }
+      } else this.ground[i] = G_GRASS;
+      this.dirty = true;
+      return { kind: 'rock' };
+    }
+    return null;
+  },
+
+  /* ---------- trip pathfinding: BFS over the road network ----------
+     Commutes repeat the same door-to-door pairs day after day, so results
+     are memoised until the road network changes (roadStamp). Returned
+     arrays are shared — callers must copy before mutating (they all do). */
+  _pathCache: new Map(),
+  _pathCacheStamp: -1,
+  roadPath(ax, ay, bx, by) {
+    if (this._pathCacheStamp !== this.roadStamp) {
+      this._pathCacheStamp = this.roadStamp;
+      this._pathCache.clear();
+    }
+    const key = ((ax * GH + ay) * GW + bx) * GH + by;
+    const hit = this._pathCache.get(key);
+    if (hit !== undefined) return hit;
+    const path = this._roadPathRaw(ax, ay, bx, by);
+    if (this._pathCache.size > 600) this._pathCache.clear();
+    this._pathCache.set(key, path);
+    return path;
+  },
+  _roadPathRaw(ax, ay, bx, by) {
+    if (!this.isRoad(ax, ay) || !this.isRoad(bx, by)) return null;
+    if (ax === bx && ay === by) return [[ax, ay]];
+    const prev = new Int32Array(GW * GH).fill(-1);
+    const start = this.idx(ax, ay), goal = this.idx(bx, by);
+    prev[start] = start;
+    const q = [start];
+    let qi = 0;
+    while (qi < q.length) {
+      const cur = q[qi++];
+      if (cur === goal) break;
+      const cx = cur % GW, cy = (cur / GW) | 0;
+      for (const [ddx, ddy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+        const nx = cx + ddx, ny = cy + ddy;
+        if (!this.isRoad(nx, ny)) continue;
+        const ni = this.idx(nx, ny);
+        if (prev[ni] !== -1) continue;
+        prev[ni] = cur;
+        q.push(ni);
+      }
+    }
+    if (prev[goal] === -1) return null;
+    const path = [];
+    let cur = goal;
+    while (cur !== start) { path.push([cur % GW, (cur / GW) | 0]); cur = prev[cur]; }
+    path.push([ax, ay]);
+    path.reverse();
+    return path;
+  },
+
+  /* pedestrian route: the same road network, but people stick to the
+     footpaths — kerb-side tiles cost far less than the middle of the
+     carriageway, so walkers hug the pavement and only cut across at
+     junctions (where every tile is "inner" and the cost evens out) */
+  /* V2: walking routes are memoised like roadPath — on the 256² map every
+     uncached pedestrian Dijkstra costs four times what it did in V1 */
+  _walkCache: new Map(),
+  _walkCacheStamp: -1,
+  walkPath(ax, ay, bx, by) {
+    if (this._walkCacheStamp !== this.roadStamp) {
+      this._walkCacheStamp = this.roadStamp;
+      this._walkCache.clear();
+    }
+    const key = ((ax * GH + ay) * GW + bx) * GH + by;
+    const hit = this._walkCache.get(key);
+    if (hit !== undefined) return hit;
+    const path = this._walkPathRaw(ax, ay, bx, by);
+    if (this._walkCache.size > 900) this._walkCache.clear();
+    this._walkCache.set(key, path);
+    return path;
+  },
+  _walkPathRaw(ax, ay, bx, by) {
+    if (!this.isRoad(ax, ay) || !this.isRoad(bx, by)) return null;
+    if (ax === bx && ay === by) return [[ax, ay]];
+    const dist = new Float32Array(GW * GH).fill(Infinity);
+    const prev = new Int32Array(GW * GH).fill(-1);
+    const start = this.idx(ax, ay), goal = this.idx(bx, by);
+    const heap = [];
+    const push = (c, s) => {
+      heap.push([c, s]);
+      let i = heap.length - 1;
+      while (i > 0) { const q = (i - 1) >> 1; if (heap[q][0] <= heap[i][0]) break; [heap[q], heap[i]] = [heap[i], heap[q]]; i = q; }
+    };
+    const pop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          let m = i; const l = 2 * i + 1, r = l + 1;
+          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+          if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
+        }
+      }
+      return top;
+    };
+    const kerbCost = (x, y) =>
+      (!this.isRoad(x, y - 1) || !this.isRoad(x, y + 1) || !this.isRoad(x - 1, y) || !this.isRoad(x + 1, y)) ? 1 : 2.6;
+    dist[start] = 0;
+    push(0, start);
+    while (heap.length) {
+      const [c, cur] = pop();
+      if (c > dist[cur]) continue;
+      if (cur === goal) break;
+      const cx = cur % GW, cy = (cur / GW) | 0;
+      for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+        const nx = cx + dx, ny = cy + dy;
+        if (!this.isRoad(nx, ny)) continue;
+        const ni = this.idx(nx, ny);
+        const nc = c + kerbCost(nx, ny);
+        if (nc < dist[ni]) { dist[ni] = nc; prev[ni] = cur; push(nc, ni); }
+      }
+    }
+    if (prev[goal] === -1 && goal !== start) return null;
+    const path = [];
+    let cur = goal;
+    while (cur !== start) { path.push([cur % GW, (cur / GW) | 0]); cur = prev[cur]; }
+    path.push([ax, ay]);
+    path.reverse();
+    return path;
+  },
+
+  /* nearest road tile to (x,y) within radius r — incident sites sit half a
+     lane off the grid, so dispatch targets must snap back onto real asphalt */
+  nearestRoad(x, y, r) {
+    if (this.isRoad(x, y)) return { x, y };
+    for (let d = 1; d <= r; d++)
+      for (let j = -d; j <= d; j++) for (let i = -d; i <= d; i++) {
+        if (Math.max(Math.abs(i), Math.abs(j)) !== d) continue;
+        if (this.isRoad(x + i, y + j)) return { x: x + i, y: y + j };
+      }
+    return null;
+  },
+
+  roadMask(x, y) {
+    let m = 0;
+    if (this.isRoad(x, y - 1)) m |= 1;
+    if (this.isRoad(x + 1, y)) m |= 2;
+    if (this.isRoad(x, y + 1)) m |= 4;
+    if (this.isRoad(x - 1, y)) m |= 8;
+    return m;
+  },
+
+  /* ---------- V2: derived terrain facts ----------
+     V1's renderer computed these while painting the ground layer (signals at
+     avenue crossings, level crossings, open water, beach sand, edge roads,
+     firefly trees) and handed them to the sim. The headless sim now derives
+     them itself whenever the map changes. */
+  derivedStamp: -1,
+  rebuildDerived(season, drought) {
+    const popcount = m => ((m & 1) + ((m >> 1) & 1) + ((m >> 2) & 1) + ((m >> 3) & 1));
+    const is4way = (xx, yy) => this.isRoad(xx, yy) && popcount(this.roadMask(xx, yy)) === 4;
+    this.signals.clear();
+    this.signalHeads = [];
+    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+      const i = this.idx(x, y);
+      if (!this.roadMap[i] || popcount(this.roadMask(x, y)) !== 4) continue;
+      if (is4way(x - 1, y) || is4way(x, y - 1) || !is4way(x + 1, y) || !is4way(x, y + 1) || !is4way(x + 1, y + 1)) continue;
+      if (this.signalHeads.some(([hx, hy]) => Math.abs(hx - x) + Math.abs(hy - y) < 12)) continue;
+      const free = (cx2, cy2) => this.inB(cx2, cy2) && !this.isRoad(cx2, cy2) &&
+        !this.bmap[this.idx(cx2, cy2)] && this.ground[this.idx(cx2, cy2)] !== G_WATER;
+      let placedAny = false;
+      if (free(x - 1, y - 1)) { this.signalHeads.push([x - 1, y - 1, 0]); placedAny = true; } // NS aspect
+      if (free(x + 2, y + 2)) { this.signalHeads.push([x + 2, y + 2, 1]); placedAny = true; } // EW aspect
+      if (placedAny) for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) this.signals.add(this.idx(x + dx, y + dy));
+    }
+    this.crossings.clear();
+    for (let i = 0; i < this.railMap.length; i++) if (this.railMap[i] && this.roadMap[i]) this.crossings.add(i);
+    const water = [], sand = [], trees = [];
+    const winter = season === 3;
+    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+      const i = this.idx(x, y), g = this.ground[i];
+      if (g === G_WATER && !winter && !drought) water.push([x, y]);
+      else if (g === G_SAND && !winter && !this.roadMap[i] && !this.bmap[i] && !this.railMap[i]) sand.push([x, y]);
+      if (this.tree[i]) trees.push([x * 16 + 8, y * 16 + 8]);
+    }
+    Life.waterTiles = water;
+    Life.sandTiles = sand;
+    Life.edgeRoads = [];
+    for (let x = 0; x < GW; x++) for (const y of [0, 1, GH - 2, GH - 1]) if (this.isRoad(x, y)) Life.edgeRoads.push([x, y]);
+    for (let y = 0; y < GH; y++) for (const x of [0, 1, GW - 2, GW - 1]) if (this.isRoad(x, y)) Life.edgeRoads.push([x, y]);
+    Life.fireflySpots = [];
+    for (let i = 0; i < trees.length && Life.fireflySpots.length < 120; i += Math.max(1, (trees.length / 120) | 0))
+      Life.fireflySpots.push({ x: trees[i][0], y: trees[i][1], ph: (i * 0.7) % 6.28 });
+    this.derivedStamp++;
+  },
+
+  /* ---------- save / load ----------
+     v4 keeps building IDs stable across save/load, so people, minds and
+     ownership records can point at buildings and survive the round-trip.
+     V2 writes v5: a 256² grid and each building's facing. */
+  serialize(extra) {
+    const b64 = arr => {
+      let s = '';
+      for (let i = 0; i < arr.length; i += 8192) s += String.fromCharCode.apply(null, arr.subarray(i, i + 8192));
+      return btoa(s);
+    };
+    return JSON.stringify({
+      v: 5, gw: GW, name: this.name, highway: this.highway || null,
+      ground: b64(this.ground), tree: b64(this.tree), road: b64(this.roadMap), rail: b64(this.railMap),
+      mountains: this.mountains,
+      nextId: this.nextId,
+      buildings: this.buildings.map(b => ({
+        id: b.id, t: b.type, x: b.x, y: b.y, f: b.facing || 0, variant: b.variant,
+        level: b.level, funds: Math.round(b.funds), ruined: b.ruined ? 1 : 0, con: Math.round(b.construction),
+        up: Math.round(b.upgrading || 0), ren: Math.round(b.renovating || 0),
+        own: b.ownerId || 0, fdr: b.founderId || 0, lp: b.landPrice || 0,
+        cars: b.cars.map(c => c.seed), bikes: b.bikes || 0, boat: b.boat ? 1 : 0,
+        bad: b.badDays || 0,
+      })),
+      extra: extra || {},
+    });
+  },
+  deserialize(json) {
+    const o = JSON.parse(json);
+    const srcGW = o.gw || 96;
+    if (srcGW !== GW && srcGW !== 128) return { _incompat: true }; // pre-v4 V1 maps (96²) can't be placed
+    const un = (s, arr) => { const d = atob(s); for (let i = 0; i < d.length; i++) arr[i] = d.charCodeAt(i); };
+    // V2: a V1 village (128²) is imported into the bottom-centre of a freshly
+    // generated 256² map, so its southern sea lines up with ours
+    const v1 = srcGW === 128;
+    const OX = v1 ? 64 : 0, OY = v1 ? 128 : 0;
+    if (v1) {
+      this.genStarterMap(0, { x: OX, y: OY, w: 128, h: 128 });
+      const tmp = { ground: new Uint8Array(128 * 128), tree: new Uint8Array(128 * 128), road: new Uint8Array(128 * 128), rail: new Uint8Array(128 * 128) };
+      un(o.ground, tmp.ground); un(o.tree, tmp.tree); un(o.road, tmp.road);
+      if (o.rail) un(o.rail, tmp.rail);
+      for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+        const s = y * 128 + x, k = this.idx(x + OX, y + OY);
+        this.ground[k] = tmp.ground[s]; this.tree[k] = tmp.tree[s];
+        this.roadMap[k] = tmp.road[s]; this.railMap[k] = tmp.rail[s];
+      }
+      // V1's country roads ran off its west & north edges: carry them on to ours
+      for (let y = 0; y < 128; y++) if (tmp.road[y * 128]) for (let x = 0; x < OX; x++) if (this.enterCost(x, y + OY) !== Infinity) this.setRoad(x, y + OY);
+      for (let x = 0; x < 128; x++) if (tmp.road[x]) for (let y = 0; y < OY; y++) if (this.enterCost(x + OX, y) !== Infinity) this.setRoad(x + OX, y);
+      this.mountains = this.mountains.concat((o.mountains || []).map(m => ({ ...m, x: m.x + OX, y: m.y + OY })));
+    } else {
+      this.reset();
+      un(o.ground, this.ground); un(o.tree, this.tree); un(o.road, this.roadMap);
+      if (o.rail) un(o.rail, this.railMap);
+      this.mountains = o.mountains || [];
+      this.highway = o.highway || null;
+    }
+    this.name = o.name || 'PixelVille';
+    const v4 = (o.v || 3) >= 4;
+    for (const bs of o.buildings) {
+      const d = CAT[bs.t];
+      if (!d) continue;
+      const f = (bs.f || 0) & 3;
+      const bx = bs.x + OX, by = bs.y + OY;
+      const { w, h } = footprint(bs.t, f);
+      if (bx + w > GW || by + h > GH) continue; // old smaller-map safety
+      // building footprints have grown between versions: skip anything that
+      // would now overlap an already-restored neighbour or blocked ground
+      let clear = true;
+      for (let j = 0; j < h && clear; j++) for (let i = 0; i < w; i++) {
+        const k = this.idx(bx + i, by + j);
+        if (this.bmap[k] || this.ground[k] === G_ROCK || this.ground[k] === G_WATER) { clear = false; break; }
+      }
+      if (!clear) continue;
+      const b = {
+        id: v4 && bs.id ? bs.id : this.nextId++, type: bs.t, x: bx, y: by, w, h, facing: f,
+        variant: bs.variant || 0,
+        door: doorOf(bx, by, w, h, f),
+        connected: false, visitors: 0, inside: 0, parked: 0,
+        residents: [], workers: [], jobs: d.jobs || 0, cars: (bs.cars || []).map(s => ({ free: true, seed: s })),
+        level: bs.level || 1, funds: bs.funds || 0, ruined: !!bs.ruined, fire: 0,
+        construction: bs.con || 0, upgrading: bs.up || 0, renovating: bs.ren || 0,
+        ownerId: bs.own || null, founderId: bs.fdr || null, landPrice: bs.lp || 0,
+        bikes: bs.bikes || 0, boat: !!bs.boat, badDays: bs.bad || 0,
+      };
+      b.conTotal = Math.max(b.construction, 40 + w * h * 22);
+      this.buildings.push(b);
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++)
+        this.bmap[this.idx(bx + i, by + j)] = this.buildings.length;
+    }
+    if (v4) this.nextId = Math.max(o.nextId || 1, this.buildings.reduce((m, b) => Math.max(m, b.id + 1), 1));
+    this.refreshConnections();
+    this.dirty = true;
+    const extra = o.extra || {};
+    extra._v = o.v || 3;
+    extra._fromV1 = v1;
+    return extra;
+  },
+};
