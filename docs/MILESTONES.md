@@ -80,11 +80,17 @@
 
 ---
 
-## Milestone 1.5 — New look (in progress)
+## Milestone 1.5 — New look (done, except real character and car models)
 
 **Goal:** replace Milestone 1's flat-shaded box look with a semi-realistic one (real materials, physically based sky and light, weather that settles into the town), proven first on one street block before it touches the game.
 
-**Status (2026-10-23): look signed off and ported into the game.** `src/render` now draws with `src/gfx`:
+**Status (2026-10-24): done.** The look was signed off on 2026-10-23 and ported into the game; the rest of the milestone followed:
+- **Interface (V2):** the look lab's frosted-glass language across the game. A two-part top bar (village, date, large clock, weather with forecast, tier; population, jobs, wealth, safety and happiness with warning colours, leadership, a speed control, Planner, task book, history and a menu holding save, load, new map, settings, sound and help). Line icons replace emoji chrome. The Planner palette shows one category at a time under tabs. Building, villager and mayor cards share one layout: overline, title, status pills, a facts list, notes and actions. Toasts and PVTV set the sim's lead emoji apart as an icon, and clickable toasts carry a pin. Settings, saves, new map, history chart, help and the loading screen are restyled to match. The layout adapts below 1240 px.
+- **Traffic gives way** (`src/sim/traffic.ts`): every vehicle in the sim (villagers' cars, cabs and motorbikes, buses, taxis, tourists, campaign cars) looks along the path it is about to drive. It keeps its distance in queues, stops for people on the carriageway, brakes for red lights and lowered gates at a stop line, and takes turns at unsignalled junctions (first come, first through). Speeds follow from stopping distance, so traffic pulls away and closes up smoothly at any game speed. Jams resolve themselves: a driver stuck behind crossing traffic edges out after 6 s, and one stuck behind something parked (a bus at its stop, a squad car at a scene, a wreck) squeezes past after 10 s. Emergency vehicles keep right of way. Buses and cabs on their return leg now keep right and face forward. Covered by `tests/traffic.test.ts`.
+- **Camera:** the street camera stops short of walls, roofs, awnings, balconies, porticoes and canopies. Each building records the volumes the camera may not enter, and the camera does an exact ray test with a 0.45 m radius, so the near plane never clips. It snaps in at once and eases back out, and the Founder fades out when the camera is pushed right up to them.
+- **Loading:** buildings generate about 10× faster (all 98 types in 0.18 s instead of 1.8 s), because the kit writes straight into packed per-material arrays. A town is built behind the loading screen a slice at a time, with a progress bar. Procedural textures are painted in parallel Web Workers while the town loads, and production builds cache them in IndexedDB. Measured on the Intel UHD laptop: the first frame comes in about 2.9 s (it was about 4.5 s, plus ~25 ms for every building in big towns), and a production build that has cached its textures starts in about 1.3 s.
+
+`src/render` draws with `src/gfx`:
 - **Stage:** physical sky, sun, moon, stars and clouds; the weather, season and clock drive wet streets with reflections, settling snow, leaf fall and wind.
 - **Terrain:** textured grass, sand and rock; kerbed and paved roads; stone bridges; ballasted rails; heritage lamps; shared animated water with shore foam and winter ice; hills and woods beyond the map; the sea to the south. Trees are drawn in two levels of detail (32k capacity) and grass streams in around the camera.
 - **Buildings:** V1's 87 builders are untouched, but their toolkit now draws real architecture: brick, render or stone walls; sash windows and curtain walls with interiors; tiled roofs; parapets; lit name signs; real trees. Finished buildings merge per 16×16-tile chunk; construction sites rise inside scaffolds. The Planner picks buildings by bounding box.
@@ -92,7 +98,7 @@
 - **Effects:** GPU fire with embers and smoke; redesigned thought bubbles, one per head; eave lights at Christmas; the Christmas plaza with a 24 m spruce, 1,400 lights, a star, garlands, flagpoles, a rink and skaters.
 - **Performance:** medium on an Intel UHD laptop is ~27 ms/frame at 1016×550 with a 42-building test town.
 
-Still to do: V2 HUD and panels (point 9), traffic awareness in the game sim (the slice has it), real rigged people and cars (licensing open), camera collision with walls, and faster building generation (~25 ms each).
+Left for later, by choice: real rigged people and cars up close (the asset licensing is still to be decided). Until then the nearest villagers and cars are the code-built skinned people and extruded-profile cars.
 
 The vertical slice is still at `slice.html` (the "look lab"):
 
@@ -101,7 +107,7 @@ The vertical slice is still at `slice.html` (the "look lab"):
 - **Quality tiers** (`detectQuality`): integrated GPUs get *medium* (no MSAA/AO, 2K shadows, shadows and mirrors refreshed on alternate frames, half-resolution textures); discrete GPUs get *high*.
 - **Known limits:** people and cars are code-built stand-ins. Realistic ones need real rigged models; the asset licensing for those is still to be decided.
 
-**Next:** sign-off on the look → port `src/gfx` into the game renderer → festival dressing (Christmas plaza) → real character and vehicle models.
+**Next:** Milestone 2. Real character and vehicle models join whenever the licensing is settled.
 
 ---
 

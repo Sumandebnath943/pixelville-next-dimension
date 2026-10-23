@@ -7,7 +7,7 @@
    Planner palette; and the task book.
    ============================================================ */
 import { Sim, TIERS } from '../sim/agents';
-import { Weather } from '../sim/weather';
+import { Weather, SEASONS } from '../sim/weather';
 import { Gov } from '../sim/gov';
 import { Festivals } from '../sim/festivals';
 import { Calamity } from '../sim/calamity';
@@ -29,10 +29,23 @@ export interface HudApi {
   openMayor(): void;
 }
 
-const CAT_GROUPS: [string, string][] = [
-  ['tool', '🛠️ Tools'], ['res', '🏠 Residential'], ['work', '🏭 Work & Industry'], ['shop', '🛍️ Shops & Services'],
-  ['civic', '🏛️ Civic'], ['transport', '🚌 Transport'], ['leisure', '🎡 Leisure & Fun'], ['nature', '🌲 Nature'],
+/** palette categories: key, tab label, heading, icon */
+const CAT_GROUPS: [string, string, string, string][] = [
+  ['tool', 'Tools', 'Roads, rails & tools', 'crane'], ['res', 'Homes', 'Homes', 'home'], ['work', 'Work', 'Work & industry', 'work'],
+  ['shop', 'Shops', 'Shops & services', 'coins'], ['civic', 'Civic', 'Civic', 'hall'], ['transport', 'Transit', 'Transport', 'car'],
+  ['leisure', 'Leisure', 'Leisure & fun', 'star'], ['nature', 'Nature', 'Nature', 'sprout'],
 ];
+const WEATHER_ICON: Record<string, string> = { clear: 'sun', clouds: 'cloud', rain: 'rain', heavy: 'storm', snow: 'snow' };
+const WEATHER_NAME: Record<string, string> = { clear: 'Clear', clouds: 'Cloudy', rain: 'Rain', heavy: 'Storm', snow: 'Snow' };
+
+/** an inline icon from the sprite in index.html */
+export const icon = (name: string): string => `<svg><use href="#i-${name}"/></svg>`;
+const escHtml = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+/** sim messages lead with an emoji: set it apart as the line's icon */
+export function splitLead(msg: string): { ico: string; text: string } {
+  const m = /^((?:\p{Extended_Pictographic}|\p{Regional_Indicator}|‍|️|[\u{1F3FB}-\u{1F3FF}])+)\s*/u.exec(msg);
+  return m ? { ico: m[1], text: msg.slice(m[0].length) } : { ico: '', text: msg };
+}
 const MM: Record<string, string> = { res: '#3fae5c', shop: '#4f7ed0', work: '#d0a83f', civic: '#9aa4b4', leisure: '#c05fa8', hidden: '#b48ae8', transport: '#4fc0b0' };
 
 /* what a palette item will actually DO for the town — V1's hover tips */
@@ -70,11 +83,18 @@ export class Hud {
   journalOpen = false;
   journalTab = 'tasks';
 
+  private palCat = 'res';
+
   constructor(private api: HudApi) {
     this.buildPalette();
     $('stat-leader').addEventListener('click', () => api.openMayor());
     $('btn-planner').addEventListener('click', () => api.togglePlanner());
     $('btn-journal').addEventListener('click', () => this.toggleJournal());
+    // the menu: save, load, new map, settings, sound, help
+    const menu = $('menu');
+    $('btn-menu').addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('open'); });
+    menu.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button')) menu.classList.remove('open'); });
+    document.addEventListener('pointerdown', (e) => { if (!(e.target as HTMLElement).closest('#menu, #btn-menu')) menu.classList.remove('open'); });
     document.querySelectorAll<HTMLButtonElement>('#speed button').forEach((b) =>
       b.addEventListener('click', () => {
         const s = +b.dataset.s!;
@@ -87,10 +107,15 @@ export class Hud {
     document.querySelectorAll<HTMLButtonElement>('#journal-tabs button').forEach((b) =>
       b.addEventListener('click', () => {
         this.journalTab = b.dataset.tab!;
-        document.querySelectorAll('#journal-tabs button').forEach((o) => o.classList.toggle('active', o === b));
+        document.querySelectorAll('#journal-tabs button').forEach((o) => o.classList.toggle('on', o === b));
         Tasks._dirty = true;
         this.renderJournal();
       }));
+    // the panels below the top bar follow its height (it wraps on narrow screens)
+    const bar = $('topbar');
+    const fit = (): void => document.documentElement.style.setProperty('--tbh', `${Math.round(Math.max($('tb-left').offsetHeight, bar.offsetHeight))}px`);
+    new ResizeObserver(fit).observe(bar);
+    fit();
     $('minimap').addEventListener('click', (e) => {
       const c = $('minimap') as HTMLCanvasElement;
       const r = c.getBoundingClientRect();
@@ -99,10 +124,16 @@ export class Hud {
     });
     on('toast', ({ msg, at }) => this.toast(msg, at, true));
     on('breaking', ({ text }) => {
-      $('tv-headline').textContent = '🔴 BREAKING: ' + text;
+      this.headline('Breaking: ' + text);
       $('tv-headline').classList.add('breaking');
       $('tv').classList.add('breaking');
     });
+  }
+
+  /** PVTV's headline, its lead emoji set apart */
+  private headline(msg: string): void {
+    const { ico, text } = splitLead(msg);
+    $('tv-headline').innerHTML = (ico ? `<span class="t-ico">${ico}</span>` : '') + `<span>${escHtml(text)}</span>`;
   }
 
   /* ---------- toasts ---------- */
@@ -112,8 +143,9 @@ export class Hud {
     const wrap = $('toasts');
     const t = document.createElement('div');
     t.className = 'toast' + (at ? ' jump' : '');
-    t.textContent = (at ? '📍 ' : '') + msg;
-    if (at) t.addEventListener('click', () => this.api.focus(at));
+    const { ico, text } = splitLead(msg);
+    t.innerHTML = (ico ? `<span class="t-ico">${ico}</span>` : '') + `<span>${escHtml(text)}</span>` + (at ? icon('pin') : '');
+    if (at) { t.title = 'Show me'; t.addEventListener('click', () => this.api.focus(at)); }
     wrap.appendChild(t);
     const spd = Game.speed() || 1;
     const maxStack = spd >= 8 ? 2 : spd >= 3 ? 3 : 4;
@@ -128,70 +160,98 @@ export class Hud {
     return this.pins;
   }
 
-  /* ---------- palette ---------- */
+  /* ---------- palette: one category at a time ---------- */
   private buildPalette(): void {
-    const el = $('palette');
-    for (const [cat, label] of CAT_GROUPS) {
-      const h = document.createElement('div');
-      h.className = 'pal-head';
-      h.textContent = label;
-      el.appendChild(h);
-      const grid = document.createElement('div');
-      grid.className = 'pal-grid';
-      el.appendChild(grid);
-      for (const key in CAT) {
-        const d = CAT[key];
-        if (d.cat !== cat) continue;
-        const item = document.createElement('div');
-        item.className = 'pal-item';
-        item.dataset.key = key;
-        item.title = paletteTip(key);
-        item.innerHTML = `<div class="pal-emoji">${d.emoji}</div><div class="pal-name">${d.name}</div>`;
-        item.addEventListener('pointerdown', (ev) => { ev.preventDefault(); this.api.setTool(key); });
-        grid.appendChild(item);
-      }
+    const tabs = $('pal-tabs');
+    for (const [cat, label, , ic] of CAT_GROUPS) {
+      const b = document.createElement('button');
+      b.dataset.cat = cat;
+      b.title = CAT_GROUPS.find((g) => g[0] === cat)![2];
+      b.innerHTML = `${icon(ic)}<span>${label}</span>`;
+      b.addEventListener('click', () => this.showCategory(cat));
+      tabs.appendChild(b);
     }
+    this.showCategory(this.palCat);
   }
+  private showCategory(cat: string): void {
+    this.palCat = cat;
+    document.querySelectorAll<HTMLElement>('#pal-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.cat === cat));
+    $('pal-title').textContent = CAT_GROUPS.find((g) => g[0] === cat)![2];
+    const grid = $('pal-grid');
+    grid.innerHTML = '';
+    for (const key in CAT) {
+      const d = CAT[key];
+      if (d.cat !== cat) continue;
+      const item = document.createElement('div');
+      item.className = 'pal-item' + (key === this.tool ? ' active' : '');
+      item.dataset.key = key;
+      item.title = paletteTip(key);
+      item.innerHTML = `<div class="pal-emoji">${d.emoji}</div><div class="pal-name">${d.name}</div>`;
+      item.addEventListener('pointerdown', (ev) => { ev.preventDefault(); this.api.setTool(key); });
+      grid.appendChild(item);
+    }
+    grid.scrollTop = 0;
+  }
+  private tool: string | null = null;
   markTool(key: string | null): void {
+    this.tool = key;
+    // a tool picked from elsewhere (a hotkey): show its category
+    if (key && CAT[key] && CAT[key].cat !== this.palCat) this.showCategory(CAT[key].cat);
     document.querySelectorAll<HTMLElement>('.pal-item').forEach((i) => i.classList.toggle('active', !!key && i.dataset.key === key));
     const hint = $('hint');
     if (!this.api.isPlanner()) return;
-    if (!key) hint.textContent = 'Click a building or villager to inspect · drag or WASD to pan · wheel zoom · Q/E rotate · P to go back down';
+    let h: string;
+    if (!key) h = 'Click a building or villager · drag to pan · wheel zoom · <kbd>Q</kbd><kbd>E</kbd> rotate · <kbd>P</kbd> back down';
     else {
       const d = CAT[key];
-      hint.textContent = d.drag ? `${d.name}: click & drag, release to apply · right-click cancels` : `${d.name}: click to place · R turns the door side · roads connect themselves · right-click cancels`;
+      h = d.drag ? `<b>${d.name}</b> · drag, release to apply · right-click cancels` : `<b>${d.name}</b> · click to place · <kbd>R</kbd> turns the door · right-click cancels`;
     }
+    if (hint.innerHTML !== h) hint.innerHTML = h;
   }
 
   /* ---------- per-frame-ish HUD refresh (every ~0.4 s) ---------- */
   update(): void {
     const s = Sim.stats();
-    $('village-name').textContent = World.name;
-    $('clock').textContent = Game.dateLine();
+    const set = (id: string, v: string): void => { const el = $(id); if (el.textContent !== v) el.textContent = v; };
+    const html = (id: string, v: string): void => { const el = $(id); if (el.innerHTML !== v) el.innerHTML = v; };
+    set('village-name', World.name);
+    // "Day 3 · Wed 3 Spring, Yr 1 · 13:03" → the date under the name, the time large beside it
+    const date = Game.dateLine().split(' · ');
+    set('time', Sim.timeStr());
+    set('clock', `${date[1] || ''} · ${date[0]}`);
     const lock = Festivals.speedLocked();
     document.querySelectorAll<HTMLButtonElement>('#speed button').forEach((b, n) => {
-      b.classList.toggle('active', n === Game.speedIdx);
+      b.classList.toggle('on', n === Game.speedIdx);
       b.classList.toggle('locked', (lock && n >= 2) || (!this.api.isPlanner() && n >= 2));
     });
-    $('chip-season').textContent = Weather.label();
-    const fc = Weather.forecastEmoji();
-    $('chip-weather').textContent = Weather.weatherLabel() + (fc ? ` → ${fc}` : '');
+    const nx = Weather.next;
+    html('chip-weather', `${icon(WEATHER_ICON[Weather.kind] || 'cloud')}<span>${WEATHER_NAME[Weather.kind] || ''}</span>` +
+      (nx && nx !== Weather.kind ? `<span class="sub">then</span>${icon(WEATHER_ICON[nx] || 'cloud')}` : ''));
+    $('chip-weather').title = `${SEASONS[Weather.season]} · ${WEATHER_NAME[Weather.kind] || ''}${nx ? `, then ${(WEATHER_NAME[nx] || '').toLowerCase()}` : ''}`;
     const ti = Sim.tierIndex();
-    $('chip-tier').textContent = `${TIERS[ti].emoji} ${TIERS[ti].name}`;
+    html('chip-tier', `${icon('star')}<span>${TIERS[ti].name}</span>`);
     const next = TIERS[ti + 1];
     $('chip-tier').title = next ? `${s.pop}/${next.pop} residents to become a ${next.name}` : 'The summit: a Metropolis!';
-    $('stat-pop').textContent = String(s.pop);
-    $('stat-jobs').textContent = `${s.employed}/${s.adults}`;
-    $('stat-wealth').textContent = '$' + s.wealth.toLocaleString();
-    $('stat-safe').textContent = s.safety + '%';
-    $('stat-hap').textContent = s.happiness + '%';
-    $('stat-hap-emoji').textContent = s.happiness >= 75 ? '😊' : s.happiness >= 45 ? '🙂' : '😟';
-    const L = $('stat-leader');
+    set('stat-pop', String(s.pop));
+    set('stat-jobs', `${s.employed}/${s.adults}`);
+    set('stat-wealth', '$' + s.wealth.toLocaleString());
+    set('stat-safe', s.safety + '%');
+    set('stat-hap', s.happiness + '%');
+    const grade = (id: string, v: number, warn: number, bad: number): void => {
+      const el = $(id).parentElement!;
+      el.classList.toggle('warn', v < warn && v >= bad);
+      el.classList.toggle('bad', v < bad);
+    };
+    grade('stat-safe', s.safety, 70, 45);
+    grade('stat-hap', s.happiness, 60, 40);
+    let leader: string;
     if (Gov.campaign) {
       const d = Math.max(0, Gov.campaign.electionDay - Sim.day);
-      L.textContent = '🗳️ ' + (d === 0 ? 'VOTING DAY' : (Gov.leader ? Gov.leader.name : 'Campaign season') + ` · ${d}d`);
-    } else if (Gov.leader) L.textContent = `🎩 ${Gov.leader.name} · ${Math.round(Gov.approval)}%`;
-    else L.textContent = '🗳️ Self-governing';
+      leader = d === 0 ? 'Voting day' : (Gov.leader ? Gov.leader.name : 'Campaign season') + ` · ${d}d to vote`;
+    } else if (Gov.leader) leader = `Mayor ${Gov.leader.name} · ${Math.round(Gov.approval)}%`;
+    else leader = 'Self-governing';
+    set('stat-leader-text', leader);
+    $('btn-planner').classList.toggle('on', this.api.isPlanner());
     ($('rci-r') as HTMLElement).style.height = Math.round(s.demand.r * 100) + '%';
     ($('rci-c') as HTMLElement).style.height = Math.round(s.demand.c * 100) + '%';
     ($('rci-i') as HTMLElement).style.height = Math.round(s.demand.i * 100) + '%';
@@ -210,8 +270,8 @@ export class Hud {
         for (const q of Sim.stocks) s += ` · ${q.sym} $${q.price.toFixed(1)} ${q.price >= (q.prev || q.price) ? '▲' : '▼'}`;
       }
       if (Gov.leader) s += ` · MAYOR ${Gov.leader.name.toUpperCase()} ${Math.round(Gov.approval)}%`;
-      s += ` · ${Weather.weatherLabel().toUpperCase()}`;
-      $('tv-ticker-text').textContent = s + ' ··· ';
+      s += ` · ${(WEATHER_NAME[Weather.kind] || '').toUpperCase()}`;
+      $('tv-ticker-text').textContent = s.replace('📊 ', '') + ' ··· ';
     }
     if (now - News.breakingAt < 14000) return; // hold breaking stories on screen
     const head = $('tv-headline');
@@ -221,8 +281,8 @@ export class Hud {
       if (Tasks.news.length) {
         const pool = Tasks.news.slice(-8);
         this.lastSeen = (this.lastSeen + 1) % pool.length;
-        head.textContent = pool[pool.length - 1 - this.lastSeen].text;
-      } else head.textContent = `PVTV signs on — a quiet day in ${World.name}.`;
+        this.headline(pool[pool.length - 1 - this.lastSeen].text);
+      } else this.headline(`PVTV signs on — a quiet day in ${World.name}.`);
     }
   }
 
@@ -300,13 +360,16 @@ export class Hud {
       const active = Tasks.items.filter((t: any) => !t.done).slice().reverse();
       const finished = Tasks.items.filter((t: any) => t.done).slice().reverse().slice(0, 40);
       if (!active.length && !finished.length) html = '<div class="j-empty">No village projects yet — drop a building or wait for the town to act.</div>';
-      for (const t of active) html += `<div class="j-item"><span>${t.icon}</span><span class="j-text">${t.text}</span><span class="j-day">d${t.day}</span></div>`;
+      for (const t of active) html += `<div class="j-item"><span>${t.icon}</span><span class="j-text">${escHtml(t.text)}</span><span class="j-day">Day ${t.day}</span></div>`;
       if (finished.length) html += '<div class="j-sep">Completed</div>';
-      for (const t of finished) html += `<div class="j-item done ${t.ok ? 'ok' : 'fail'}"><span>${t.ok ? '✅' : '❌'}</span><span class="j-text">${t.text}</span><span class="j-day">d${t.doneDay}</span></div>`;
+      for (const t of finished) html += `<div class="j-item done ${t.ok ? 'ok' : 'fail'}"><span class="j-mark">${t.ok ? '✓' : '✕'}</span><span class="j-text">${escHtml(t.text)}</span><span class="j-day">Day ${t.doneDay}</span></div>`;
     } else {
       const news = Tasks.news.slice().reverse();
       if (!news.length) html = '<div class="j-empty">Nothing has happened yet. It will.</div>';
-      for (const n of news) html += `<div class="j-item"><span class="j-day">d${n.day} ${n.time}</span><span class="j-text">${n.text}</span></div>`;
+      for (const n of news) {
+        const { ico, text } = splitLead(n.text);
+        html += `<div class="j-item"><span>${ico}</span><span class="j-text">${escHtml(text)}</span><span class="j-day">Day ${n.day} · ${n.time}</span></div>`;
+      }
     }
     $('journal-list').innerHTML = html;
   }

@@ -481,8 +481,8 @@ export async function buildStreet(scene: THREE.Scene, progress: (s: string) => P
   P.pillarBox(kit, 21.2, -ROAD - 0.75, 0);
   for (const sx of [-1, 1]) for (const [x, z] of [[6.6, -4.3], [5.2, -5.2], [4.3, -6.6]]) P.bollard(kit, sx * x, z);
   // street name plates on the corner buildings
-  const plate = pal.custom('plate:lane', plateTex('Founders Lane'), { roughness: 0.4 });
-  const plate2 = pal.custom('plate:mill', plateTex('Mill Street'), { roughness: 0.4 });
+  const plate = pal.custom('plate:lane', () => plateTex('Founders Lane'), { roughness: 0.4 });
+  const plate2 = pal.custom('plate:mill', () => plateTex('Mill Street'), { roughness: 0.4 });
   kit.base = new THREE.Matrix4();
   kit.quad(plate, new THREE.Vector3(9.0, 2.9, -WALK + 0.03), new THREE.Vector3(10.6, 2.9, -WALK + 0.03), new THREE.Vector3(10.6, 3.3, -WALK + 0.03), new THREE.Vector3(9.0, 3.3, -WALK + 0.03), new THREE.Vector3(0, 0, 1), undefined, [0, 0, 1, 0, 1, 1, 0, 1]);
   kit.quad(plate2, new THREE.Vector3(WALK - 0.03, 2.9, -9.0), new THREE.Vector3(WALK - 0.03, 2.9, -10.6), new THREE.Vector3(WALK - 0.03, 3.3, -10.6), new THREE.Vector3(WALK - 0.03, 3.3, -9.0), new THREE.Vector3(-1, 0, 0), undefined, [0, 0, 1, 0, 1, 1, 0, 1]);

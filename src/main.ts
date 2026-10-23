@@ -12,7 +12,7 @@ import { Settings } from './sim/settings';
 import { CAT } from './sim/catalog';
 import { Stage } from './render/stage';
 import { Terrain } from './render/terrain';
-import { BuildingLayer } from './render/buildings';
+import { BuildingLayer, yieldFrame } from './render/buildings';
 import { Actors } from './render/actors';
 import { Founder } from './player/founder';
 import { Planner } from './player/planner';
@@ -22,10 +22,12 @@ import { Panels } from './ui/panels';
 import { initTouch } from './ui/touch';
 import { Snd } from './audio/sounds';
 import { get, AUTO } from './save/store';
+import { texturesReady } from './gfx/textures';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
 const TM = 8;
+const WASD = '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>';
 
 /* ---------- the world ---------- */
 Game.boot();
@@ -80,20 +82,6 @@ initTouch();
 canvas.addEventListener('click', () => {
   if (!planner.active && !panels.anyModalOpen()) Input.requestLock(canvas);
 });
-
-/* continue the last village if there is one */
-get(AUTO)
-  .then((data) => {
-    if (!data) { panels.show('help'); return; }
-    const r = Game.performLoad(data);
-    if (r.ok) {
-      buildings.clear();
-      terrain.update(true);
-      buildings.sync();
-      hud.toast(`👋 Welcome back to ${World.name} — day ${Sim.day}, ${Sim.people.length} villagers`);
-    } else panels.show('help');
-  })
-  .catch(() => panels.show('help'));
 
 /* ---------- the frame loop ---------- */
 let last = performance.now();
@@ -212,14 +200,20 @@ function frame(now: number): void {
     hud.update();
     const w = planner.active ? planner.dist * 1.6 : 0;
     hud.drawMinimap({ x: planner.active ? planner.target.x : founder.pos.x, z: planner.active ? planner.target.z : founder.pos.z, yaw: founder.yaw, planner: planner.active, w, h: w * 0.7 });
-    $('wallet').textContent = `👛 $${Math.round(founder.wallet)}`;
-    $('speedo').textContent = founder.driving ? `${Math.round(founder.speedKmh)} km/h` : '';
-    $('modebadge').textContent = founder.driving ? '🚗 Driving' : founder.firstPerson ? '👁️ First person' : '';
+    $('wallet').textContent = `$${Math.round(founder.wallet)}`;
+    const speedo = founder.driving ? `${Math.round(founder.speedKmh)} km/h` : '';
+    if ($('speedo').textContent !== speedo) $('speedo').textContent = speedo;
+    const mode = founder.driving ? 'car' : founder.firstPerson ? 'eye' : '';
+    if ($('modebadge').dataset.m !== mode) {
+      $('modebadge').dataset.m = mode;
+      $('modebadge').innerHTML = mode ? `<svg><use href="#i-${mode}"/></svg>${mode === 'car' ? 'Driving' : 'First person'}` : '';
+    }
     if (planner.active) hud.markTool(planner.tool);
     else {
-      $('hint').textContent = Input.usingTouch ? 'Left thumb moves · right thumb looks · 🏗️ opens the Planner'
-        : Input.locked ? 'WASD move · Shift run · Space jump · V camera · F drive · P Planner · Esc frees the mouse'
-          : 'Click (or drag) the view to look around · WASD move · F drive · P Planner · F1 help';
+      const hint = Input.usingTouch ? 'Left thumb moves · right thumb looks'
+        : Input.locked ? `${WASD} move · <kbd>Shift</kbd> run · <kbd>V</kbd> camera · <kbd>F</kbd> drive · <kbd>P</kbd> Planner · <kbd>Esc</kbd> frees the mouse`
+          : `Drag to look · ${WASD} move · <kbd>F</kbd> drive · <kbd>P</kbd> Planner · <kbd>F1</kbd> help`;
+      if ($('hint').innerHTML !== hint) $('hint').innerHTML = hint;
     }
   }
   if (now - lastPanel > 1200) { lastPanel = now; panels.refresh(); }
@@ -243,20 +237,44 @@ setInterval(() => {
   if (document.hidden) Game.catchUp(elapsed);
 }, 1000);
 
-/* first paint: build the town, light it, compile every shader off-frame (a cold
+/* boot: continue the last village if there is one, build it a slice at a time
+   behind the loading screen, light it and compile every shader off-frame (a cold
    compile on frame one can stall an integrated GPU long enough to lose the context) */
-terrain.update(true);
-buildings.sync();
-$('loading-text').textContent = 'Lighting the village…';
-stage.warmUp().finally(() => {
+async function boot(): Promise<void> {
+  const text = $('loading-text'), bar = $('loading-bar');
+  const step = (msg: string, k: number): void => {
+    if (text.textContent !== msg && !msg.startsWith('Raising')) performance.mark(`boot:${msg}`);
+    text.textContent = msg;
+    bar.style.width = `${Math.round(k * 100)}%`;
+  };
+  step('Opening the village records…', 0.05);
+  let resumed = false;
+  try {
+    const data = await get(AUTO);
+    if (data) resumed = Game.performLoad(data).ok;
+  } catch { /* a fresh village */ }
+  step('Laying out the land…', 0.12);
+  await yieldFrame();
+  terrain.update(true);
+  lastVersion = Game.mapVersion;
+  await buildings.buildAll((done, total) => step(`Raising the buildings… ${done} of ${total}`, 0.15 + 0.6 * (done / Math.max(1, total))));
+  step('Painting textures…', 0.78);
+  await texturesReady();
+  step('Lighting the village…', 0.85);
+  await yieldFrame();
+  try { await stage.warmUp(); } catch { /* draw anyway */ }
+  step('Ready', 1);
   requestAnimationFrame((t) => {
     last = t;
     frame(t);
     const l = $('loading');
     l.style.opacity = '0';
     setTimeout(() => l.remove(), 700);
+    if (resumed) hud.toast(`👋 Welcome back to ${World.name} — day ${Sim.day}, ${Sim.people.length} villagers`);
+    else panels.show('help');
   });
-});
+}
+void boot();
 
 // debugging handle for the console
 (window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input };

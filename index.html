@@ -3,66 +3,119 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#14182a" />
+    <meta name="theme-color" content="#0d1117" />
     <title>PixelVille — Next Dimension</title>
     <meta name="description" content="The living village sim, now in 3D: walk, drive and build a village whose people think, remember and vote." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏘️</text></svg>" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <!-- the V2 icon set: 24-unit line icons, drawn in currentColor -->
+    <svg id="icons" aria-hidden="true" style="display: none">
+      <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><circle cx="17" cy="9" r="2.5" /><path d="M16 14.2c2.9.4 5 2.8 5 5.8" /></symbol>
+      <symbol id="i-work" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8.5 7V5.5c0-.8.7-1.5 1.5-1.5h4c.8 0 1.5.7 1.5 1.5V7M3 12.5h18" /></symbol>
+      <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.7" /><path d="M5 6v6c0 1.5 3.1 2.7 7 2.7s7-1.2 7-2.7V6M5 12v6c0 1.5 3.1 2.7 7 2.7s7-1.2 7-2.7v-6" /></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.6-3 8.3-7 10-4-1.7-7-5.4-7-10V6z" /></symbol>
+      <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.3c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2M9 9.6v.2M15 9.6v.2" /></symbol>
+      <symbol id="i-hall" viewBox="0 0 24 24"><path d="M3 21h18M5.5 18V10.5M10 18v-7.5M14 18v-7.5M18.5 18v-7.5M4 18h16M3 10h18L12 3.5z" /></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12" /></symbol>
+      <symbol id="i-crane" viewBox="0 0 24 24"><path d="M5 21h7M8.5 21V4M8.5 4L20 6.5M8.5 4L4 8.5h4.5M17 6v5M15.5 11h3v2.5h-3zM8.5 9l4-4.2M8.5 14l4-9" /></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4.5C5 3.7 5.7 3 6.5 3H19v15H6.5C5.7 18 5 18.7 5 19.5M5 4.5v15c0 .8.7 1.5 1.5 1.5H19v-3M9 7h6" /></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v16h16" /><path d="M7.5 15l3.5-4.5 3 2.5 5-6.5" /></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+      <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" /><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.7a7.5 7.5 0 0 1 0 10.6" /></symbol>
+      <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" /><path d="M16 9.5l5 5M21 9.5l-5 5" /></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M4.5 19.5h15" /></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7c0-1.1.9-2 2-2h3.8l2 2h7.2c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2h-13c-1.1 0-2-.9-2-2z" /></symbol>
+      <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4.5L3.5 6.8v12.7L9 17.2l6 2.8 5.5-2.3V5L15 7.3zM9 4.5v12.7M15 7.3V20" /></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 3l1.6 2.3 2.7-.7.6 2.8L19.5 9l-1.1 2.6 1.1 2.4-2.6 1.6-.6 2.8-2.7-.7L12 21l-1.6-2.3-2.7.7-.6-2.8-2.6-1.6 1.1-2.4L4.5 9l2.6-1.6.6-2.8 2.7.7z" /></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .9-1 1.6v.4M12 17v.2" /></symbol>
+      <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="13" rx="2.5" /><path d="M3.5 9.5h13M16 13.5h1.5" /></symbol>
+      <symbol id="i-car" viewBox="0 0 24 24"><path d="M4 16l1.8-5.2A2 2 0 0 1 7.7 9.5h8.6a2 2 0 0 1 1.9 1.3L20 16M4 16h16v2.5M4 16v2.5" /><circle cx="7.5" cy="16" r="1.3" /><circle cx="16.5" cy="16" r="1.3" /></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.8" /></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.8" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4" /></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 9a4.5 4.5 0 0 1 0 9z" /></symbol>
+      <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 15a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 6a4.5 4.5 0 0 1 0 9z" /><path d="M8.5 18l-1 2.5M12.5 18l-1 2.5M16.5 18l-1 2.5" /></symbol>
+      <symbol id="i-storm" viewBox="0 0 24 24"><path d="M7 15a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 6a4.5 4.5 0 0 1 2.5 8.2" /><path d="M13 12.5l-2.5 4h3.2L11.5 21" /></symbol>
+      <symbol id="i-snow" viewBox="0 0 24 24"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5L12 6l2.5-1.5M9.5 19.5L12 18l2.5 1.5" /></symbol>
+      <symbol id="i-sprout" viewBox="0 0 24 24"><path d="M12 21v-8.5M12 12.5C12 8.4 14.9 5.5 19 5.5c0 4.1-2.9 7-7 7zM12 15c0-3.3-2.6-5.8-6-5.8 0 3.3 2.6 5.8 6 5.8z" /></symbol>
+      <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19.5C5 11 10 5 19.5 4.5 19.5 14 14 19.5 5.5 19.5M5 19.5l8-8" /></symbol>
+      <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z" /></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.3" /></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></symbol>
+      <symbol id="i-tv" viewBox="0 0 24 24"><rect x="3" y="6.5" width="18" height="12" rx="2" /><path d="M8.5 3l3.5 3.5L15.5 3" /></symbol>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5l8-6.5 8 6.5V20H4z" /><path d="M10 20v-5.5h4V20" /></symbol>
+    </svg>
+
     <canvas id="game"></canvas>
 
     <div id="hud">
       <div id="topbar">
-        <span id="village-name">PixelVille</span>
-        <span id="clock">Day 1 · 07:00</span>
-        <span class="chip" id="chip-season"></span>
-        <span class="chip" id="chip-weather" title="Weather (and what's coming next)"></span>
-        <span class="chip" id="chip-tier" title="Village tier"></span>
-        <span class="stats">
-          <span title="Population">👥 <b id="stat-pop">0</b></span>
-          <span title="Employed / adults">💼 <b id="stat-jobs">0/0</b></span>
-          <span title="Combined household wealth">💰 <b id="stat-wealth">$0</b></span>
-          <span title="Town safety">🛡️ <b id="stat-safe">92%</b></span>
-          <span title="Happiness"><span id="stat-hap-emoji">😊</span> <b id="stat-hap">100%</b></span>
-          <button class="chip" id="stat-leader" title="Village leadership — open the mayor's report">🗳️ Self-governing</button>
-        </span>
-        <span id="speed" title="Game speed (fast-forward in the Planner)">
-          <button data-s="0" title="Pause">⏸</button><button data-s="1" title="1×">▶</button><button data-s="2" title="2×">⏩</button><button data-s="3" title="4×">⏭</button><button data-s="4" title="8×">⏭⏭</button>
-        </span>
-        <span id="filebtns">
-          <button id="btn-planner" title="Planner — rise up and build (P)">🏗️</button>
-          <button id="btn-journal" title="Task book & village news (J)">📖<span id="journal-badge"></span></button>
-          <button id="btn-stats" title="Village history charts">📈</button>
-          <button id="btn-sound" title="Sound on/off">🔊</button>
-          <button id="btn-save" title="Save village">💾</button>
-          <button id="btn-load" title="Load village">📂</button>
-          <button id="btn-new" title="New map">🗺️</button>
-          <button id="btn-settings" title="Settings">⚙️</button>
-          <button id="btn-help" title="Help (F1)">❔</button>
-        </span>
+        <div id="tb-left" class="glass">
+          <div class="tb-id">
+            <span id="village-name">PixelVille</span>
+            <span id="clock">Day 1</span>
+          </div>
+          <span id="time">07:00</span>
+          <span class="tb-sep"></span>
+          <span class="chip" id="chip-weather" title="Weather (and what's coming next)"></span>
+          <span class="chip" id="chip-tier" title="Village tier"></span>
+        </div>
+        <div id="tb-right" class="glass">
+          <span class="stats">
+            <span class="stat" title="Population"><svg><use href="#i-people" /></svg><b id="stat-pop">0</b></span>
+            <span class="stat" title="Employed / adults"><svg><use href="#i-work" /></svg><b id="stat-jobs">0/0</b></span>
+            <span class="stat" title="Combined household wealth"><svg><use href="#i-coins" /></svg><b id="stat-wealth">$0</b></span>
+            <span class="stat" title="Town safety"><svg><use href="#i-shield" /></svg><b id="stat-safe">92%</b></span>
+            <span class="stat" title="Happiness"><svg><use href="#i-smile" /></svg><b id="stat-hap">100%</b></span>
+            <button class="chip" id="stat-leader" title="Village leadership — open the mayor's report"><svg><use href="#i-hall" /></svg><span id="stat-leader-text">Self-governing</span></button>
+          </span>
+          <span class="tb-sep"></span>
+          <span id="speed" class="seg" title="Game speed (fast-forward in the Planner)">
+            <button data-s="0" title="Pause (Space in the Planner)"><svg><use href="#i-pause" /></svg></button><button data-s="1" title="Normal speed">1×</button><button data-s="2" title="2× (Planner)">2×</button><button data-s="3" title="4× (Planner)">4×</button><button data-s="4" title="8× (Planner)">8×</button>
+          </span>
+          <span id="filebtns">
+            <button class="ib" id="btn-planner" title="Planner — rise up and build (P)"><svg><use href="#i-crane" /></svg></button>
+            <button class="ib" id="btn-journal" title="Task book & village news (J)"><svg><use href="#i-book" /></svg><span id="journal-badge"></span></button>
+            <button class="ib" id="btn-stats" title="Village history"><svg><use href="#i-chart" /></svg></button>
+            <button class="ib" id="btn-menu" title="Menu"><svg><use href="#i-menu" /></svg></button>
+          </span>
+        </div>
+        <div id="menu" class="glass">
+          <button id="btn-save"><svg><use href="#i-save" /></svg>Save village</button>
+          <button id="btn-load"><svg><use href="#i-folder" /></svg>Load village</button>
+          <button id="btn-new"><svg><use href="#i-map" /></svg>Found a new village</button>
+          <hr />
+          <button id="btn-settings"><svg><use href="#i-gear" /></svg>Settings</button>
+          <button id="btn-sound"><svg><use href="#i-sound" /></svg><span>Sound on</span></button>
+          <button id="btn-help"><svg><use href="#i-help" /></svg>Help &amp; controls<kbd>F1</kbd></button>
+        </div>
       </div>
 
-      <aside id="palette"></aside>
+      <aside id="palette" class="glass">
+        <div id="pal-tabs"></div>
+        <div id="pal-title"></div>
+        <div id="pal-grid" class="pal-grid"></div>
+      </aside>
       <div id="hint"></div>
       <div id="prompt"></div>
       <div id="streethud">
-        <span id="wallet" title="The Founder's wallet">👛 $120</span>
-        <span id="speedo"></span>
-        <span id="modebadge"></span>
+        <span id="wallet-pill" class="glass" title="The Founder's wallet"><svg><use href="#i-wallet" /></svg><b id="wallet">$120</b></span>
+        <span id="speedo" class="glass"></span>
+        <span id="modebadge" class="glass"></span>
       </div>
       <div id="crosshair"></div>
-      <div id="info"></div>
+      <div id="info" class="glass"></div>
       <div id="toasts"></div>
 
       <div id="sc-panel">
-        <div id="tv" title="PVTV — the village news channel">
-          <div id="tv-head"><span>📺 PVTV</span><span class="tv-live"><i></i>LIVE</span></div>
+        <div id="tv" class="glass" title="PVTV — the village news channel">
+          <div id="tv-head"><span><svg><use href="#i-tv" /></svg>PVTV</span><span class="tv-live"><i></i>Live</span></div>
           <div id="tv-headline">PVTV signs on — good morning!</div>
           <div id="tv-ticker"><span id="tv-ticker-text">PVTV · village news &amp; markets</span></div>
         </div>
-        <div id="mapwrap">
-          <canvas id="minimap" width="256" height="256" title="Click to jump (Planner)"></canvas>
+        <div id="mapwrap" class="glass">
+          <canvas id="minimap" width="256" height="256" title="Click to fly there (Planner)"></canvas>
           <div id="rci" title="Demand: Residential · Commercial · Industrial (jobs)">
             <div class="rci-col"><div class="rci-track"><i id="rci-r"></i></div><b>R</b></div>
             <div class="rci-col"><div class="rci-track"><i id="rci-c"></i></div><b>C</b></div>
@@ -71,9 +124,9 @@
         </div>
       </div>
 
-      <div id="journal" class="panel">
-        <div class="panel-head"><span>📖 Village Task Book</span><button class="x" data-close="journal">✕</button></div>
-        <div id="journal-tabs"><button data-tab="tasks" class="active">📋 Tasks</button><button data-tab="news">📰 News</button></div>
+      <div id="journal" class="panel glass">
+        <div class="panel-head"><span>Village task book</span><button class="ib x" data-close="journal" title="Close"><svg><use href="#i-close" /></svg></button></div>
+        <div id="journal-tabs" class="seg"><button data-tab="tasks" class="on">Tasks</button><button data-tab="news">News</button></div>
         <div id="journal-list"></div>
       </div>
 
@@ -81,87 +134,93 @@
         <div id="stick"><i></i></div>
         <div id="lookpad"></div>
         <div id="tbtns">
-          <button data-a="jump">⤒</button>
-          <button data-a="interact">E</button>
-          <button data-a="vehicle">🚗</button>
-          <button data-a="camera">👁️</button>
-          <button data-a="planner">🏗️</button>
-          <button data-hold="run">🏃</button>
+          <button data-a="jump" title="Jump">⤒</button>
+          <button data-a="interact" title="Interact">E</button>
+          <button data-a="vehicle" title="Car"><svg><use href="#i-car" /></svg></button>
+          <button data-a="camera" title="Camera"><svg><use href="#i-eye" /></svg></button>
+          <button data-a="planner" title="Planner"><svg><use href="#i-crane" /></svg></button>
+          <button data-hold="run" title="Run">Run</button>
         </div>
       </div>
     </div>
 
     <div id="modals">
-      <div id="settings" class="modal"><div class="modal-card">
-        <h1>⚙️ Settings</h1>
-        <div class="set-row"><label>Village name</label><input id="set-name" maxlength="24" spellcheck="false" /></div>
-        <div class="set-row"><label>Growth pace</label><select id="set-pace">
-          <option value="cozy">Cozy — slow &amp; steady (recommended)</option><option value="normal">Normal</option><option value="bustling">Bustling — fast growth</option></select></div>
-        <div class="set-row"><label>Christmas fast-forward lock</label><select id="set-xmas">
+      <div id="settings" class="modal"><div class="modal-card glass">
+        <header class="m-head"><h1>Settings</h1><button class="ib" data-close="settings" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <h2>Village</h2>
+        <div class="set-row"><label for="set-name">Name</label><input id="set-name" maxlength="24" spellcheck="false" /></div>
+        <div class="set-row"><label for="set-pace">Growth pace</label><select id="set-pace">
+          <option value="cozy">Cozy — slow and steady</option><option value="normal">Normal</option><option value="bustling">Bustling — fast growth</option></select></div>
+        <div class="set-row"><label for="set-xmas">Christmas fast-forward lock</label><select id="set-xmas">
           <option value="eve">Only Christmas Eve &amp; Day</option><option value="season">The whole festive week</option><option value="off">Never lock</option></select></div>
-        <div class="set-row"><label>Graphics quality</label><select id="set-quality">
-          <option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
-        <div class="set-row"><label>Field of view</label><input id="set-fov" type="range" min="55" max="95" step="1" /></div>
-        <div class="set-row"><label>Look sensitivity</label><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" /></div>
-        <div class="set-row"><label>Invert look up/down</label><input id="set-invert" type="checkbox" /></div>
-        <div class="set-row"><label>Sound volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" /></div>
-        <div class="set-row"><label>Autosave</label><select id="set-autosave">
+        <div class="set-row"><label for="set-autosave">Autosave</label><select id="set-autosave">
           <option value="2">Every 2 minutes</option><option value="5">Every 5 minutes</option><option value="0">Off</option></select></div>
+        <h2>Graphics &amp; view</h2>
+        <div class="set-row"><label for="set-quality">Quality</label><select id="set-quality">
+          <option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+        <div class="set-row"><label for="set-fov">Field of view</label><input id="set-fov" type="range" min="55" max="95" step="1" /></div>
+        <h2>Controls &amp; sound</h2>
+        <div class="set-row"><label for="set-sens">Look sensitivity</label><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" /></div>
+        <div class="set-row"><label for="set-invert">Invert look up/down</label><input id="set-invert" type="checkbox" class="toggle" /></div>
+        <div class="set-row"><label for="set-vol">Volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" /></div>
         <p class="note">Graphics quality applies after a reload.</p>
-        <button class="primary" data-close="settings">Done</button>
+        <div class="row-end"><button class="primary" data-close="settings">Done</button></div>
       </div></div>
 
-      <div id="saveui" class="modal"><div class="modal-card">
-        <h1 id="saveui-title">💾 Save village</h1>
+      <div id="saveui" class="modal"><div class="modal-card glass">
+        <header class="m-head"><h1 id="saveui-title">Save village</h1><button class="ib" data-close="saveui" title="Close"><svg><use href="#i-close" /></svg></button></header>
         <div id="saveui-slots"></div>
-        <div class="set-row">
-          <button id="saveui-export">⬇️ Export to file</button>
-          <button id="saveui-import">⬆️ Import file (V1 saves too)</button>
+        <div class="row-end split">
+          <button id="saveui-export"><svg><use href="#i-save" /></svg>Export to file</button>
+          <button id="saveui-import"><svg><use href="#i-folder" /></svg>Import a file (V1 saves too)</button>
           <input id="saveui-file" type="file" accept=".json,application/json" hidden />
         </div>
-        <button data-close="saveui">Close</button>
       </div></div>
 
-      <div id="newmap" class="modal"><div class="modal-card">
-        <h1>🗺️ Found a new village</h1>
-        <div class="set-row"><label>Village name</label><input id="nm-name" maxlength="24" spellcheck="false" value="PixelVille" /></div>
-        <div class="set-row"><label>Mode</label><select id="nm-mode">
+      <div id="newmap" class="modal"><div class="modal-card glass">
+        <header class="m-head"><h1>Found a new village</h1><button class="ib" data-close="newmap" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <div class="set-row"><label for="nm-name">Village name</label><input id="nm-name" maxlength="24" spellcheck="false" value="PixelVille" /></div>
+        <div class="set-row"><label for="nm-mode">Mode</label><select id="nm-mode">
           <option value="sandbox">Sandbox — no goals, just life</option>
-          <option value="first100">💯 The First Hundred — reach 100 residents</option>
-          <option value="railage">🚂 The Rail Age — get trains running</option>
-          <option value="festive">🕯️ A Year Without Loss — 28 days, no building lost</option></select></div>
-        <div class="row-end"><button data-close="newmap">Cancel</button><button class="primary" id="nm-start">Found the village ▶</button></div>
+          <option value="first100">The First Hundred — reach 100 residents</option>
+          <option value="railage">The Rail Age — get trains running</option>
+          <option value="festive">A Year Without Loss — 28 days, no building lost</option></select></div>
+        <p class="note">The current village is left as it is in your save slots; autosave moves on to the new one.</p>
+        <div class="row-end"><button data-close="newmap">Cancel</button><button class="primary" id="nm-start">Found the village</button></div>
       </div></div>
 
-      <div id="statsui" class="modal"><div class="modal-card wide">
-        <h1>📈 Village history</h1>
-        <canvas id="stats-canvas" width="560" height="320"></canvas>
-        <button data-close="statsui">Close</button>
+      <div id="statsui" class="modal"><div class="modal-card glass wide">
+        <header class="m-head"><h1>Village history</h1><button class="ib" data-close="statsui" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <canvas id="stats-canvas" width="1120" height="600"></canvas>
       </div></div>
 
-      <div id="help" class="modal"><div class="modal-card wide">
-        <h1>🏘️ PixelVille — Next Dimension</h1>
-        <p>You are <b>the Founder</b>: walk your village at street level, drive its roads, and rise into the sky to build — <b>the village figures out the rest</b>. Families move in, find work, fall in love, vote, gossip and remember.</p>
+      <div id="help" class="modal"><div class="modal-card glass wide">
+        <header class="m-head"><h1>PixelVille <span class="brand-sub">Next Dimension</span></h1><button class="ib" data-close="help" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <p class="lede">You are <b>the Founder</b>: walk your village at street level, drive its roads, and rise into the sky to build. <b>The village figures out the rest</b>: families move in, find work, fall in love, vote, gossip and remember.</p>
         <div class="help-grid">
-          <div><h3>🚶 On the street</h3>
-            <p><kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look (click the view first)<br />
-            <kbd>V</kbd> first/third person · <kbd>E</kbd> look at a building or villager nearby<br />
-            <kbd>F</kbd> get into / out of your car (it's parked at the Lodge) · <kbd>W/S</kbd> gas &amp; brake · <kbd>Space</kbd> handbrake</p></div>
-          <div><h3>🏗️ The Planner</h3>
-            <p><kbd>P</kbd> rise into the Planner and back down · <kbd>WASD</kbd> glide · wheel zoom · <kbd>Q</kbd>/<kbd>E</kbd> or right-drag rotate<br />
-            Pick from the palette, click to place · <kbd>R</kbd> turns the door side · drag roads, rails, rivers &amp; bulldoze<br />
-            Click any building or villager to inspect · right-click/<kbd>Esc</kbd> cancels · <kbd>Ctrl+Z</kbd> undo · speeds up to 8×</p></div>
-          <div><h3>🎮 Gamepad &amp; touch</h3>
-            <p>Sticks move &amp; look · A jump · X interact · Y car · R3 camera · Start Planner · triggers drive.<br />
+          <div><h3>On the street</h3>
+            <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look (click the view first)<br />
+            <kbd>V</kbd> first or third person · <kbd>E</kbd> a building or villager nearby<br />
+            <kbd>F</kbd> into or out of your car (parked at the Lodge) · <kbd>W</kbd>/<kbd>S</kbd> gas and brake · <kbd>Space</kbd> handbrake</p></div>
+          <div><h3>The Planner</h3>
+            <p><kbd>P</kbd> rise into the Planner and back down · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> glide · wheel zoom · <kbd>Q</kbd>/<kbd>E</kbd> or right-drag to rotate<br />
+            Pick from the palette and click to place · <kbd>R</kbd> turns the door side · drag roads, rails, rivers and the bulldozer<br />
+            Click any building or villager to inspect · right-click or <kbd>Esc</kbd> cancels · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · up to 8× speed</p></div>
+          <div><h3>Gamepad and touch</h3>
+            <p>Sticks move and look · A jump · X interact · Y car · R3 camera · Start Planner · triggers drive.<br />
             On phones: left thumb moves, right thumb looks, buttons for the rest. In the Planner, drag to pan and pinch to zoom.</p></div>
-          <div><h3>🛖 Getting started</h3>
-            <p>Open the Planner, drop a <b>house</b> near the highway — a road connects itself and the first family moves in. Add jobs, shops and a school, then come back down and watch the morning commute.</p></div>
+          <div><h3>Getting started</h3>
+            <p>Open the Planner and drop a <b>house</b> near the highway: a road connects itself and the first family moves in. Add jobs, shops and a school, then come back down and watch the morning commute.</p></div>
         </div>
-        <button class="primary" data-close="help">Start ▶</button>
+        <div class="row-end"><button class="primary" data-close="help">Start</button></div>
       </div></div>
     </div>
 
-    <div id="loading"><div>🏘️ PixelVille <small>Next Dimension</small></div><p id="loading-text">Raising the village…</p></div>
+    <div id="loading">
+      <div class="title"><b>PixelVille</b><span>Next Dimension</span></div>
+      <p id="loading-text">Raising the village…</p>
+      <span id="loading-track"><i id="loading-bar"></i></span>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

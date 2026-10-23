@@ -17,6 +17,199 @@ export interface TexSet {
 
 const ALL: THREE.Texture[] = [];
 let RES = 1;
+
+/* ---------- off-thread generation ----------
+   On the page, the pixel generators below run in a small pool of workers:
+   each call returns its textures at once (right size, still blank) and the
+   pixels arrive a little later, generated in parallel. Await texturesReady()
+   before the first render. Inside a worker, or without workers, they run inline. */
+type Job = { name: string; args: unknown[] };
+type Gen = (...a: any[]) => TexSet | THREE.Texture;
+const GENS: Record<string, Gen> = {};
+const INLINE = typeof document === 'undefined';
+let JOB: Job | null = null;
+/** each worker takes the next queued job as soon as it is free */
+let POOL: { w: Worker; busy: number }[] | null = null;
+let broken = false, seq = 0;
+const PENDING = new Map<number, { job: Job; res: number; key: string; fill: (data: Uint8Array[]) => void }>();
+const QUEUE: number[] = [];
+let WAIT: Promise<void>[] = [];
+
+/** the raw pixel arrays of a generator's textures (used by the worker) */
+export function generateRaw(name: string, args: unknown[]): Uint8Array[] {
+  const r = GENS[name](...args);
+  const texes = 'map' in r ? [r.map, r.normalMap, r.roughnessMap] : [r];
+  return texes.map((t) => (t as THREE.DataTexture).image.data as Uint8Array);
+}
+function runInline(id: number): void {
+  const p = PENDING.get(id);
+  if (!p) return;
+  PENDING.delete(id);
+  p.fill(generateRaw(p.job.name, p.job.args));
+}
+const offloadable = (): boolean => !INLINE && !broken && typeof Worker !== 'undefined';
+function pool(): { w: Worker; busy: number }[] | null {
+  if (!offloadable()) return null;
+  if (!POOL) {
+    const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+    const slots: { w: Worker; busy: number }[] = [];
+    for (let i = 0; i < n; i++) {
+      const s = { w: new Worker(new URL('./texworker.ts', import.meta.url), { type: 'module' }), busy: 0 };
+      s.w.onmessage = (e: MessageEvent<{ id: number; data: Uint8Array[] }>) => {
+        s.busy = 0;
+        const p = PENDING.get(e.data.id);
+        PENDING.delete(e.data.id);
+        if (p) {
+          p.fill(e.data.data);
+          cachePut(p.key, e.data.data);
+        }
+        pump();
+      };
+      // a worker that can't start: make everything still waiting here instead
+      s.w.onerror = () => {
+        broken = true;
+        QUEUE.length = 0;
+        for (const id of [...PENDING.keys()]) runInline(id);
+      };
+      slots.push(s);
+    }
+    POOL = slots;
+  }
+  return POOL;
+}
+function pump(): void {
+  if (!QUEUE.length) return;
+  if (!pool()) {
+    for (const id of QUEUE.splice(0)) runInline(id);
+    return;
+  }
+  for (const s of POOL!) {
+    while (!s.busy && QUEUE.length) {
+      const id = QUEUE.shift()!, p = PENDING.get(id);
+      if (!p) continue;
+      s.busy = id;
+      s.w.postMessage({ id, name: p.job.name, args: p.job.args, res: p.res });
+    }
+  }
+}
+function offThread<A extends unknown[], R extends TexSet | THREE.Texture>(name: string, f: (...a: A) => R): (...a: A) => R {
+  GENS[name] = f as Gen;
+  return (...a: A): R => {
+    if (!offloadable()) return f(...a);
+    JOB = { name, args: a };
+    try { return f(...a); } finally { JOB = null; }
+  };
+}
+/** the current job's pixels land in `arrays`: from the cache of an earlier visit, else from a worker */
+function dispatch(arrays: Uint8Array[], texes: THREE.Texture[]): void {
+  const job = JOB!, id = ++seq;
+  const key = cacheKey(job, RES);
+  WAIT.push(new Promise<void>((resolve) => {
+    PENDING.set(id, {
+      job,
+      res: RES,
+      key,
+      fill: (data) => {
+        data.forEach((d, i) => arrays[i].set(d));
+        for (const t of texes) t.needsUpdate = true;
+        resolve();
+      },
+    });
+  }));
+  cacheGet(key).then((hit) => {
+    const p = PENDING.get(id);
+    if (!p) return;
+    if (hit && hit.length === arrays.length && hit.every((h, i) => h.length === arrays[i].length)) {
+      PENDING.delete(id);
+      p.fill(hit);
+    } else {
+      QUEUE.push(id);
+      pump();
+    }
+  });
+}
+
+/* ---------- the pixel cache (production builds) ----------
+   Generated pixels are kept in IndexedDB between visits, keyed by the
+   generator, its arguments, the texture scale and a hash of the code that
+   paints them, so any change to a generator repaints it. Development
+   builds always paint afresh. */
+const CACHE = !INLINE && !import.meta.env.DEV && typeof indexedDB !== 'undefined';
+let dbP: Promise<IDBDatabase | null> | null = null;
+let srcHash = '';
+function fnv(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+function cacheKey(job: Job, res: number): string {
+  if (!srcHash) srcHash = fnv([build, pixels, fbm, vnoise, worley, hash].map((f) => f.toString()).join('|'));
+  return `${job.name}|${JSON.stringify(job.args)}|${res}|${srcHash}|${fnv(GENS[job.name].toString())}`;
+}
+function db(): Promise<IDBDatabase | null> {
+  if (!dbP) dbP = new Promise((res) => {
+    try {
+      const r = indexedDB.open('pv-textures', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('px');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => res(null);
+      r.onblocked = () => res(null);
+    } catch { res(null); }
+  });
+  return dbP;
+}
+async function cacheGet(key: string): Promise<Uint8Array[] | null> {
+  if (!CACHE) return null;
+  const d = await db();
+  if (!d) return null;
+  return new Promise((res) => {
+    try {
+      const r = d.transaction('px').objectStore('px').get(key);
+      r.onsuccess = () => res((r.result as Uint8Array[]) || null);
+      r.onerror = () => res(null);
+    } catch { res(null); }
+  });
+}
+/** keep fresh pixels; entries for older code or other scales are cleared out once everything is painted */
+const written = new Set<string>();
+function cachePut(key: string, data: Uint8Array[]): void {
+  if (!CACHE) return;
+  written.add(key);
+  void db().then((d) => {
+    try { d?.transaction('px', 'readwrite').objectStore('px').put(data, key); } catch { /* full or unavailable: just repaint next time */ }
+  });
+}
+async function cachePrune(): Promise<void> {
+  if (!CACHE || !written.size) return;
+  const d = await db();
+  if (!d) return;
+  const live = new Set<string>([...written]);
+  for (const p of PENDING.values()) live.add(p.key);
+  try {
+    const store = d.transaction('px', 'readwrite').objectStore('px');
+    const r = store.getAllKeys();
+    r.onsuccess = () => {
+      for (const k of r.result as string[]) {
+        // same generator and arguments, but painted by older code or at another scale: stale
+        const head = k.split('|').slice(0, 2).join('|');
+        if (!live.has(k) && [...live].some((l) => l.startsWith(head + '|'))) store.delete(k);
+      }
+    };
+  } catch { /* nothing to tidy */ }
+}
+/** resolves when every generated texture has its pixels; the workers are then let go */
+export async function texturesReady(): Promise<void> {
+  while (WAIT.length) {
+    const w = WAIT;
+    WAIT = [];
+    await Promise.all(w);
+  }
+  if (POOL && !PENDING.size) {
+    for (const s of POOL) s.w.terminate();
+    POOL = null;
+  }
+  void cachePrune();
+}
 /** scale every generated texture (0.5 on integrated GPUs: 4× faster to build, a quarter of the memory) */
 export function setTextureScale(s: number): void {
   RES = s;
@@ -64,7 +257,7 @@ function worley(u: number, v: number, p: number, s: number): { d: number; d2: nu
     for (let i = -1; i <= 1; i++) {
       const cx = wrap(ix + i, p), cy = wrap(iy + j, p);
       const px = ix + i + hash(cx, cy, s), py = iy + j + hash(cx, cy, s + 7);
-      const dd = Math.hypot(px - x, py - y);
+      const dd = Math.sqrt((px - x) * (px - x) + (py - y) * (py - y));
       if (dd < d) { d2 = d; d = dd; id = hash(cx, cy, s + 13); }
       else if (dd < d2) d2 = dd;
     }
@@ -101,6 +294,11 @@ function build(size: number, metres: number, fn: (u: number, v: number, xm: numb
   size = Math.max(128, Math.round(size * RES));
   const n = size * size;
   const alb = new Uint8Array(n * 4), nor = new Uint8Array(n * 4), rgh = new Uint8Array(n * 4);
+  const set = { map: dataTex(alb, size, true), normalMap: dataTex(nor, size, false), roughnessMap: dataTex(rgh, size, false), metres };
+  if (JOB) {
+    dispatch([alb, nor, rgh], [set.map, set.normalMap, set.roughnessMap]);
+    return set;
+  }
   const hgt = new Float32Array(n);
   const o: Px = { r: 0, g: 0, b: 0, h: 0, rough: 0.8 };
   for (let y = 0; y < size; y++)
@@ -122,14 +320,23 @@ function build(size: number, metres: number, fn: (u: number, v: number, xm: numb
       const xl = wrap(x - 1, size), xr = wrap(x + 1, size), yd = wrap(y - 1, size), yu = wrap(y + 1, size);
       const dx = (hgt[y * size + xr] - hgt[y * size + xl]) * s;
       const dy = (hgt[yu * size + x] - hgt[yd * size + x]) * s;
-      const inv = 1 / Math.hypot(dx, dy, 1);
+      const inv = 1 / Math.sqrt(dx * dx + dy * dy + 1);
       const k = (y * size + x) * 4;
       nor[k] = (-dx * inv * 0.5 + 0.5) * 255;
       nor[k + 1] = (-dy * inv * 0.5 + 0.5) * 255;
       nor[k + 2] = (inv * 0.5 + 0.5) * 255;
       nor[k + 3] = 255;
     }
-  return { map: dataTex(alb, size, true), normalMap: dataTex(nor, size, false), roughnessMap: dataTex(rgh, size, false), metres };
+  return set;
+}
+
+/** a single RGBA tile filled by `fill` (off-thread on the page) */
+function pixels(size: number, srgb: boolean, fill: (d: Uint8Array) => void): THREE.DataTexture {
+  const d = new Uint8Array(size * size * 4);
+  const t = dataTex(d, size, srgb);
+  if (JOB) dispatch([d], [t]);
+  else fill(d);
+  return t;
 }
 
 /* ---------- generators ---------- */
@@ -140,7 +347,7 @@ const rgb = (h: string): RGB => {
 };
 
 /** stretcher-bond brick: 8 bricks × 24 courses per 1.8 m tile */
-export function brick(base: string, mortar = '#b8b0a2', seed = 1): TexSet {
+function brickPx(base: string, mortar = '#b8b0a2', seed = 1): TexSet {
   const B = rgb(base), M = rgb(mortar);
   const pitch = 0.225, course = 0.075, joint = 0.011;
   return build(1024, 1.8, (u, v, xm, ym, o) => {
@@ -175,7 +382,7 @@ export function brick(base: string, mortar = '#b8b0a2', seed = 1): TexSet {
 }
 
 /** smooth or roughcast render; tinted by vertex colour, so keep it pale */
-export function render(seed = 2): TexSet {
+function renderPx(seed = 2): TexSet {
   return build(512, 3, (u, v, _x, _y, o) => {
     const n = fbm(u, v, 24, 4, seed);
     const f = fbm(u, v, 128, 2, seed + 1);
@@ -188,7 +395,7 @@ export function render(seed = 2): TexSet {
 }
 
 /** clay pantiles, 8 × 8 per 2 m tile */
-export function clayTiles(seed = 3): TexSet {
+function clayTilesPx(seed = 3): TexSet {
   const W = 0.25, H = 0.25;
   return build(1024, 2, (u, v, xm, ym, o) => {
     const row = Math.floor(ym / H);
@@ -211,7 +418,7 @@ export function clayTiles(seed = 3): TexSet {
 }
 
 /** natural slate, offset courses */
-export function slate(seed = 4): TexSet {
+function slatePx(seed = 4): TexSet {
   const W = 0.3, H = 0.22;
   return build(1024, 2.4, (u, v, xm, ym, o) => {
     const row = Math.floor(ym / H);
@@ -229,7 +436,7 @@ export function slate(seed = 4): TexSet {
 }
 
 /** worn asphalt with exposed aggregate */
-export function asphalt(seed = 5): TexSet {
+function asphaltPx(seed = 5): TexSet {
   return build(1024, 4, (u, v, _x, _y, o) => {
     const n = fbm(u, v, 8, 4, seed);
     const f = fbm(u, v, 256, 2, seed + 1);
@@ -245,7 +452,7 @@ export function asphalt(seed = 5): TexSet {
 }
 
 /** 600 mm concrete flags with slightly tilted slabs */
-export function paving(seed = 6): TexSet {
+function pavingPx(seed = 6): TexSet {
   const S = 0.6, J = 0.006;
   return build(1024, 2.4, (u, v, xm, ym, o) => {
     const cx = Math.floor(xm / S), cy = Math.floor(ym / S);
@@ -269,7 +476,7 @@ export function paving(seed = 6): TexSet {
 }
 
 /** speckled granite for kerbs and copings */
-export function granite(seed = 7): TexSet {
+function granitePx(seed = 7): TexSet {
   return build(512, 1, (u, v, _x, _y, o) => {
     const f = fbm(u, v, 160, 2, seed);
     const w = worley(u, v, 140, seed + 1);
@@ -282,7 +489,7 @@ export function granite(seed = 7): TexSet {
 }
 
 /** ground under the grass: greens, browns and soil showing through */
-export function grassGround(seed = 8): TexSet {
+function grassGroundPx(seed = 8): TexSet {
   return build(1024, 8, (u, v, _x, _y, o) => {
     const big = fbm(u, v, 4, 4, seed);
     const mid = fbm(u, v, 40, 3, seed + 1);
@@ -299,7 +506,7 @@ export function grassGround(seed = 8): TexSet {
 }
 
 /** beach sand with wind ripples */
-export function sand(seed = 16): TexSet {
+function sandPx(seed = 16): TexSet {
   return build(512, 4, (u, v, xm, ym, o) => {
     const f = fbm(u, v, 200, 2, seed);
     const n = fbm(u, v, 6, 3, seed + 1);
@@ -312,7 +519,7 @@ export function sand(seed = 16): TexSet {
 }
 
 /** weathered mountain rock: fractured slabs, lichen, scree */
-export function rock(seed = 17): TexSet {
+function rockPx(seed = 17): TexSet {
   return build(1024, 6, (u, v, _x, _y, o) => {
     const w = worley(u, v, 18, seed);
     const crack = smooth(0.06, 0.0, w.d2 - w.d);
@@ -327,7 +534,7 @@ export function rock(seed = 17): TexSet {
 }
 
 /** compacted gravel path */
-export function gravel(seed = 9): TexSet {
+function gravelPx(seed = 9): TexSet {
   return build(512, 2, (u, v, _x, _y, o) => {
     const w = worley(u, v, 180, seed);
     const stone = smooth(0.55, 0.15, w.d);
@@ -340,7 +547,7 @@ export function gravel(seed = 9): TexSet {
 }
 
 /** flower-bed soil */
-export function soil(seed = 10): TexSet {
+function soilPx(seed = 10): TexSet {
   return build(512, 2, (u, v, _x, _y, o) => {
     const w = worley(u, v, 60, seed);
     const clod = smooth(0.6, 0.1, w.d);
@@ -353,7 +560,7 @@ export function soil(seed = 10): TexSet {
 }
 
 /** furrowed bark: u around the trunk, v along it */
-export function bark(seed = 11, birch = false): TexSet {
+function barkPx(seed = 11, birch = false): TexSet {
   return build(512, 1, (u, v, _x, _y, o) => {
     if (birch) {
       const n = fbm(u, v, 8, 4, seed);
@@ -377,7 +584,7 @@ export function bark(seed = 11, birch = false): TexSet {
 }
 
 /** ashlar stone blocks (embankment, plinths, sills) */
-export function ashlar(base = '#a9a191', seed = 12): TexSet {
+function ashlarPx(base = '#a9a191', seed = 12): TexSet {
   const B = rgb(base);
   const W = 0.6, H = 0.3, J = 0.008;
   return build(1024, 2.4, (u, v, xm, ym, o) => {
@@ -403,7 +610,7 @@ export function ashlar(base = '#a9a191', seed = 12): TexSet {
 }
 
 /** weathered timber planks running along v */
-export function planks(seed = 13): TexSet {
+function planksPx(seed = 13): TexSet {
   const P = 0.15;
   return build(512, 1.2, (u, v, xm, _y, o) => {
     const k = Math.floor(xm / P);
@@ -419,20 +626,20 @@ export function planks(seed = 13): TexSet {
 }
 
 /** white thermoplastic road paint, worn; alpha in the map */
-export function roadPaint(seed = 14): THREE.Texture {
-  const size = 512, n = size * size;
-  const d = new Uint8Array(n * 4);
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const u = x / size, v = y / size;
-      const wear = fbm(u, v, 12, 4, seed);
-      const pits = fbm(u, v, 160, 2, seed + 1);
-      const a = smooth(0.28, 0.4, wear) * smooth(0.25, 0.4, pits);
-      const k = (y * size + x) * 4;
-      const l = 0.86 + pits * 0.1;
-      d[k] = l * 255; d[k + 1] = l * 255; d[k + 2] = l * 250; d[k + 3] = a * 255;
-    }
-  return dataTex(d, size, true);
+function roadPaintPx(seed = 14): THREE.Texture {
+  const size = 512;
+  return pixels(size, true, (d) => {
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const u = x / size, v = y / size;
+        const wear = fbm(u, v, 12, 4, seed);
+        const pits = fbm(u, v, 160, 2, seed + 1);
+        const a = smooth(0.28, 0.4, wear) * smooth(0.25, 0.4, pits);
+        const k = (y * size + x) * 4;
+        const l = 0.86 + pits * 0.1;
+        d[k] = l * 255; d[k + 1] = l * 255; d[k + 2] = l * 250; d[k + 3] = a * 255;
+      }
+  });
 }
 
 /* ---------- foliage cards (canvas-drawn, alpha) ---------- */
@@ -617,25 +824,44 @@ export function softDot(): THREE.Texture {
 }
 
 /** detail normal map for water: two octaves of soft ripples, tileable */
-export function waterNormals(seed = 15): THREE.Texture {
+function waterNormalsPx(seed = 15): THREE.Texture {
   const size = 512, n = size * size;
-  const h = new Float32Array(n);
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const u = x / size, v = y / size;
-      h[y * size + x] = fbm(u, v, 8, 5, seed) + 0.5 * fbm(u, v, 24, 3, seed + 9);
-    }
-  const d = new Uint8Array(n * 4);
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const dx = (h[y * size + wrap(x + 1, size)] - h[y * size + wrap(x - 1, size)]) * 6;
-      const dy = (h[wrap(y + 1, size) * size + x] - h[wrap(y - 1, size) * size + x]) * 6;
-      const inv = 1 / Math.hypot(dx, dy, 1);
-      const k = (y * size + x) * 4;
-      d[k] = (-dx * inv * 0.5 + 0.5) * 255;
-      d[k + 1] = (-dy * inv * 0.5 + 0.5) * 255;
-      d[k + 2] = (inv * 0.5 + 0.5) * 255;
-      d[k + 3] = 255;
-    }
-  return dataTex(d, size, false);
+  return pixels(size, false, (d) => {
+    const h = new Float32Array(n);
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const u = x / size, v = y / size;
+        h[y * size + x] = fbm(u, v, 8, 5, seed) + 0.5 * fbm(u, v, 24, 3, seed + 9);
+      }
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const dx = (h[y * size + wrap(x + 1, size)] - h[y * size + wrap(x - 1, size)]) * 6;
+        const dy = (h[wrap(y + 1, size) * size + x] - h[wrap(y - 1, size) * size + x]) * 6;
+        const inv = 1 / Math.sqrt(dx * dx + dy * dy + 1);
+        const k = (y * size + x) * 4;
+        d[k] = (-dx * inv * 0.5 + 0.5) * 255;
+        d[k + 1] = (-dy * inv * 0.5 + 0.5) * 255;
+        d[k + 2] = (inv * 0.5 + 0.5) * 255;
+        d[k + 3] = 255;
+      }
+  });
 }
+
+/* the generators, as the rest of the game calls them */
+export const brick = offThread('brick', brickPx);
+export const render = offThread('render', renderPx);
+export const clayTiles = offThread('clayTiles', clayTilesPx);
+export const slate = offThread('slate', slatePx);
+export const asphalt = offThread('asphalt', asphaltPx);
+export const paving = offThread('paving', pavingPx);
+export const granite = offThread('granite', granitePx);
+export const grassGround = offThread('grassGround', grassGroundPx);
+export const sand = offThread('sand', sandPx);
+export const rock = offThread('rock', rockPx);
+export const gravel = offThread('gravel', gravelPx);
+export const soil = offThread('soil', soilPx);
+export const bark = offThread('bark', barkPx);
+export const ashlar = offThread('ashlar', ashlarPx);
+export const planks = offThread('planks', planksPx);
+export const roadPaint = offThread('roadPaint', roadPaintPx);
+export const waterNormals = offThread('waterNormals', waterNormalsPx);

@@ -10,7 +10,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, detectQuality } from '../gfx/pipeline';
 import { SkySystem } from '../gfx/sky';
 import { ENV } from '../gfx/env';
-import { setAnisotropy, setTextureScale } from '../gfx/textures';
+import { setAnisotropy, setTextureScale, texturesReady } from '../gfx/textures';
 import { interiorDay, lightsOn } from '../gfx/architecture';
 import { GLOW } from '../gfx/props';
 import { Precipitation } from '../gfx/precip';
@@ -213,6 +213,8 @@ async function main(): Promise<void> {
   const windName = (w: number): string => (w < 0.12 ? 'Calm' : w < 0.35 ? 'Breeze' : w < 0.6 ? 'Windy' : w < 0.82 ? 'Strong wind' : 'Gale');
 
   setView('street');
+  await progress('Painting textures…');
+  await texturesReady();
   await progress('Compiling shaders…');
   // light the scene first: programs compiled without the environment map would all recompile on frame one
   sky.update(1 / 60, hour, doy, { overcast: st.overcast, clouds: st.clouds, fog: st.fog, snow: 0 }, camera.position, camera);

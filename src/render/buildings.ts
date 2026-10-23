@@ -17,7 +17,7 @@ import { CAT } from '../sim/catalog';
 import { World } from '../sim/world';
 import { Weather } from '../sim/weather';
 import { hex, shade, hash2 } from './kit';
-import { Kit, Palette, sharedPalette, Frame, Hole, wallFace, obox, sashWindow, frontDoor, glassPane, chimney as brickChimney, TRIM, meshesFromParts } from '../gfx/architecture';
+import { Kit, Packed, Palette, sharedPalette, Frame, Hole, wallFace, obox, sashWindow, frontDoor, glassPane, chimney as brickChimney, TRIM, meshesFromParts } from '../gfx/architecture';
 import * as TX from '../gfx/textures';
 import { TreeInstance, Species } from '../gfx/vegetation';
 
@@ -36,6 +36,12 @@ const INDUSTRIAL = new Set(['factory', 'steelworks', 'sawmill', 'brickworks', 't
 
 const V = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
 const WHITE = new THREE.Color(1, 1, 1);
+const _T = new THREE.Matrix4();
+/** a translation, inside a local transform when there is one (scratch: use it at once) */
+function at(mat: THREE.Matrix4 | null, x: number, y: number, z: number): THREE.Matrix4 {
+  _T.makeTranslation(x, y, z);
+  return mat ? _T.premultiply(mat) : _T;
+}
 const _hsl = { h: 0, s: 0, l: 0 };
 const hslOf = (c: THREE.Color): { h: number; s: number; l: number } => c.getHSL(_hsl);
 
@@ -85,16 +91,21 @@ class KBody {
   force: string | null = null;
   constructor(private c: Ctx) {}
   get empty(): boolean { return false; }
+  private keyOf(color: THREE.Color, flat: boolean, roofish: boolean): string {
+    return this.force || (roofish ? roofKey(color) : detailKey(color, flat));
+  }
   put(geo: THREE.BufferGeometry, color: THREE.Color, flat = false, roofish = false): this {
     if (this.mat) geo.applyMatrix4(this.mat);
-    const key = this.force || (roofish ? roofKey(color) : detailKey(color, flat));
+    const key = this.keyOf(color, flat, roofish);
     this.c.kit.add(key, geo, tintFor(key, color));
     return this;
   }
   box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: THREE.Color, _top?: THREE.Color, _o?: unknown): this {
-    const g = new THREE.BoxGeometry(Math.max(0.001, Math.abs(x1 - x0)), Math.max(0.001, Math.abs(y1 - y0)), Math.max(0.001, Math.abs(z1 - z0)));
-    g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-    return this.put(g, color, Math.abs(y1 - y0) < 0.25 && Math.min(y0, y1) < 0.35);
+    // solid-looking pieces above head height stop the camera (balconies, porch roofs, stands)
+    if (!this.mat && Math.max(y0, y1) > 1.2 && Math.min(Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0)) >= 0.2) this.c.camBox(x0, y0, z0, x1, y1, z1);
+    const key = this.keyOf(color, Math.abs(y1 - y0) < 0.25 && Math.min(y0, y1) < 0.35, false);
+    this.c.kit.boxAt(key, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, Math.max(0.001, Math.abs(x1 - x0)), Math.max(0.001, Math.abs(y1 - y0)), Math.max(0.001, Math.abs(z1 - z0)), this.mat, tintFor(key, color));
+    return this;
   }
   boxC(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, color: THREE.Color, top?: THREE.Color): this {
     return this.box(cx - sx / 2, cy - sy / 2, cz - sz / 2, cx + sx / 2, cy + sy / 2, cz + sz / 2, color, top);
@@ -107,9 +118,10 @@ class KBody {
     return this.put(polyGeo([a, b, c]), color);
   }
   cyl(cx: number, y0: number, cz: number, r: number, h: number, n: number, color: THREE.Color, _top?: THREE.Color, rTop?: number): this {
-    const g = new THREE.CylinderGeometry(rTop === undefined ? r : rTop, r, Math.max(0.01, h), Math.max(12, n * 2));
-    g.translate(cx, y0 + h / 2, cz);
-    return this.put(g, color, h < 0.25 && y0 < 0.35);
+    if (!this.mat && r >= 0.4 && y0 + h > 1.2) this.c.camBox(cx - r, y0, cz - r, cx + r, y0 + h, cz + r);
+    const key = this.keyOf(color, h < 0.25 && y0 < 0.35, false);
+    this.c.kit.cylinder(key, rTop === undefined ? r : rTop, r, Math.max(0.01, h), Math.max(12, n * 2), at(this.mat, cx, y0 + h / 2, cz), tintFor(key, color));
+    return this;
   }
   cone(cx: number, y0: number, cz: number, r: number, h: number, n: number, color: THREE.Color): this {
     const g = new THREE.ConeGeometry(r, h, Math.max(n, 4) === 4 ? 4 : Math.max(16, n * 2));
@@ -178,9 +190,7 @@ class KWin {
     return this;
   }
   cyl(cx: number, y0: number, cz: number, r: number, h: number, n: number, _color?: THREE.Color): this {
-    const g = new THREE.CylinderGeometry(r, r, h, Math.max(16, n * 2), 1, true);
-    g.translate(cx, y0 + h / 2, cz);
-    this.c.kit.add('glassPlain', g);
+    this.c.kit.cylinder('glassPlain', r, r, h, Math.max(16, n * 2), at(null, cx, y0 + h / 2, cz), WHITE, true);
     return this;
   }
 }
@@ -189,18 +199,14 @@ class KWin {
 class KGlow {
   constructor(private c: Ctx) {}
   box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: THREE.Color): this {
-    const g = new THREE.BoxGeometry(Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0));
-    g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-    this.c.kit.add('glowPanel', g, color);
+    this.c.kit.boxAt('glowPanel', (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0), null, color);
     return this;
   }
   boxC(cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, color: THREE.Color): this {
     return this.box(cx - sx / 2, cy - sy / 2, cz - sz / 2, cx + sx / 2, cy + sy / 2, cz + sz / 2, color);
   }
   cyl(cx: number, y0: number, cz: number, r: number, h: number, n: number, color: THREE.Color): this {
-    const g = new THREE.CylinderGeometry(r, r, Math.max(0.02, h), Math.max(16, n));
-    g.translate(cx, y0 + h / 2, cz);
-    this.c.kit.add('glowPanel', g, color);
+    this.c.kit.cylinder('glowPanel', r, r, Math.max(0.02, h), Math.max(16, n), at(null, cx, y0 + h / 2, cz), color);
     return this;
   }
 }
@@ -209,6 +215,8 @@ export interface Built {
   height: number;
   solids: Box2[];
   trees: TreeInstance[];
+  /** volumes the street camera can't enter (local x0 y0 z0 x1 y1 z1); null top = the building's height */
+  cam: (number | null)[][];
 }
 
 class Ctx implements Built {
@@ -219,6 +227,7 @@ class Ctx implements Built {
   height = 4;
   solids: Box2[] = [];
   trees: TreeInstance[] = [];
+  cam: (number | null)[][] = [];
   W: number;
   D: number;
   hv: number;
@@ -245,9 +254,15 @@ class Ctx implements Built {
     this.body.box(-this.hw + inset, 0, -this.hd + inset, this.hw - inset, 0.1, this.hd - inset, this.c(color));
     return this;
   }
-  solid(x0: number, z0: number, x1: number, z1: number): this {
+  /** a footprint people can't walk through (and the camera can't enter, up to `top`) */
+  solid(x0: number, z0: number, x1: number, z1: number, top: number | null = null): this {
     this.solids.push([x0, z0, x1, z1]);
+    this.cam.push([x0, 0, z0, x1, top, z1]);
     return this;
+  }
+  /** a volume only the camera bumps into (awnings, balconies, roofs) */
+  camBox(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): void {
+    this.cam.push([Math.min(x0, x1), Math.min(y0, y1), Math.min(z0, z1), Math.max(x0, x1), Math.max(y0, y1), Math.max(z0, z1)]);
   }
 
   /** which real wall finish a V1 wall colour becomes on this building */
@@ -274,7 +289,7 @@ class Ctx implements Built {
     const glass = !!o.glass;
     const w = glass ? { key: hslOf(hex(wall)).s > 0.15 ? 'metal' : 'render', tint: hex(wall).lerp(WHITE, 0.2) } : this.wallFor(wall);
     this.wall = w;
-    this.solid(x0, z0, x1, z1);
+    this.solid(x0, z0, x1, z1, y1);
     const gap = o.winGap || 2.6;
     const ww = glass ? gap - 0.28 : 1.15, wh = glass ? fh - 0.75 : 1.45;
     const faces: { F: Frame; len: number; front: boolean }[] = [
@@ -332,6 +347,7 @@ class Ctx implements Built {
           for (const a of [door.a0, (door.a0 + door.a1) / 2 - 0.03, door.a1 - 0.08]) obox(this.kit, 'metal', F, a, door.b0, -0.16, a + 0.08, door.b1, -0.06, fc);
           obox(this.kit, 'metal', F, door.a0, door.b1 - 0.08, -0.16, door.a1, door.b1, -0.06, fc);
           obox(this.kit, 'metal', F, door.a0 - 0.5, door.b1 + 0.05, 0, door.a1 + 0.5, door.b1 + 0.18, 1.1, fc);
+          this.camBox(x0 + door.a0 - 0.5, door.b1 + 0.05, z1, x0 + door.a1 + 0.5, door.b1 + 0.18, z1 + 1.1);
         } else {
           frontDoor(this.kit, F, door, hex(o.doorC || ['#1f3a5f', '#7a1f1f', '#1f4a2f', '#2a2a2a', '#5a3e2b'][this.hv % 5]), TRIM, this.hv, TX.hash(this.hv, 99, 5) > 0.4, w.key.startsWith('brick') && this.hv % 3 === 0);
         }
@@ -367,6 +383,7 @@ class Ctx implements Built {
   flatRoof(x0: number, z0: number, x1: number, z1: number, y: number, col = '#8a8f96', parapet = 0.5): void {
     this.kit.box('gravel', x0, y, z0, x1, y + 0.12, z1, hex(col).lerp(new THREE.Color(0.45, 0.45, 0.45), 0.6));
     if (parapet) {
+      this.camBox(x0, y, z0, x1, y + parapet + 0.08, z1);
       const k = this.wall.key, t = this.wall.tint;
       this.kit.box(k, x0 - 0.02, y, z0 - 0.02, x1 + 0.02, y + parapet, z0 + 0.28, t);
       this.kit.box(k, x0 - 0.02, y, z1 - 0.28, x1 + 0.02, y + parapet, z1 + 0.02, t);
@@ -393,6 +410,7 @@ class Ctx implements Built {
   gable(x0: number, z0: number, x1: number, z1: number, y: number, rise: number, roof: string, _wall: string, alongX = true): void {
     const key = roofKey(hex(roof));
     const tint = key === 'clay' ? WHITE.clone().lerp(hex(roof), 0.25).multiplyScalar(1.1) : WHITE.clone().lerp(hex(roof), 0.3).multiplyScalar(1.05);
+    this.camBox(x0 - 0.35, y - 0.3, z0 - 0.35, x1 + 0.35, y + rise, z1 + 0.35);
     const base = this.kit.base.clone();
     // a local frame where the ridge runs along +x and the front eave is at z = 0
     const L = alongX ? x1 - x0 : z1 - z0, D = alongX ? z1 - z0 : x1 - x0;
@@ -426,9 +444,10 @@ class Ctx implements Built {
   }
   awning(x0: number, x1: number, z: number, y: number, a: string, b2: string): void {
     const pal = this.kit.pal;
-    const k = pal.custom(`awn:${a}|${b2}`, TX.awningCanvas(a, b2), { roughness: 0.85, side: THREE.DoubleSide });
+    const k = pal.custom(`awn:${a}|${b2}`, () => TX.awningCanvas(a, b2), { roughness: 0.85, side: THREE.DoubleSide });
     const rep = (x1 - x0) / 2;
     const depth = 1.5;
+    this.camBox(x0, y - 0.98, z, x1, y, z + depth);
     this.kit.quad(k, V(x0, y, z), V(x1, y, z), V(x1, y - 0.7, z + depth), V(x0, y - 0.7, z + depth), V(0, 1, 0.45), WHITE, [0, 0, rep, 0, rep, 1, 0, 1]);
     this.kit.quad(k, V(x0, y - 0.7, z + depth), V(x1, y - 0.7, z + depth), V(x1, y - 0.98, z + depth), V(x0, y - 0.98, z + depth), V(0, 0, 1), WHITE, [0, 0, rep, 0, rep, 0.3, 0, 0.3]);
     for (const x of [x0 + 0.05, x1 - 0.05]) this.kit.rod('metal', V(x, y - 0.6, z + 0.05), V(x, y - 0.7, z + depth - 0.05), 0.018, new THREE.Color(0.1, 0.1, 0.1));
@@ -480,6 +499,7 @@ class Ctx implements Built {
     const t = WHITE.clone().lerp(hex(col), 0.4).multiplyScalar(1.05);
     for (let i = 0; i < n; i++) {
       const x = x0 + ((x1 - x0) * (i + 0.5)) / n;
+      this.camBox(x - 0.4, y0, z - 0.4, x + 0.4, y0 + h, z + 0.4);
       this.kit.box('stone', x - 0.45, y0, z - 0.45, x + 0.45, y0 + 0.3, z + 0.45, t);
       this.kit.cyl('stone', 0.32, h - 0.75, 20, new THREE.Matrix4().makeTranslation(x, y0 + 0.3 + (h - 0.75) / 2, z), t, false, Math.PI * 2, 0.28);
       this.kit.cyl('stone', 0.36, 0.15, 20, new THREE.Matrix4().makeTranslation(x, y0 + h - 0.38, z), t);
@@ -489,6 +509,7 @@ class Ctx implements Built {
   pediment(x0: number, x1: number, z0: number, z1: number, y: number, rise: number, col = '#e8e2d2'): void {
     const t = WHITE.clone().lerp(hex(col), 0.4).multiplyScalar(1.05);
     const xm = (x0 + x1) / 2;
+    this.camBox(x0 - 0.2, y - 0.1, z0, x1 + 0.2, y + rise, z1 + 0.2);
     this.kit.box('stone', x0 - 0.15, y - 0.1, z0, x1 + 0.15, y + 0.12, z1 + 0.15, t);
     this.kit.tri('stone', V(x0, y + 0.12, z1), V(x1, y + 0.12, z1), V(xm, y + rise, z1), V(0, 0, 1), t);
     this.kit.slab('slate', V(x1 + 0.2, y + 0.1, z1 + 0.2), V(x1 + 0.2, y + 0.1, z0), V(xm, y + rise + 0.12, z0), V(xm, y + rise + 0.12, z1 + 0.2), 0.08, new THREE.Color(0.8, 0.82, 0.84));
@@ -506,9 +527,7 @@ class Ctx implements Built {
         const n = Math.max(1, Math.round(len / 0.16));
         for (let i = 0; i <= n; i++) {
           const t = i / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
-          const g = new THREE.CylinderGeometry(0.011, 0.011, h, 4);
-          g.translate(x, h / 2, z);
-          this.kit.add('metal', g, c);
+          this.kit.cylinder('metal', 0.011, 0.011, h, 4, at(null, x, h / 2, z), c);
         }
       } else {
         const paint = c.clone().lerp(WHITE, 0.55);
@@ -1191,7 +1210,10 @@ export function buildFor(b: any, kit?: Kit): Built {
       if (FAST_FOOD[key]) buildFastFood(c);
       else buildShop(c);
   }
-  if (OPEN.has(key)) c.solids = c.solids.filter((s) => (s[2] - s[0]) * (s[3] - s[1]) < 60);
+  if (OPEN.has(key)) {
+    c.solids = c.solids.filter((s) => (s[2] - s[0]) * (s[3] - s[1]) < 60);
+    c.cam = c.cam.filter((s) => (s[3]! - s[0]!) * (s[5]! - s[2]!) < 60);
+  }
   return c;
 }
 
@@ -1214,11 +1236,7 @@ function rubble(kit: Kit, b: any): void {
 function scaffold(kit: Kit, W: number, D: number, H: number): void {
   const pole = new THREE.Color(0.7, 0.72, 0.74), plank = new THREE.Color(0.8, 0.68, 0.5);
   const x0 = -W / 2 + 0.4, x1 = W / 2 - 0.4, z0 = -D / 2 + 0.4, z1 = D / 2 - 0.4;
-  const tube = (ax: number, az: number): void => {
-    const g = new THREE.CylinderGeometry(0.03, 0.03, H, 6);
-    g.translate(ax, H / 2, az);
-    kit.add('metal', g, pole);
-  };
+  const tube = (ax: number, az: number): void => kit.cylinder('metal', 0.03, 0.03, H, 6, at(null, ax, H / 2, az), pole);
   for (let x = x0; x <= x1 + 0.01; x += Math.max(2, (x1 - x0) / Math.ceil((x1 - x0) / 2.6))) for (const z of [z0, z1]) tube(x, z);
   for (let z = z0; z <= z1 + 0.01; z += Math.max(2, (z1 - z0) / Math.ceil((z1 - z0) / 2.6))) for (const x of [x0, x1]) tube(x, z);
   for (let y = 2; y < H; y += 2.0) {
@@ -1248,14 +1266,23 @@ function crane(kit: Kit, H: number, W: number, ox: number, oz: number): void {
 }
 
 /* ---------- the layer ---------- */
+/** let the page paint a frame; a hidden page has nothing to paint (and throttles timers), so carry on */
+export function yieldFrame(): Promise<void> {
+  if (document.hidden) return Promise.resolve();
+  return new Promise((r) => {
+    requestAnimationFrame(() => r());
+    setTimeout(r, 100);
+  });
+}
 const BCH = 16; // tiles per building chunk
 const NBCX = Math.ceil(256 / BCH);
 interface Entry {
   sig: string;
   b: any;
-  parts: Map<string, THREE.BufferGeometry[]> | null;
+  parts: Map<string, Packed[]> | null;
   height: number;
   solids: Box2[]; // world-space AABBs
+  cam: Float32Array; // world-space camera volumes, 6 floats each
   box: THREE.Box3;
   chunk: number;
   dyn: THREE.Group | null;
@@ -1331,7 +1358,7 @@ export class BuildingLayer {
     const place = new THREE.Matrix4().makeRotationY(((b.facing || 0) * Math.PI) / 2).setPosition((b.x + b.w / 2) * TM, 0, (b.y + b.h / 2) * TM);
     const kit = new Kit(this.pal);
     kit.base = place.clone();
-    const e: Entry = { sig, b, parts: null, height: 4, solids: [], box: new THREE.Box3(), chunk: this.chunkOf(b), dyn: null, trees: [] };
+    const e: Entry = { sig, b, parts: null, height: 4, solids: [], cam: new Float32Array(0), box: new THREE.Box3(), chunk: this.chunkOf(b), dyn: null, trees: [] };
     if (b.ruined) {
       // rubble uses world-aligned w/h
       kit.base = new THREE.Matrix4().setPosition((b.x + b.w / 2) * TM, 0, (b.y + b.h / 2) * TM);
@@ -1345,19 +1372,25 @@ export class BuildingLayer {
       // collision boxes, rotated into world space (quarter turns stay axis-aligned)
       const f = (b.facing || 0) & 3;
       const gx = (b.x + b.w / 2) * TM, gz = (b.y + b.h / 2) * TM;
-      for (const [x0, z0, x1, z1] of c.solids) {
+      const world = (x0: number, z0: number, x1: number, z1: number): Box2 => {
         const pts = [[x0, z0], [x1, z1]].map(([x, z]) => {
           const [rx, rz] = f === 0 ? [x, z] : f === 1 ? [z, -x] : f === 2 ? [-x, -z] : [-z, x];
           return [rx + gx, rz + gz];
         });
-        e.solids.push([Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])]);
-      }
+        return [Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])];
+      };
+      for (const [x0, z0, x1, z1] of c.solids) e.solids.push(world(x0, z0, x1, z1));
+      e.cam = new Float32Array(c.cam.length * 6);
+      c.cam.forEach(([x0, y0, z0, x1, y1, z1], i) => {
+        const [wx0, wz0, wx1, wz1] = world(x0!, z0!, x1!, z1!);
+        e.cam.set([wx0, y0!, wz0, wx1, y1 ?? c.height, wz1], i * 6);
+      });
     }
     e.box.set(V(b.x * TM, 0, b.y * TM), V((b.x + b.w) * TM, e.height + 1, (b.y + b.h) * TM));
     const building = b.construction > 0 || b.upgrading > 0 || b.renovating > 0;
     if (building && !b.ruined) {
       // a live site: its own meshes, so the body can rise inside the scaffold
-      for (const list of kit.take().values()) for (const geo of list) geo.dispose();
+      kit.take();
       const g = new THREE.Group();
       const body = new THREE.Group();
       g.applyMatrix4(place);
@@ -1391,7 +1424,6 @@ export class BuildingLayer {
       e.dyn = null;
     }
     if (e.parts) {
-      for (const list of e.parts.values()) for (const g of list) g.dispose();
       e.parts = null;
       this.dirty.add(e.chunk);
     }
@@ -1401,7 +1433,7 @@ export class BuildingLayer {
   private mergeChunk(ci: number): void {
     const old = this.chunkMeshes.get(ci);
     if (old) for (const m of old) { this.group.remove(m); m.geometry.dispose(); }
-    const all = new Map<string, THREE.BufferGeometry[]>();
+    const all = new Map<string, Packed[]>();
     for (const e of this.entries.values()) {
       if (e.chunk !== ci || !e.parts) continue;
       for (const [k, list] of e.parts) {
@@ -1424,6 +1456,26 @@ export class BuildingLayer {
     this.entries.clear();
     for (const ci of [...this.dirty, ...this.chunkMeshes.keys()]) this.mergeChunk(ci);
     this.dirty.clear();
+    this.treesVersion++;
+    this.first = true;
+  }
+
+  /** build the whole town from scratch a slice at a time, yielding between slices (the loading screen) */
+  async buildAll(progress: (done: number, total: number) => void, sliceMs = 40): Promise<void> {
+    this.clear();
+    const list = [...World.buildings];
+    let i = 0;
+    while (i < list.length) {
+      const t0 = performance.now();
+      while (i < list.length && performance.now() - t0 < sliceMs) {
+        const b = list[i++];
+        const sig = this.sigOf(b);
+        this.entries.set(b.id, this.make(b, sig));
+      }
+      progress(i, list.length);
+      await yieldFrame();
+    }
+    this.sync(); // anything the sim changed meanwhile, then every chunk at once
     this.treesVersion++;
   }
 
@@ -1466,5 +1518,13 @@ export class BuildingLayer {
 
   heightOf(id: number): number {
     return this.entries.get(id)?.height || 4;
+  }
+
+  /** camera volumes (6 floats per box, world space) of every building touching the rectangle */
+  camBoxes(x0: number, z0: number, x1: number, z1: number, out: Float32Array[] = []): Float32Array[] {
+    out.length = 0;
+    for (const e of this.entries.values())
+      if (e.cam.length && e.box.max.x >= x0 && e.box.min.x <= x1 && e.box.max.z >= z0 && e.box.min.z <= z1) out.push(e.cam);
+    return out;
   }
 }

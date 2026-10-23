@@ -12,6 +12,7 @@ import { Gov } from './gov';
 import { Tasks } from './tasks';
 import { Calamity } from './calamity';
 import { Settings } from './settings';
+import { Traffic, CAR_LEN } from './traffic';
 /* ============================================================
    PixelVille — citizens, jobs, daily schedules, movement.
    People live in residential buildings, get jobs at workplaces,
@@ -581,6 +582,7 @@ export const Sim: any = {
     // patient so a city grows in visible, steady steps rather than exploding.
     this.growthT = (this.growthT || 0) + gm;
     if (this.growthT > 110) { this.growthT = 0; this.checkGrowth(); }
+    Traffic.begin(this.people, Life); // V2: where every road user stands, for the drivers' look ahead
     for (const p of this.people) this.tickPerson(p, dtSim);
   },
   completed: [],
@@ -1444,23 +1446,10 @@ export const Sim: any = {
         if (t.pauseT > 0) return;
         t.pauseAt = undefined;
       }
-      // red lights and closed level-crossing gates stop the traffic
-      if (t.car || t.taxi || t.moto) {
-        const ni = Math.ceil(t.prog);
-        if (ni > t.prog && ni < t.path.length) {
-          const [nx2, ny2] = t.path[ni];
-          const [, py2] = t.path[Math.floor(t.prog)];
-          const key = World.idx(nx2, ny2);
-          if (World.signals.size && World.signals.has(key)) {
-            const movingNS = ny2 !== py2;
-            if (movingNS !== World.nsGreen()) return; // red for us — wait at the line
-          }
-          if (World.crossings.size && World.crossings.has(key) &&
-              Life.trainNearTile(nx2, ny2, 5)) return; // gates are down
-        }
-      }
-      const speed = (t.car || t.taxi) ? CAR_SPEED : t.moto ? 1.4 : WALK_SPEED;
-      t.prog += speed * dt;
+      // V2: drivers keep their distance, give way at junctions, stop for people
+      // crossing, and brake for red lights and lowered gates (src/sim/traffic.ts)
+      if (t.car || t.taxi || t.moto) t.prog += Traffic.advance(p, t, t.path, t.prog, 1, t.moto ? 1.4 : CAR_SPEED, dt, t.moto ? 0.3 : CAR_LEN);
+      else t.prog += WALK_SPEED * dt;
       if (t.prog >= t.path.length - 1) { // arrived
         const dest = p.dest;
         p.state = 'in'; p.at = dest; p.trip = null; p.dest = null;

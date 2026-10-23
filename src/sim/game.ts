@@ -19,6 +19,7 @@ import { Mind } from './mind';
 import { Tasks } from './tasks';
 import { News } from './news';
 import { Settings } from './settings';
+import { Traffic } from './traffic';
 
 /** Speed steps (× real time). Street mode is capped at 1× (design §6). */
 export const SPEEDS = [0, 1, 2, 4, 8];
@@ -75,6 +76,7 @@ export const Game = {
     Calamity.reset();
     Festivals.reset();
     News.reset();
+    Traffic.reset();
     Life.onEvent = (msg: string, at?: { x: number; y: number }) => this.toast(msg, at);
     this.undoStack = [];
   },

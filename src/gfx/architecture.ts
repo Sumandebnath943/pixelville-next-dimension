@@ -12,7 +12,6 @@
    from house to house.
    ============================================================ */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { surface } from './surface';
 import * as TX from './textures';
 
@@ -224,9 +223,9 @@ export class Palette {
   mat(k: string): THREE.Material {
     return this.defs[k].mat;
   }
-  /** register a textured, unshared material (signs, awnings) */
-  custom(k: string, tex: THREE.Texture, o: THREE.MeshStandardMaterialParameters = {}, snow = 1): string {
-    if (!this.defs[k]) this.defs[k] = { mat: surface(std({ map: tex, ...o }), { snow, wet: 0.5 }, k), metres: 0 };
+  /** register a textured, unshared material (signs, awnings); the texture is painted only on first use */
+  custom(k: string, tex: () => THREE.Texture, o: THREE.MeshStandardMaterialParameters = {}, snow = 1): string {
+    if (!this.defs[k]) this.defs[k] = { mat: surface(std({ map: tex(), ...o }), { snow, wet: 0.5 }, k), metres: 0 };
     return k;
   }
   /** a painted name board, backlit after dusk */
@@ -260,97 +259,213 @@ type V3 = THREE.Vector3;
 const v3 = (x: number, y: number, z: number): V3 => new THREE.Vector3(x, y, z);
 const WHITE = new THREE.Color(1, 1, 1);
 
+/** a growing float array */
+class FBuf {
+  a: Float32Array;
+  n = 0;
+  constructor(cap: number) { this.a = new Float32Array(cap); }
+  /** room for k more floats; returns the (possibly new) backing array */
+  grow(k: number): Float32Array {
+    if (this.n + k > this.a.length) {
+      const b = new Float32Array(Math.max(this.a.length * 2, this.n + k));
+      b.set(this.a.subarray(0, this.n));
+      this.a = b;
+    }
+    return this.a;
+  }
+  done(): Float32Array { return this.a.slice(0, this.n); }
+}
+
+/** one material's geometry in world space, as flat arrays per attribute */
+export interface Packed { count: number; attrs: Record<string, { size: number; array: Float32Array }> }
+
+const GLASS_ATTRS: [string, number][] = [['aRoom', 4], ['aWin', 3], ['aTan', 3]];
+
+class Batch {
+  count = 0;
+  key = '';
+  pos = new FBuf(1536); nor = new FBuf(1536); uv = new FBuf(1024); col = new FBuf(1536);
+  extra: { name: string; size: number; buf: FBuf }[] = [];
+  reset(key: string): this {
+    this.key = key;
+    this.count = this.pos.n = this.nor.n = this.uv.n = this.col.n = 0;
+    this.extra = [];
+    return this;
+  }
+  pack(): Packed {
+    const attrs: Packed['attrs'] = {
+      position: { size: 3, array: this.pos.done() },
+      normal: { size: 3, array: this.nor.done() },
+      uv: { size: 2, array: this.uv.done() },
+      color: { size: 3, array: this.col.done() },
+    };
+    for (const x of this.extra) attrs[x.name] = { size: x.size, array: x.buf.done() };
+    return { count: this.count, attrs };
+  }
+}
+
+// scratch (the kit is single-threaded and never re-entered)
+const _M = new THREE.Matrix4(), _N = new THREE.Matrix3(), _OB = new THREE.Matrix4(), _S = new THREE.Matrix4();
+const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _fn = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0), _one = new THREE.Vector3(1, 1, 1);
+/** unit cylinders and cones, shared by every kit */
+const CYL = new Map<string, THREE.CylinderGeometry>();
+/** batches handed back by take(): their grown buffers are reused by the next kit */
+const POOL: Batch[] = [];
+const QUAD_IDX = [0, 1, 2, 0, 2, 3];
+const UNIT_UV = [0, 0, 1, 0, 1, 1, 0, 1];
+const _qP = new Float32Array(12), _qN = new Float32Array(12), _qU = new Float32Array(8);
+// a unit box: 6 faces × 4 corners (sign triples) with outward normals, two triangles per face
+const BOX_S: number[] = [], BOX_N: number[] = [], BOX_IDX: number[] = [];
+{
+  // normal axis, sign, and the two tangent axes whose cross product is the normal
+  const faces: [number, number, number, number][] = [[0, 1, 1, 2], [0, -1, 2, 1], [1, 1, 2, 0], [1, -1, 0, 2], [2, 1, 0, 1], [2, -1, 1, 0]];
+  faces.forEach(([ax, s, t1, t2], f) => {
+    for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const p = [0, 0, 0], n = [0, 0, 0];
+      p[ax] = s; p[t1] = a; p[t2] = b; n[ax] = s;
+      BOX_S.push(...p); BOX_N.push(...n);
+    }
+    for (const i of QUAD_IDX) BOX_IDX.push(f * 4 + i);
+  });
+}
+const _bP = new Float32Array(72);
+
 export class Kit {
-  private parts = new Map<string, THREE.BufferGeometry[]>();
+  private batches = new Map<string, Batch>();
   /** transform applied to everything added (a building's placement) */
   base = new THREE.Matrix4();
   constructor(public pal: Palette) {}
 
-  add(key: string, geo: THREE.BufferGeometry, color: THREE.Color = WHITE, extra?: Record<string, number[]>): void {
-    const g = geo.index ? geo.toNonIndexed() : geo;
-    g.applyMatrix4(this.base);
-    const n = g.attributes.position.count;
-    const col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { col[i * 3] = color.r; col[i * 3 + 1] = color.g; col[i * 3 + 2] = color.b; }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    if (!g.userData.keepUV) this.boxUV(g, this.pal.defs[key]?.metres || 1);
-    // keep only the attributes every part shares
-    for (const a of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(a)) g.deleteAttribute(a);
-    if (extra) for (const [a, vals] of Object.entries(extra)) {
-      const size = vals.length;
-      const arr = new Float32Array(n * size);
-      for (let i = 0; i < n; i++) arr.set(vals, i * size);
-      g.setAttribute(a, new THREE.BufferAttribute(arr, size));
+  private batch(key: string, glass = false): Batch {
+    const id = glass ? key + '#glass' : key;
+    let b = this.batches.get(id);
+    if (!b) {
+      b = (POOL.pop() || new Batch()).reset(key);
+      if (glass) b.extra = GLASS_ATTRS.map(([name, size]) => ({ name, size, buf: new FBuf(256 * size) }));
+      this.batches.set(id, b);
     }
-    this.push(key, g);
+    return b;
   }
-  private push(key: string, g: THREE.BufferGeometry): void {
-    if (!this.parts.has(key)) this.parts.set(key, []);
-    this.parts.get(key)!.push(g);
+  private metres(key: string): number {
+    return this.pal.defs[key]?.metres || 1;
+  }
+  /**
+   * Append n vertices (read through idx when given) transformed by M, with
+   * normals by N. UVs are copied when given, otherwise projected from world
+   * space onto the dominant axis so brick courses line up across buildings.
+   */
+  private write(b: Batch, M: THREE.Matrix4, N: THREE.Matrix3, P: ArrayLike<number>, Nr: ArrayLike<number>, idx: ArrayLike<number> | null, n: number, color: THREE.Color, metres: number, UV: ArrayLike<number> | null): void {
+    const e = M.elements, ne = N.elements;
+    const pos = b.pos.grow(n * 3), nor = b.nor.grow(n * 3), col = b.col.grow(n * 3), uv = b.uv.grow(n * 2);
+    let o = b.pos.n, u2 = b.uv.n;
+    const inv = 1 / metres, cr = color.r, cg = color.g, cb = color.b;
+    for (let k = 0; k < n; k++) {
+      const i = idx ? idx[k] : k, i3 = i * 3;
+      const x = P[i3], y = P[i3 + 1], z = P[i3 + 2];
+      const wx = e[0] * x + e[4] * y + e[8] * z + e[12];
+      const wy = e[1] * x + e[5] * y + e[9] * z + e[13];
+      const wz = e[2] * x + e[6] * y + e[10] * z + e[14];
+      const a = Nr[i3], bb = Nr[i3 + 1], c = Nr[i3 + 2];
+      let nx = ne[0] * a + ne[3] * bb + ne[6] * c;
+      let ny = ne[1] * a + ne[4] * bb + ne[7] * c;
+      let nz = ne[2] * a + ne[5] * bb + ne[8] * c;
+      const l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      nx /= l; ny /= l; nz /= l;
+      pos[o] = wx; pos[o + 1] = wy; pos[o + 2] = wz;
+      nor[o] = nx; nor[o + 1] = ny; nor[o + 2] = nz;
+      col[o] = cr; col[o + 1] = cg; col[o + 2] = cb;
+      o += 3;
+      if (UV) {
+        uv[u2] = UV[i * 2]; uv[u2 + 1] = UV[i * 2 + 1];
+      } else {
+        const ax = Math.abs(nx), ay = Math.abs(ny), az = Math.abs(nz);
+        if (ay >= ax && ay >= az) { uv[u2] = wx * inv; uv[u2 + 1] = wz * inv; }
+        else if (ax >= az) { uv[u2] = wz * (nx < 0 ? -1 : 1) * inv; uv[u2 + 1] = wy * inv; }
+        else { uv[u2] = -wx * (nz < 0 ? -1 : 1) * inv; uv[u2 + 1] = wy * inv; }
+      }
+      u2 += 2;
+    }
+    b.pos.n = b.nor.n = b.col.n = o;
+    b.uv.n = u2;
+    b.count += n;
+  }
+
+  /** any three.js geometry (indexed or not); it is only read, never kept */
+  add(key: string, geo: THREE.BufferGeometry, color: THREE.Color = WHITE): void {
+    const p = geo.attributes.position, nr = geo.attributes.normal, ix = geo.index;
+    const uv = geo.userData.keepUV ? geo.attributes.uv : null;
+    this.write(this.batch(key), this.base, _N.getNormalMatrix(this.base), p.array, nr.array, ix ? ix.array : null, ix ? ix.count : p.count, color, this.metres(key), uv ? uv.array : null);
   }
   /** window glass carries interior-mapping attributes (aTan already in world space) */
   addGlass(g: THREE.BufferGeometry): void {
-    g.applyMatrix4(this.base);
+    const b = this.batch('glass', true);
     const n = g.attributes.position.count;
-    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(1), 3));
-    this.push('glass', g);
+    this.write(b, this.base, _N.getNormalMatrix(this.base), g.attributes.position.array, g.attributes.normal.array, null, n, WHITE, 1, new Float32Array(n * 2));
+    for (const x of b.extra) {
+      x.buf.grow(n * x.size).set((g.attributes[x.name].array as Float32Array).subarray(0, n * x.size), x.buf.n);
+      x.buf.n += n * x.size;
+    }
   }
   /** a round bar between two local points */
   rod(key: string, a: V3, b: V3, r: number, color?: THREE.Color, seg = 6): void {
     const len = a.distanceTo(b);
-    const g = new THREE.CylinderGeometry(r, r, len, seg);
-    const q = new THREE.Quaternion().setFromUnitVectors(v3(0, 1, 0), b.clone().sub(a).normalize());
-    g.applyMatrix4(new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5), q, v3(1, 1, 1)));
-    this.add(key, g, color);
-  }
-  private boxUV(g: THREE.BufferGeometry, metres: number): void {
-    const p = g.attributes.position, nr = g.attributes.normal, n = p.count;
-    const uv = new Float32Array(n * 2);
-    for (let i = 0; i < n; i++) {
-      const nx = Math.abs(nr.getX(i)), ny = Math.abs(nr.getY(i)), nz = Math.abs(nr.getZ(i));
-      let u: number, v: number;
-      if (ny >= nx && ny >= nz) { u = p.getX(i); v = p.getZ(i); }
-      else if (nx >= nz) { u = p.getZ(i) * Math.sign(nr.getX(i) || 1); v = p.getY(i); }
-      else { u = -p.getX(i) * Math.sign(nr.getZ(i) || 1); v = p.getY(i); }
-      uv[i * 2] = u / metres; uv[i * 2 + 1] = v / metres;
-    }
-    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    const q = _q.setFromUnitVectors(_up, _e1.subVectors(b, a).normalize());
+    _OB.compose(_e2.addVectors(a, b).multiplyScalar(0.5), q, _one);
+    this.cylinder(key, r, r, len, seg, _OB, color);
   }
 
   /** axis-aligned box in the current base frame */
   box(key: string, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color?: THREE.Color): void {
-    const g = new THREE.BoxGeometry(Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0));
-    g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-    this.add(key, g, color);
+    this.boxAt(key, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0), null, color);
+  }
+  /** a box of size sx·sy·sz centred on (cx, cy, cz) in the frame m (itself inside the base) */
+  boxAt(key: string, cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, m: THREE.Matrix4 | null, color: THREE.Color = WHITE): void {
+    const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+    for (let i = 0; i < 24; i++) {
+      _bP[i * 3] = cx + BOX_S[i * 3] * hx;
+      _bP[i * 3 + 1] = cy + BOX_S[i * 3 + 1] * hy;
+      _bP[i * 3 + 2] = cz + BOX_S[i * 3 + 2] * hz;
+    }
+    const M = m ? _M.multiplyMatrices(this.base, m) : this.base;
+    this.write(this.batch(key), M, _N.getNormalMatrix(M), _bP, BOX_N, BOX_IDX, 36, color, this.metres(key), null);
   }
   /** quad; vertex order is fixed so its face points along `facing` */
-  quad(key: string, a: V3, b: V3, c: V3, d: V3, facing: V3, color?: THREE.Color, uv?: number[], extra?: Record<string, number[]>): void {
-    const n = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(d, a));
-    let pts = [a, b, c, d];
-    let uvs = uv || [0, 0, 1, 0, 1, 1, 0, 1];
-    if (n.dot(facing) < 0) {
-      pts = [a, d, c, b];
-      uvs = [uvs[0], uvs[1], uvs[6], uvs[7], uvs[4], uvs[5], uvs[2], uvs[3]];
+  quad(key: string, a: V3, b: V3, c: V3, d: V3, facing: V3, color: THREE.Color = WHITE, uv?: number[]): void {
+    _fn.crossVectors(_e1.subVectors(b, a), _e2.subVectors(d, a));
+    const flip = _fn.dot(facing) < 0;
+    const pts = flip ? [a, d, c, b] : [a, b, c, d];
+    const uvs = uv || UNIT_UV;
+    const uo = flip ? [0, 3, 2, 1] : [0, 1, 2, 3];
+    for (let i = 0; i < 4; i++) {
+      const p = pts[i];
+      _qP[i * 3] = p.x; _qP[i * 3 + 1] = p.y; _qP[i * 3 + 2] = p.z;
+      _qN[i * 3] = facing.x; _qN[i * 3 + 1] = facing.y; _qN[i * 3 + 2] = facing.z;
+      _qU[i * 2] = uvs[uo[i] * 2]; _qU[i * 2 + 1] = uvs[uo[i] * 2 + 1];
     }
-    n.copy(facing).normalize();
-    const g = new THREE.BufferGeometry();
-    const idx = [0, 1, 2, 0, 2, 3];
-    const pos: number[] = [], nor: number[] = [], tuv: number[] = [];
-    for (const i of idx) { pos.push(pts[i].x, pts[i].y, pts[i].z); nor.push(n.x, n.y, n.z); tuv.push(uvs[i * 2], uvs[i * 2 + 1]); }
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(tuv, 2));
-    if (uv) g.userData.keepUV = true;
-    this.add(key, g, color, extra);
+    this.write(this.batch(key), this.base, _N.getNormalMatrix(this.base), _qP, _qN, QUAD_IDX, 6, color, this.metres(key), uv ? _qU : null);
   }
   tri(key: string, a: V3, b: V3, c: V3, facing: V3, color?: THREE.Color): void {
     this.quad(key, a, b, c, c, facing, color);
   }
   cyl(key: string, r: number, h: number, seg: number, m: THREE.Matrix4, color?: THREE.Color, open = false, arc = Math.PI * 2, rTop = r): void {
-    const g = new THREE.CylinderGeometry(rTop, r, h, seg, 1, open, 0, arc);
-    g.applyMatrix4(m);
-    this.add(key, g, color);
+    this.cylinder(key, rTop, r, h, seg, m, color, open, arc);
+  }
+  /** a cylinder or cone (centred on its axis, height along y) placed by m; drawn from a cached unit shape */
+  cylinder(key: string, rTop: number, r: number, h: number, seg: number, m: THREE.Matrix4 | null, color?: THREE.Color, open = false, arc = Math.PI * 2): void {
+    const s = Math.max(rTop, r, 1e-5);
+    const id = `${(rTop / s).toFixed(4)}|${(r / s).toFixed(4)}|${seg}|${open ? 1 : 0}|${arc.toFixed(4)}`;
+    let g = CYL.get(id);
+    if (!g) { g = new THREE.CylinderGeometry(rTop / s, r / s, 1, seg, 1, open, 0, arc); CYL.set(id, g); }
+    _S.makeScale(s, Math.max(h, 1e-5), s);
+    if (m) _S.premultiply(m);
+    this.addIn(key, g, _S, color);
+  }
+  /** a geometry placed by m inside the base frame */
+  addIn(key: string, geo: THREE.BufferGeometry, m: THREE.Matrix4, color: THREE.Color = WHITE): void {
+    const p = geo.attributes.position, nr = geo.attributes.normal, ix = geo.index;
+    const M = _M.multiplyMatrices(this.base, m);
+    this.write(this.batch(key), M, _N.getNormalMatrix(M), p.array, nr.array, ix ? ix.array : null, ix ? ix.count : p.count, color, this.metres(key), null);
   }
   /** slab whose top face is the quad p0..p3 (facing up-ish), `t` thick; UV runs along p0→p1 and p0→p3 */
   slab(key: string, p0: V3, p1: V3, p2: V3, p3: V3, t: number, color?: THREE.Color): void {
@@ -376,33 +491,51 @@ export class Kit {
     }
   }
 
-  /** hand over the raw geometry (world space, per material) and start afresh */
-  take(): Map<string, THREE.BufferGeometry[]> {
-    const p = this.parts;
-    this.parts = new Map();
-    return p;
+  /** hand over the packed geometry (world space, per material) and start afresh */
+  take(): Map<string, Packed[]> {
+    const out = new Map<string, Packed[]>();
+    for (const b of this.batches.values()) {
+      if (b.count) {
+        if (!out.has(b.key)) out.set(b.key, []);
+        out.get(b.key)!.push(b.pack());
+      }
+      // keep modest buffers only, so one huge terrain batch isn't held forever
+      if (POOL.length < 64 && b.pos.a.length <= 98304) POOL.push(b);
+    }
+    this.batches.clear();
+    return out;
   }
 
   /** merge per material into meshes */
   build(parent: THREE.Object3D, shadows = true): THREE.Mesh[] {
-    return meshesFromParts(this.pal, this.parts, parent, shadows, () => this.parts.clear());
+    return meshesFromParts(this.pal, this.take(), parent, shadows);
   }
 }
 
-/** merge geometry lists per material into meshes (glass merges with glass of the same attributes) */
-export function meshesFromParts(pal: Palette, parts: Map<string, THREE.BufferGeometry[]>, parent: THREE.Object3D, shadows = true, done?: () => void): THREE.Mesh[] {
+/** join packed lists per material into meshes (glass joins glass with the same attributes) */
+export function meshesFromParts(pal: Palette, parts: Map<string, Packed[]>, parent: THREE.Object3D, shadows = true): THREE.Mesh[] {
   const out: THREE.Mesh[] = [];
   for (const [key, list] of parts) {
-    // parts with extra attributes (glass) merge among themselves only
-    const groups = new Map<string, THREE.BufferGeometry[]>();
-    for (const g of list) {
-      const sig = Object.keys(g.attributes).sort().join();
+    const groups = new Map<string, Packed[]>();
+    for (const p of list) {
+      const sig = Object.keys(p.attrs).sort().join();
       if (!groups.has(sig)) groups.set(sig, []);
-      groups.get(sig)!.push(g);
+      groups.get(sig)!.push(p);
     }
     for (const gl of groups.values()) {
-      const geo = mergeGeometries(gl, false);
-      if (!geo) continue;
+      const count = gl.reduce((s, p) => s + p.count, 0);
+      if (!count) continue;
+      const geo = new THREE.BufferGeometry();
+      for (const [name, { size }] of Object.entries(gl[0].attrs)) {
+        let arr: Float32Array;
+        if (gl.length === 1) arr = gl[0].attrs[name].array;
+        else {
+          arr = new Float32Array(count * size);
+          let o = 0;
+          for (const p of gl) { arr.set(p.attrs[name].array, o); o += p.attrs[name].array.length; }
+        }
+        geo.setAttribute(name, new THREE.BufferAttribute(arr, size));
+      }
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, pal.mat(key));
       mesh.castShadow = shadows && key !== 'glass' && key !== 'roadPaint' && !key.startsWith('sign');
@@ -412,7 +545,6 @@ export function meshesFromParts(pal: Palette, parts: Map<string, THREE.BufferGeo
       out.push(mesh);
     }
   }
-  done?.();
   return out;
 }
 
@@ -427,12 +559,13 @@ export class Frame {
 }
 export interface Hole { a0: number; b0: number; a1: number; b1: number }
 
+const _ob = new THREE.Matrix4(), _obP = new THREE.Vector3();
+/** a box in a wall's frame: a along the wall, b up, c out of it */
 export function obox(kit: Kit, key: string, F: Frame, a0: number, b0: number, c0: number, a1: number, b1: number, c1: number, color?: THREE.Color): void {
-  const g = new THREE.BoxGeometry(Math.abs(a1 - a0), Math.abs(b1 - b0), Math.abs(c1 - c0));
-  const m = new THREE.Matrix4().makeBasis(F.u, F.up, F.n);
-  m.setPosition(F.p((a0 + a1) / 2, (b0 + b1) / 2, (c0 + c1) / 2));
-  g.applyMatrix4(m);
-  kit.add(key, g, color);
+  const a = (a0 + a1) / 2, b = (b0 + b1) / 2, c = (c0 + c1) / 2;
+  _obP.copy(F.o).addScaledVector(F.u, a).addScaledVector(F.up, b).addScaledVector(F.n, c);
+  _ob.makeBasis(F.u, F.up, F.n).setPosition(_obP);
+  kit.boxAt(key, 0, 0, 0, Math.abs(a1 - a0), Math.abs(b1 - b0), Math.abs(c1 - c0), _ob, color);
 }
 
 /** the wall face between a0..a1 × b0..b1, with rectangular holes cut out and reveals into them */
@@ -741,7 +874,7 @@ export function buildShop(kit: Kit, s: ShopSpec): { door: THREE.Vector3; awning:
   const E = gH + uH * (s.storeys - 1);
   const wc = s.upperTint || WHITE;
   const kindN = s.kind === 'pub' ? 2 : 1;
-  const sign = pal.custom(`sign:${s.name}`, TX.signTex(s.name, s.signBg, s.signFg, true), { roughness: 0.35 });
+  const sign = pal.custom(`sign:${s.name}`, () => TX.signTex(s.name, s.signBg, s.signFg, true), { roughness: 0.35 });
   const out: THREE.Object3D[] = [];
   let doorPos = new THREE.Vector3();
 
@@ -818,7 +951,8 @@ export function buildShop(kit: Kit, s: ShopSpec): { door: THREE.Vector3; awning:
     }
     // awning, rolled out over the pavement
     if (s.awning) {
-      const ak = pal.custom(`awn:${s.awning.join()}`, TX.awningCanvas(s.awning[0], s.awning[1]), { roughness: 0.85, side: THREE.DoubleSide });
+      const [aw0, aw1] = s.awning;
+      const ak = pal.custom(`awn:${s.awning.join()}`, () => TX.awningCanvas(aw0, aw1), { roughness: 0.85, side: THREE.DoubleSide });
       const a0 = P, a1 = len - P, y0 = fy0 - 0.05, y1 = fy0 - 0.75, depth = 1.7;
       const rep = (a1 - a0) / 2;
       kit.quad(ak, F.p(a0, y0, 0.12), F.p(a1, y0, 0.12), F.p(a1, y1, depth), F.p(a0, y1, depth), v3(0, 1, 0).add(F.n.clone().multiplyScalar(0.4)), WHITE, [0, 0, rep, 0, rep, 1, 0, 1]);
@@ -834,7 +968,7 @@ export function buildShop(kit: Kit, s: ShopSpec): { door: THREE.Vector3; awning:
     const F = fr[0].F;
     const ax = W - 0.5;
     obox(kit, 'metal', F, ax - 0.03, gH + 0.4, 0, ax + 0.03, gH + 0.46, 1.2, new THREE.Color(0.05, 0.05, 0.05));
-    const board = pal.custom(`board:${s.name}`, TX.signTex(s.name.split(' ').slice(-1)[0], '#1d2a1e', '#e8d9a0', true), { roughness: 0.4, side: THREE.DoubleSide });
+    const board = pal.custom(`board:${s.name}`, () => TX.signTex(s.name.split(' ').slice(-1)[0], '#1d2a1e', '#e8d9a0', true), { roughness: 0.4, side: THREE.DoubleSide });
     for (const side of [1, -1]) {
       const c = 0.6;
       const p0 = F.p(ax + side * 0.035, gH - 0.7, c - 0.45), p1 = F.p(ax + side * 0.035, gH - 0.7, c + 0.45);

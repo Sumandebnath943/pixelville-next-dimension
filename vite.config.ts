@@ -10,6 +10,8 @@ export default defineConfig({
       input: { main: 'index.html', slice: 'slice.html' },
     },
   },
+  // texture workers import three.js as an ES module
+  worker: { format: 'es' },
   test: {
     include: ['tests/**/*.test.ts'],
     testTimeout: 120_000,

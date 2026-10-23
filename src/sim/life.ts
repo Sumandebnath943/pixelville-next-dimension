@@ -11,6 +11,7 @@ import { Mind } from './mind';
 import { Calamity } from './calamity';
 import { Gov } from './gov';
 import { Festivals } from './festivals';
+import { Traffic } from './traffic';
 /* ============================================================
    PixelVille — ambient life & the crime and justice system.
    Hikers trek up mountains (torches at night), birds cross the
@@ -380,14 +381,9 @@ export const Life: any = {
       }
     }
     for (const bus of this.buses) {
-      if (bus.pause > 0) { bus.pause -= gm; continue; }
-      // buses wait at closed level-crossing gates like everyone else
-      const bni = bus.dir > 0 ? Math.ceil(bus.prog) : Math.floor(bus.prog);
-      if (World.crossings.size && bni !== bus.prog && bni >= 0 && bni < bus.route.length) {
-        const [bnx, bny] = bus.route[bni];
-        if (World.crossings.has(World.idx(bnx, bny)) && this.trainNearTile(bnx, bny, 5)) continue;
-      }
-      bus.prog += 1.3 * dt * bus.dir; // V2: ~37 km/h
+      if (bus.pause > 0) { bus.pause -= gm; bus.v = 0; continue; }
+      // V2: in the traffic like everyone else — queues, junctions, crossings, gates (sim/traffic.ts)
+      bus.prog += Traffic.advance(bus, bus, bus.route, bus.prog, bus.dir, 1.3, dt, 1.3) * bus.dir; // ~37 km/h
       if (bus.prog >= bus.route.length - 1) { bus.prog = bus.route.length - 1; bus.dir = -1; bus.pause = 5; }
       if (bus.prog <= 0) { bus.prog = 0; bus.dir = 1; bus.pause = 5; }
       // brief stop at each bus shelter on the way — real passengers get on & off
@@ -397,7 +393,7 @@ export const Life: any = {
         const stop = bus.stops[bus.stopIdx.indexOf(at)];
         if (stop) this.serveStop(bus, stop);
       }
-      this.followPath(bus, bus.route, bus.prog, 3.5);
+      this.followPath(bus, bus.route, bus.prog, 3.5, bus.dir);
     }
   },
 
@@ -451,14 +447,9 @@ export const Life: any = {
       }
     }
     for (const cab of this.taxis) {
-      if (cab.pause > 0) { cab.pause -= gm; continue; }
-      // cabs hold at closed level-crossings like everything else on the road
-      const ni = cab.dir > 0 ? Math.ceil(cab.prog) : Math.floor(cab.prog);
-      if (World.crossings.size && ni !== cab.prog && ni >= 0 && ni < cab.route.length) {
-        const [nx, ny] = cab.route[ni];
-        if (World.crossings.has(World.idx(nx, ny)) && this.trainNearTile(nx, ny, 5)) continue;
-      }
-      cab.prog += 1.6 * dt * cab.dir; // V2: ~46 km/h
+      if (cab.pause > 0) { cab.pause -= gm; cab.v = 0; continue; }
+      // V2: cabs drive in the traffic (queues, junctions, crossings, gates)
+      cab.prog += Traffic.advance(cab, cab, cab.route, cab.prog, cab.dir, 1.6, dt) * cab.dir; // ~46 km/h
       if (cab.prog >= cab.route.length - 1) {          // dropped the fare across town
         cab.prog = cab.route.length - 1; cab.dir = -1; cab.pause = 3;
         if (cab.pax.length)
@@ -470,7 +461,7 @@ export const Life: any = {
         const nr = this.pickTaxiRoute(cab.home, cab.standTile);
         if (nr) cab.route = nr;
       }
-      this.followPath(cab, cab.route, cab.prog, 3.5);
+      this.followPath(cab, cab.route, cab.prog, 3.5, cab.dir);
     }
   },
 
@@ -753,7 +744,7 @@ export const Life: any = {
           this.ferry.prog += 1.0 * dt * this.ferry.dir; // V2: ferry pace
           if (this.ferry.prog >= this.ferry.route.length - 1) { this.ferry.prog = this.ferry.route.length - 1; this.ferry.dir = -1; this.ferry.pause = 14; }
           if (this.ferry.prog <= 0) { this.ferry.prog = 0; this.ferry.dir = 1; this.ferry.pause = 14; }
-          this.followPath(this.ferry, this.ferry.route, this.ferry.prog, 0);
+          this.followPath(this.ferry, this.ferry.route, this.ferry.prog, 0, this.ferry.dir);
         }
       }
     } else this.ferry = null;
@@ -836,7 +827,7 @@ export const Life: any = {
       }
     }
     for (const c of this.campaignCars) {
-      c.prog += 1.2 * dt; // V2: campaign cars crawl with the megaphone
+      c.prog += Traffic.advance(c, c, c.path, c.prog, 1, 1.2, dt); // V2: campaign cars crawl with the megaphone, in the traffic
       this.followPath(c, c.path, c.prog, 3.5);
       if (c.prog >= c.path.length - 1) c.done = true;
     }
@@ -1408,8 +1399,8 @@ export const Life: any = {
       }
     }
     for (const t of this.tourists) {
-      if (t.phase === 'visit') { t.stay -= dt * MIN_PER_SEC; if (t.stay <= 0) { t.phase = 'out'; t.path = [...t.path].reverse(); t.prog = 0; } continue; }
-      t.prog += 1.6 * dt; // V2: tourist cars at town speed
+      if (t.phase === 'visit') { t.stay -= dt * MIN_PER_SEC; if (t.stay <= 0) { t.phase = 'out'; t.path = [...t.path].reverse(); t.prog = 0; t.v = 0; } continue; }
+      t.prog += Traffic.advance(t, t, t.path, t.prog, 1, 1.6, dt); // V2: tourist cars at town speed, in the traffic
       this.followPath(t, t.path, t.prog, 3.5);
       if (t.prog >= t.path.length - 1) {
         if (t.phase === 'in') { t.phase = 'visit'; t.venue.visitors++; }
@@ -1710,14 +1701,16 @@ export const Life: any = {
   },
 
   /* shared path-follower (tile paths → px position with lane offset) */
-  followPath(o, path, prog, off) {
+  followPath(o, path, prog, off, dir = 1) {
     const i = Math.min(Math.floor(prog), path.length - 1);
     const f = Math.min(1, prog - i);
     const [ax, ay] = path[i], [bx, by] = path[Math.min(i + 1, path.length - 1)];
     const dx = bx - ax, dy = by - ay;
-    o.x = (ax + dx * f) * T + 8 + (dy !== 0 ? (dy > 0 ? -off : off) : 0);
-    o.y = (ay + dy * f) * T + 8 + (dx !== 0 ? (dx > 0 ? off : -off) : 0);
-    if (dx || dy) { o.dirx = dx; o.diry = dy; }
+    // V2: heading and lane follow the way it's travelling (a bus on its return leg keeps right)
+    const sx = dx * dir, sy = dy * dir;
+    o.x = (ax + dx * f) * T + 8 + (sy !== 0 ? (sy > 0 ? -off : off) : 0);
+    o.y = (ay + dy * f) * T + 8 + (sx !== 0 ? (sx > 0 ? off : -off) : 0);
+    if (sx || sy) { o.dirx = sx; o.diry = sy; }
   },
 
   tileDist(a, b) { return (Math.abs(a.x - b.x) + Math.abs(a.y - b.y)) / T; },

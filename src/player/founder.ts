@@ -20,6 +20,20 @@ import { ENV } from '../gfx/env';
 const TM = 8;
 const R_BODY = 0.38;
 const GRAV = 22;
+/** how far the street camera keeps from walls (the near plane's corners reach ~0.44 m) */
+const CAM_RADIUS = 0.45;
+
+/** where a ray from o (inverse direction i) first enters the box, if before `max` (else Infinity) */
+function slab(ox: number, oy: number, oz: number, ix: number, iy: number, iz: number, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, max: number): number {
+  let t0 = 0, t1 = max;
+  let a = (x0 - ox) * ix, c = (x1 - ox) * ix;
+  t0 = Math.max(t0, Math.min(a, c)); t1 = Math.min(t1, Math.max(a, c));
+  a = (y0 - oy) * iy; c = (y1 - oy) * iy;
+  t0 = Math.max(t0, Math.min(a, c)); t1 = Math.min(t1, Math.max(a, c));
+  a = (z0 - oz) * iz; c = (z1 - oz) * iz;
+  t0 = Math.max(t0, Math.min(a, c)); t1 = Math.min(t1, Math.max(a, c));
+  return t0 <= t1 ? t0 : Infinity;
+}
 
 export interface Car { x: number; z: number; yaw: number; speed: number; y: number; pitch: number }
 
@@ -40,6 +54,7 @@ export class Founder {
   private phase = 0;
   private camPos = new THREE.Vector3();
   private camInit = false;
+  private camSets: Float32Array[] = [];
   speedKmh = 0;
 
   constructor(scene: THREE.Scene, private buildings: BuildingLayer) {
@@ -356,26 +371,51 @@ export class Founder {
     }
     const pitch = this.driving ? Math.min(this.camPitch, -0.08) : this.camPitch;
     const dir = new THREE.Vector3(-Math.sin(this.camYaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(this.camYaw) * Math.cos(pitch));
-    // pull the camera in front of walls and slopes
-    let d = dist;
-    for (let s = 0.5; s <= dist; s += 0.4) {
-      const px = target.x + dir.x * s, py = target.y + dir.y * s, pz = target.z + dir.z * s;
-      if (py < heightAt(px, pz) + 0.4 || this.insideSolid(px, pz, py)) { d = Math.max(0.6, s - 0.4); break; }
-    }
-    const want = target.clone().addScaledVector(dir, d);
+    const want = target.clone().addScaledVector(dir, dist);
     if (!this.camInit) { this.camPos.copy(want); this.camInit = true; }
     this.camPos.lerp(want, Math.min(1, dt * (this.driving ? 10 : 18)));
+    // then pull it in front of whatever lies between: it snaps in at once and eases back out
+    const ray = this.camPos.clone().sub(target);
+    const len = ray.length();
+    if (len > 1e-3) {
+      ray.divideScalar(len);
+      const reach = this.camReach(target, ray, len);
+      if (reach < len) this.camPos.copy(target).addScaledVector(ray, reach);
+      // too close to see past the Founder: look over their shoulder instead
+      if (!this.driving && reach < 0.9) this.mesh.visible = false;
+    }
     cam.position.copy(this.camPos);
     cam.lookAt(target);
   }
-  private insideSolid(x: number, z: number, y: number): boolean {
-    for (const [x0, z0, x1, z1] of this.buildings.solidsNear(x, z, 1)) {
-      if (x > x0 && x < x1 && z > z0 && z < z1) {
-        const b = World.buildingAt(Math.floor(x / TM), Math.floor(z / TM));
-        if (!b || y < this.buildings.heightOf(b.id)) return true;
-      }
+
+  /** how far the camera can travel from o along unit d (up to len) before touching ground or a building */
+  private camReach(o: THREE.Vector3, d: THREE.Vector3, len: number): number {
+    const R = CAM_RADIUS;
+    let best = len;
+    // terrain and pavements, sampled
+    for (let s = 0.4; s < best; s += 0.4) {
+      const px = o.x + d.x * s, pz = o.z + d.z * s;
+      if (o.y + d.y * s < Math.max(heightAt(px, pz), this.groundAt(px, pz)) + 0.3) { best = Math.max(0.3, s - 0.4); break; }
     }
-    return false;
+    // building volumes: exact ray / box (slab) tests, boxes grown by the camera's radius
+    const ex = o.x + d.x * len, ez = o.z + d.z * len;
+    const sets = this.buildings.camBoxes(Math.min(o.x, ex) - 2, Math.min(o.z, ez) - 2, Math.max(o.x, ex) + 2, Math.max(o.z, ez) + 2, this.camSets);
+    const ox = o.x, oy = o.y, oz = o.z, ix = 1 / d.x, iy = 1 / d.y, iz = 1 / d.z;
+    for (const b of sets)
+      for (let i = 0; i < b.length; i += 6) {
+        const bx0 = b[i], by0 = b[i + 1], bz0 = b[i + 2], bx1 = b[i + 3], by1 = b[i + 4], bz1 = b[i + 5];
+        if (ox > bx0 - R && ox < bx1 + R && oy > by0 - R && oy < by1 + R && oz > bz0 - R && oz < bz1 + R) {
+          // the Founder is already within a camera-width of it: inside it (a doorway, an awning's
+          // edge) it doesn't count; beside it, only a ray heading into it does
+          if (ox > bx0 && ox < bx1 && oy > by0 && oy < by1 && oz > bz0 && oz < bz1) continue;
+          const t = slab(ox, oy, oz, ix, iy, iz, bx0, by0, bz0, bx1, by1, bz1, best);
+          if (t < best) best = Math.max(0.25, t - R);
+          continue;
+        }
+        const t = slab(ox, oy, oz, ix, iy, iz, bx0 - R, by0 - R, bz0 - R, bx1 + R, by1 + R, bz1 + R, best);
+        if (t < best) best = Math.max(0.25, t);
+      }
+    return best;
   }
 
   /** tile under the Founder */
