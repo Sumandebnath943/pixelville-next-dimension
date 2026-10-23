@@ -59,3 +59,8 @@ export const Snd: Record<string, () => void> = new Proxy(
   {},
   { get: (_t, name: string) => () => emit('sound', { name }) },
 );
+
+/** a family name as a household: Kim → the Kims, Owens → the Owenses (V1 wrote "Owenss") */
+export function family(surname: string): string {
+  return /(s|x|z|ch|sh)$/.test(surname) ? surname + 'es' : surname + 's';
+}

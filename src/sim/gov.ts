@@ -5,7 +5,7 @@ import { GH, GW, G_GRASS, G_WATER, World } from './world';
 import { CAT } from './catalog';
 import { STARTUP_COSTS, Sim } from './agents';
 import { Tasks } from './tasks';
-import { Snd, T } from './core';
+import { Snd, T, family } from './core';
 /* ============================================================
    PixelVille — village government, elections & community spirit.
    Adults vote once every 28 in-game days. Their vote is based on
@@ -1053,7 +1053,7 @@ export const Gov: any = {
     this.needTimers[need] = 0;
     this.unmetNeeds[need] = 0;
     if (this.leader && need !== 'townhall') this.approval = Math.max(5, this.approval - 6); // public embarrassment has a cost
-    const lead = homes[0] && homes[0].residents[0] ? `, led by the ${homes[0].residents[0].surname}s` : '';
+    const lead = homes[0] && homes[0].residents[0] ? `, led by the ${family(homes[0].residents[0].surname)}` : '';
     this.say(`🤝 Tired of waiting, villagers pooled their savings to build a ${CAT[need].name} themselves${lead}!`);
     return true;
   },

@@ -3,7 +3,7 @@
 import { Life } from './life';
 import { World } from './world';
 import { CAT } from './catalog';
-import { MIN_PER_SEC, Snd, T } from './core';
+import { MIN_PER_SEC, Snd, T, family } from './core';
 import { News } from './news';
 import { Mind } from './mind';
 import { Festivals } from './festivals';
@@ -217,7 +217,7 @@ export const Sim: any = {
           this.firstFamilyDone = true;
           this.welcomeAt = { x: b.x * T + b.w * 8, y: b.y * T + b.h * 8 };
           msgs.push(`🎊 ${World.name} is founded! The ${fam.surname} family are the very first residents — ${fam.n} pioneer${fam.n > 1 ? 's' : ''} unpacking boxes`);
-          News.breaking(`${World.name} is founded — the ${fam.surname}s move into the first home`);
+          News.breaking(`${World.name} is founded — the ${family(fam.surname)} move into the first home`);
           Life.celebrate(this.welcomeAt.x, this.welcomeAt.y, '#ffd160');
         } else {
           msgs.push(`The ${fam.surname} family moved in — ${fam.n} resident${fam.n > 1 ? 's' : ''} 🏠`);
@@ -777,7 +777,7 @@ export const Sim: any = {
       this.moveHomes(p, vacant); this.moveHomes(q, vacant);
       vacant.funds = Math.max(20, (p.savings || 0) * 0.5 + (q.savings || 0) * 0.5);
       p.savings *= 0.5; q.savings *= 0.5;
-      say(`🏠 The newlyweds ${p.surname}s moved into a place of their own`);
+      say(`🏠 The newlyweds ${family(p.surname)} moved into a place of their own`);
     } else if ((p.savings || 0) + (q.savings || 0) > 160) {
       const spot = World.findPlannedSpot('house');
       if (spot) {
@@ -833,11 +833,11 @@ export const Sim: any = {
       }
       const say = m => { Life.say(m); };
       const name = b.residents[0].surname;
-      if (Math.random() < 0.0012) { b.funds += 400; say(`🎉 The ${name}s won the lottery! (+$400)`); }
+      if (Math.random() < 0.0012) { b.funds += 400; say(`🎉 The ${family(name)} won the lottery! (+$400)`); }
       // home improvements
       if (b.type === 'house' && !b.upgrading) {
-        if (b.level === 1 && b.funds >= 250) { b.funds -= 180; b.upgrading = 240; say(`🔨 The ${name}s are adding a floor to their house`); }
-        else if (b.level === 2 && b.funds >= 600) { b.funds -= 420; b.upgrading = 300; say(`🔨 The ${name}s are turning their home into a villa`); }
+        if (b.level === 1 && b.funds >= 250) { b.funds -= 180; b.upgrading = 240; say(`🔨 The ${family(name)} are adding a floor to their house`); }
+        else if (b.level === 2 && b.funds >= 600) { b.funds -= 420; b.upgrading = 300; say(`🔨 The ${family(name)} are turning their home into a villa`); }
         else if (b.level >= 3 && b.funds >= 1600 && Math.random() < 0.08) {
           // the final rung of the property ladder: a mansion of their own
           const spot = World.findPlannedSpot('mansion');
@@ -845,7 +845,7 @@ export const Sim: any = {
             const mb = World.placeBuilding('mansion', spot.x, spot.y, false, spot.f);
             if (mb) {
               b.funds -= 1150; mb.pendingMoveFrom = b.id;
-              say(`🏰 The ${name}s broke ground on a MANSION — the whole street came to stare`);
+              say(`🏰 The ${family(name)} broke ground on a MANSION — the whole street came to stare`);
               World.refreshConnections();
             }
           }
@@ -861,8 +861,8 @@ export const Sim: any = {
         b.funds -= price;
         if (showroom) { showroom.funds += price * 0.25; showroom.visitors++; }
         b.cars.push({ free: true, seed: (Math.random() * 8) | 0 });
-        say(b.cars.length >= 3 ? `🚗 The ${name}s added a third car to the driveway — living large!`
-          : `🚗 The ${name}s bought a new car${showroom ? ' from the showroom' : ''}`);
+        say(b.cars.length >= 3 ? `🚗 The ${family(name)} added a third car to the driveway — living large!`
+          : `🚗 The ${family(name)} bought a new car${showroom ? ' from the showroom' : ''}`);
       }
       // a motorcycle: the working family's first set of wheels
       const motoShop = World.buildings.find(o => o.type === 'motoshowroom' && o.connected && !o.ruined && !o.construction);
@@ -870,19 +870,19 @@ export const Sim: any = {
         const price = motoShop ? 120 : 145;
         b.funds -= price; b.bikes = (b.bikes || 0) + 1;
         if (motoShop) { motoShop.funds += price * 0.3; motoShop.visitors++; }
-        say(`🏍️ The ${name}s bought a motorcycle${motoShop ? ' from the showroom' : ''} — beats walking!`);
+        say(`🏍️ The ${family(name)} bought a motorcycle${motoShop ? ' from the showroom' : ''} — beats walking!`);
       }
       // a fishing boat, when the village has a working waterfront
       const wharf = World.buildings.find(o => ['dock', 'boatclub', 'fishmarket'].includes(o.type) && o.connected && !o.ruined && !o.construction);
       if (wharf && !b.boat && b.funds >= 300 && Math.random() < 0.05) {
         b.funds -= 190; b.boat = true;
-        say(`🛶 The ${name}s bought a fishing boat — fresh catch and a little extra income`);
+        say(`🛶 The ${family(name)} bought a fishing boat — fresh catch and a little extra income`);
       }
       if (b.boat && Weather.season !== 3 &&
           (Calamity.droughtLevel < 0.5)) {
         const haul = 3 + Math.random() * 8;
         b.funds += haul;
-        if (Math.random() < 0.02) say(`🎣 A great haul! The ${name}s sold $${Math.round(haul + 10)} of fish at the market`);
+        if (Math.random() < 0.02) say(`🎣 A great haul! The ${family(name)} sold $${Math.round(haul + 10)} of fish at the market`);
       }
       // property investment: build a rental home
       if (b.level >= 2 && b.funds >= 900 && this.day >= (b.nextInvestmentDay || 0) && Math.random() < 0.14) {
@@ -893,7 +893,7 @@ export const Sim: any = {
           if (nb) {
             nb.ownerId = b.id;
             b.nextInvestmentDay = this.day + 5 + ((Math.random() * 4) | 0);
-            say(`🏗️ The ${name}s are building a rental home — landlords now!`);
+            say(`🏗️ The ${family(name)} are building a rental home — landlords now!`);
             World.refreshConnections();
           }
         }
@@ -942,7 +942,7 @@ export const Sim: any = {
       const savings = adults.reduce((s, r) => s + (r.savings || 0), 0);
       if (b.funds <= 3 && savings < 10 && !working) b.brokeDays = (b.brokeDays || 0) + 1;
       else b.brokeDays = 0;
-      if (b.brokeDays === 2) say(`💸 The ${b.residents[0].surname}s can't pay their bills — the cupboard is bare`);
+      if (b.brokeDays === 2) say(`💸 The ${family(b.residents[0].surname)} can't pay their bills — the cupboard is bare`);
       if (b.brokeDays >= 2) for (const r of b.residents) r.mood = Math.max(5, (r.mood === undefined ? 60 : r.mood) - 6);
       if (b.brokeDays >= 5 && Math.random() < 0.4) {
         const name = b.residents[0].surname;
@@ -1018,7 +1018,7 @@ export const Sim: any = {
         // a burned gambler REMEMBERS — and stays away from the tables for a while
         Mind.remember(p, 'loss', 'gambled the family savings away', -2, casino.id);
         if (Math.random() < 0.35)
-          say(`🎲 ${this.fullName(p)} gambled the family savings away — the ${p.surname}s are in real trouble`);
+          say(`🎲 ${this.fullName(p)} gambled the family savings away — the ${family(p.surname)} are in real trouble`);
       }
     }
   },
@@ -1107,7 +1107,7 @@ export const Sim: any = {
       for (const mv of movers) this.moveHomes(mv, nb);
       nb.funds = from.funds * 0.7; from.funds *= 0.3;
       if (CAT[key].cars) nb.cars.push({ free: true, seed: (Math.random() * 8) | 0 });
-      say(`🌄 The ${movers[0].surname}s left the crowded streets to homestead in the ${district} — pioneers!`);
+      say(`🌄 The ${family(movers[0].surname)} left the crowded streets to homestead in the ${district} — pioneers!`);
     } else {
       const fam = this.spawnFamily(nb);
       nb.funds = 90 + Math.random() * 80;

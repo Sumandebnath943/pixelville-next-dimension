@@ -25,9 +25,9 @@ PixelVille V1 is a living village you watched from above: you drop buildings, an
 
 | Area | Decision |
 | --- | --- |
-| Platform | Browser. TypeScript + Vite + Three.js; Rapier for vehicle/character physics. |
+| Platform | Browser. TypeScript + Vite + Three.js; Rapier for vehicle/character physics when needed (M1 uses light grid collision — see MILESTONES). |
 | Players | Single-player. Simulation is engine-agnostic and command-driven so online co-op can be added later. |
-| Art | Stylized low-poly. Buildings, terrain and props generated procedurally; CC0 rigged characters and vehicles. |
+| Art | Stylized low-poly. Buildings, terrain and props generated procedurally; CC0 rigged characters and vehicles (M1 ships procedural ones). |
 | Player role | God with an avatar ("the Founder"): free building in Planner view, street-level roaming, no needs, no aging. |
 | Money | Light personal wallet: playable job shifts pay you; you spend on food, tickets, vehicles, flights, fines. God-mode building stays free. |
 | Time | A day ≈ 24 real minutes at 1×. Villagers age one year per in-game week. A year is still 28 days (4 seasons × 7). |
@@ -426,7 +426,7 @@ All input goes through an **action map**, so bindings are rebindable and every d
 
 ### 17.3 Tooling
 
-Vite · TypeScript (strict) · Three.js · Rapier (WASM) · Vitest · ESLint + Prettier · Vercel (static site + `api/` functions).
+Vite · TypeScript (strict for new code; the ported sim awaits a typing pass) · Three.js · Rapier (WASM, when physics needs it) · Vitest · ESLint + Prettier · Vercel (static site + `api/` functions).
 
 ### 17.4 Performance
 

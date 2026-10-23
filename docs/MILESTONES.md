@@ -19,6 +19,14 @@
 
 **Goal:** everything V1 does, running in 3D, with the Founder walking and driving through it and able to build from the sky.
 
+**Status (2026-10-23): playable, not yet deployed.** Done: 1a–1h below, except the Vercel deploy. Deviations from the design, to revisit:
+
+- **Characters and vehicles are procedural low-poly models**, generated in code like V1's sprites, instead of CC0 model packs. That means no downloads and no licensing. Rigged models can replace them later without touching the sim.
+- **No Rapier yet.** V1's world is a tile grid of rectangular plots, so walking and driving use a light custom collision against building boxes, tree trunks, water and the map edge. Rapier can come in M2 if crashes and pursuits need real physics.
+- **The sim modules are ported verbatim with `// @ts-nocheck`.** The new client code is strictly typed; a typing pass over `src/sim` (shared entity interfaces) is pending.
+- **Sounds are not yet positional**, and there is no separate mid-distance LOD tier: everything within range is instanced at full detail.
+- **The gamepad mapping** follows the standard layout but hasn't been tested on hardware yet.
+
 ### 1a · Foundations
 - Vite + TypeScript (strict) + Three.js + Rapier project; ESLint, Prettier, Vitest.
 - Vercel project with a preview deploy per push; `api/` folder ready.
