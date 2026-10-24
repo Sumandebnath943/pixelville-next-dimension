@@ -264,7 +264,8 @@ export class Panels {
       if (favB && favV >= 2) facts.push(['A regular at', `the ${CAT[favB.type].name}`]);
       for (const mm of p.mind.memories.slice(-3).reverse()) notes.push(`<span class="day">Day ${mm.day}</span>${esc(mm.text)}`);
     }
-    notes.push('<span class="soon">Talking with villagers arrives in Milestone 3.</span>');
+    const met = p.mind?.flags?.met;
+    if (met) facts.push(['Talked with you', `${met.n} time${met.n > 1 ? 's' : ''} · last on day ${met.l}${met.s ? `, about ${esc(met.s)}` : ''}`]);
     const kind = p.kind === 'kid' ? 'Child' : 'Villager';
     el.innerHTML = card({
       over: `${kind} · ${p.age} years old`, title: Sim.fullName(p), pills, facts, notes,

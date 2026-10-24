@@ -32,6 +32,17 @@ export interface PhoneApi {
   photo(): void;
   /** put the phone away and open photo mode */
   photoMode(): void;
+  /** villagers the Founder has talked to */
+  contacts: {
+    list(): any[];
+    call(p: any): void;
+    find(p: any): void;
+    job(p: any): string;
+    opinion(p: any): { label: string; k: string };
+  };
+  /** what the Founder is carrying; eat or drink item `i` */
+  bag(): { name: string; from: string; day: number; food?: boolean; ticket?: boolean }[];
+  eat(i: number): void;
   /** the Founder's vehicles, for the Garage app */
   garage: {
     list(): Vehicle[];
@@ -44,9 +55,10 @@ export interface PhoneApi {
   };
 }
 
-type App = 'home' | 'map' | 'wallet' | 'pvtv' | 'tasks' | 'camera' | 'garage';
+type App = 'home' | 'map' | 'wallet' | 'pvtv' | 'tasks' | 'camera' | 'garage' | 'contacts';
 const APPS: { id: App | 'planner' | 'settings'; name: string; icon: string; tint: string }[] = [
   { id: 'map', name: 'Map', icon: 'map', tint: '#3f8f86' },
+  { id: 'contacts', name: 'Contacts', icon: 'people', tint: '#4a8a5a' },
   { id: 'wallet', name: 'Wallet', icon: 'wallet', tint: '#c08a3a' },
   { id: 'garage', name: 'Garage', icon: 'car', tint: '#3a6a9a' },
   { id: 'pvtv', name: 'PVTV', icon: 'tv', tint: '#b8473f' },
@@ -114,6 +126,16 @@ export class Phone {
       case 'tasks': body.innerHTML = head('Tasks') + `<div class="ph-scroll">${this.tasksHtml()}</div>`; break;
       case 'camera': body.innerHTML = head('Camera') + `<div class="ph-scroll">${this.cameraHtml()}</div>`; break;
       case 'garage': body.innerHTML = head('Garage') + `<div class="ph-scroll">${this.garageHtml()}</div>`; break;
+      case 'contacts': body.innerHTML = head('Contacts') + `<div class="ph-scroll">${this.contactsHtml()}</div>`; break;
+    }
+    if (this.app === 'contacts') {
+      const c = this.api.contacts;
+      const who = (id: string): any => c.list().find((p) => p.id === +id);
+      body.querySelectorAll<HTMLElement>('[data-call]').forEach((el) => el.addEventListener('click', () => { const p = who(el.dataset.call!); if (p) c.call(p); }));
+      body.querySelectorAll<HTMLElement>('[data-where]').forEach((el) => el.addEventListener('click', () => { const p = who(el.dataset.where!); if (p) { c.find(p); this.go('map'); } }));
+    }
+    if (this.app === 'wallet') {
+      body.querySelectorAll<HTMLElement>('[data-eat]').forEach((el) => el.addEventListener('click', () => { this.api.eat(+el.dataset.eat!); this.render(); }));
     }
     if (this.app === 'garage') {
       const g = this.api.garage;
@@ -162,6 +184,13 @@ export class Phone {
     const w = this.api.purse;
     const t = w.day();
     let h = `<div class="ph-balance"><span>Balance</span><b>$${Math.round(w.balance)}</b><small>Today: <em class="up">+$${t.in}</em> · <em class="down">−$${t.out}</em></small></div>`;
+    const bag = this.api.bag();
+    if (bag.length) {
+      h += '<div class="ph-sep">In your bag</div>';
+      bag.forEach((it, i) => {
+        h += `<div class="ph-row"><span class="grow">${esc(it.name)}<small>From the ${esc(it.from)} · day ${it.day}</small></span>${it.food ? `<button class="ph-mini" data-eat="${i}">${/coffee|tea|chai|shake|cola|lemonade|drink|water|milk|white/i.test(it.name) ? 'Drink' : 'Eat'}</button>` : it.ticket ? '<small>Ticket</small>' : ''}</div>`;
+      });
+    }
     if (!w.ledger.length) h += '<p class="ph-empty">Nothing in or out yet. Small kindnesses pay: a lost dog, a hand at a fire.</p>';
     else {
       h += '<div class="ph-sep">History</div>';
@@ -218,6 +247,20 @@ export class Phone {
       </div>`;
     }
     return h + '<p class="ph-empty">Only one vehicle is out at a time; the rest wait in the Lodge garage. Park at the kerb, away from junctions and bus stops: where there\'s a police station, there are wardens.</p>';
+  }
+
+  private contactsHtml(): string {
+    const list = this.api.contacts.list();
+    if (!list.length) return '<p class="ph-empty">Nobody yet. Talk to villagers (<kbd>E</kbd> beside them, in the street or inside) and they\'ll be here to call.</p>';
+    let h = '';
+    for (const p of list) {
+      const met = p.mind.flags.met, op = this.api.contacts.opinion(p);
+      h += `<div class="ph-veh">
+        <div class="ph-row"><span class="grow"><b>${esc(p.name)} ${esc(p.surname)}</b><small>${esc(this.api.contacts.job(p))} · last talked ${met.l === Sim.day ? 'today' : met.l === Sim.day - 1 ? 'yesterday' : `day ${met.l}`}${met.s ? `, about ${esc(met.s)}` : ''}</small></span><span class="pill ${op.k}">${esc(op.label)}</span></div>
+        <div class="ph-acts"><button data-call="${p.id}">${icon('phone')}Call</button><button data-where="${p.id}">${icon('pin')}Find</button></div>
+      </div>`;
+    }
+    return h;
   }
 
   private cameraHtml(): string {

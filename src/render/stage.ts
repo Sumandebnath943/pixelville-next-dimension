@@ -280,8 +280,26 @@ export class Stage {
     });
   }
 
+  /** an interior drawn instead of the world (which keeps updating outside) */
+  private indoor: THREE.Scene | null = null;
+  setIndoor(scene: THREE.Scene | null): void {
+    this.indoor = scene;
+    this.pipe.setScene(scene ?? this.scene);
+    this.indoorFresh = true;
+  }
+  private indoorFresh = false;
+  /** indoors, exposure is set for lamplight and daylight through the windows */
+  indoorExposure = 1;
+
   render(): void {
     if (this.lost) return;
+    if (this.indoor) {
+      this.camera.updateMatrixWorld();
+      // the room doesn't move: its shadows only need redrawing now and then
+      this.pipe.render(this.indoorExposure * this.exposureBias, this.frozen ? 0 : 1 / 60, this.indoorFresh || this.frameNo % 30 === 0);
+      this.indoorFresh = false;
+      return;
+    }
     if (this.shake > 0 || Calamity.shakeT > 0) {
       const k = Math.max(this.shake, Math.min(1, Calamity.shakeT)) * 0.6;
       this.camera.position.x += (Math.random() - 0.5) * k;

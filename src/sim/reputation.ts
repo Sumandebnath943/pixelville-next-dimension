@@ -124,7 +124,8 @@ export const Rep = {
     if (s !== null && s <= -6) return { cost: base, rate: 1, note: "the staff won't serve you", refused: true };
     const rate = s === null ? 1 : s >= 7 ? 0.8 : s >= 4 ? 0.9 : 1;
     const note = rate === 0.8 ? '20% off: the staff are fans' : rate === 0.9 ? '10% off: the staff like you' : '';
-    return { cost: Math.max(1, Math.round(base * rate)), rate, note, refused: false };
+    // a discount is always rounded in the customer's favour
+    return { cost: rate < 1 ? Math.max(1, Math.floor(base * rate)) : base, rate, note, refused: false };
   },
 
   /** the Founder spent money here: the people working warm to a good customer (up to a point) */

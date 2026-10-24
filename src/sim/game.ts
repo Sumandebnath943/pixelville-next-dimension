@@ -50,6 +50,8 @@ export interface FounderSave {
   fleet?: { list: unknown[]; current: number; owed: number };
   /** V2: stolen cars to put back in their families' drives on load (a save keeps none) */
   returnCars?: { home: number; car: unknown }[];
+  /** what the Founder is carrying (bought over counters) */
+  bag?: { name: string; from: string; day: number; food?: boolean; ticket?: boolean }[];
 }
 
 export const Game = {

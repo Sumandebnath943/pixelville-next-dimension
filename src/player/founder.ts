@@ -15,6 +15,7 @@ import type { FounderSave } from '../sim/game';
 import { Person } from '../gfx/person';
 import { Car as CarModel, Moto, Ride, CarStyle } from '../gfx/car';
 import { Fleet, Vehicle, SPEC } from './fleet';
+import type { BagItem } from './shopping';
 import { surface } from '../gfx/surface';
 import { ENV } from '../gfx/env';
 import { Traffic } from '../sim/traffic';
@@ -217,6 +218,7 @@ export class Founder {
       if (home && home.cars && !home.cars.includes(r.car)) home.cars.push({ ...r.car, free: true });
     }
     this.fleet.restore(save?.fleet as any);
+    this.bag = (save?.bag || []).slice(-16);
     if (!this.fleet.list.length) {
       // the Founder's own saloon (also for saves from before vehicles could be owned)
       const v = this.fleet.add({ model: 'founder', name: "Founder's saloon", kind: 'car', style: 'sedan', color: '#3e1a5e', price: 340 });
@@ -289,6 +291,9 @@ export class Founder {
     return v;
   }
 
+  /** what the Founder is carrying: things bought over counters, tickets for the journey */
+  bag: BagItem[] = [];
+
   /** stolen cars still away from home (the one in hand, any left standing), for a save to send back */
   pendingReturns: () => { home: number; car: any }[] = () => [];
 
@@ -300,7 +305,7 @@ export class Founder {
     return {
       x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: at ? { x: at.x, z: at.z, yaw: at.yaw } : null,
       wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), damage: Math.round(this.fleet.cur?.damage ?? 0),
-      fleet: this.fleet.serialize(), returnCars,
+      fleet: this.fleet.serialize(), returnCars, bag: this.bag.slice(),
     };
   }
 

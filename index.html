@@ -111,6 +111,18 @@
       </aside>
       <div id="hint"></div>
       <div id="prompt"></div>
+      <div id="talk" class="glass">
+        <div class="tk-head">
+          <div class="tk-who"><b id="tk-name"></b><span id="tk-sub"></span></div>
+          <span id="tk-pill" class="pill"></span>
+          <button class="ib" id="tk-about" title="About them"><svg><use href="#i-book" /></svg></button>
+          <button class="ib" id="tk-close" title="Say goodbye (Esc)"><svg><use href="#i-close" /></svg></button>
+        </div>
+        <div id="tk-log"></div>
+        <div id="tk-topics"></div>
+        <form id="tk-form"><input id="tk-input" maxlength="300" placeholder="Say something…" autocomplete="off" /><button class="primary" type="submit">Say</button></form>
+        <p id="tk-mode"></p>
+      </div>
       <div id="streethud">
         <span id="wallet-pill" class="glass" title="The Founder's wallet"><svg><use href="#i-wallet" /></svg><b id="wallet">$120</b></span>
         <span id="rep-pill" class="glass" title="What the village thinks of you"><svg><use href="#i-heart" /></svg><span id="rep-label">A newcomer</span><i class="meter"><b id="rep-bar"></b></i></span>
@@ -217,6 +229,12 @@
         <div id="sr-trade"></div>
       </div></div>
 
+      <div id="counterui" class="modal"><div class="modal-card glass">
+        <header class="m-head"><h1 id="cu-title">Counter</h1><button class="ib" data-close="counterui" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <p class="note" id="cu-sub"></p>
+        <div id="cu-body"></div>
+      </div></div>
+
       <div id="statsui" class="modal"><div class="modal-card glass wide">
         <header class="m-head"><h1>Village history</h1><button class="ib" data-close="statsui" title="Close"><svg><use href="#i-close" /></svg></button></header>
         <canvas id="stats-canvas" width="1120" height="600"></canvas>
@@ -265,6 +283,7 @@
       <p class="pm-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>E</kbd>/<kbd>Q</kbd> up, down · <kbd>Shift</kbd> faster · drag to look · wheel zooms · <kbd>Esc</kbd> leaves</p>
     </div>
     <div id="flash"></div>
+    <div id="fade"></div>
     <div id="curtain">
       <b id="curtain-title"></b>
       <p id="curtain-text"></p>

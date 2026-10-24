@@ -36,6 +36,13 @@ import { Wanted, FINES } from './player/wanted';
 import { Street } from './player/street';
 import { PhotoMode } from './player/photo';
 import { PhotoPanel } from './ui/photopanel';
+import { Indoors, doorState, householdView } from './player/indoors';
+import { Counter } from './ui/counter';
+import { lightsOn } from './gfx/architecture';
+import { ChatClient } from './ai/client';
+import { contacts } from './ai/memory';
+import { jobName } from './player/indoors';
+import { Dialogue } from './ui/dialogue';
 import { Rep } from './sim/reputation';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -54,7 +61,15 @@ const buildings = new BuildingLayer(stage.scene);
 const actors = new Actors(stage.scene, buildings);
 const founder = new Founder(stage.scene, buildings);
 const planner = new Planner(stage.scene, canvas, stage.camera, buildings, actors);
-Game.founderHooks = { get: () => founder.save(), set: (s) => { founder.spawn(Game.lodge(), s); wanted.reset(); } };
+Game.founderHooks = {
+  get: () => founder.save(),
+  set: (s) => {
+    // a loaded village starts on the street
+    if (indoors?.active) { dialogue.close(); indoors.exit(); document.body.classList.remove('indoors'); }
+    founder.spawn(Game.lodge(), s);
+    wanted.reset();
+  },
+};
 founder.spawn(Game.lodge(), null);
 // a driver held up by the Founder leans on the horn (louder the nearer it is)
 Traffic.onHonk = (who) => {
@@ -109,6 +124,104 @@ const motoring = new Motoring(founder, gps, personalToast, () => Sim.clock, (b) 
 const showroom = new Showroom(motoring, founder.purse, () => panels.show('showroomui'), () => panels.close('showroomui'));
 const wanted = new Wanted(founder, personalToast);
 const streetLife = new Street(founder, wanted, personalToast);
+
+/* ---------- going inside: a fade, the room, and back out to the doorstep ---------- */
+const indoors = new Indoors(stage);
+const counter = new Counter({
+  purse: founder.purse,
+  bag: () => founder.bag,
+  owed: () => founder.fleet.owed,
+  toast: (m) => personalToast(m),
+  show: () => panels.show('counterui'),
+  close: () => panels.close('counterui'),
+  extra: (b) => [
+    ...(errands.canScratch(b) ? [{ label: 'Scratch card · $2', run: () => errands.scratch(b) }] : []),
+    ...motoring.buildingActions(b),
+  ],
+  about: (b) => panels.showInfo(b),
+  talk: (p) => dialogue.start(p, { building: indoors.b }),
+});
+/* ---------- talking: face to face, or on the phone ---------- */
+const chatClient = new ChatClient();
+void chatClient.probe();
+const dialogue = new Dialogue({
+  client: chatClient,
+  showPerson: (p) => panels.showPerson(p),
+  release: () => Input.releaseLock(),
+  onStart: (p, onPhone) => {
+    document.body.classList.add('talking');
+    // someone in the street stops to talk; someone inside turns to face you
+    if (!indoors.active && !onPhone && p.state === 'walk' && p.trip) p.freezeT = Math.max(p.freezeT || 0, 600);
+    if (indoors.active) indoors.talkingTo = indoors.people.find((o) => o.p === p) ?? null;
+  },
+  onEnd: (p) => {
+    document.body.classList.remove('talking');
+    if (p && p.freezeT > 0 && !p.knocked) p.freezeT = 0;
+    indoors.talkingTo = null;
+  },
+});
+$('tk-input').addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Escape') dialogue.close(); });
+/** ring a villager from the phone's Contacts (nobody picks up in the small hours) */
+function callVillager(p: any): void {
+  if (!Sim.people.includes(p)) return;
+  phone.close();
+  if (Sim.clock < 390 || Sim.clock >= 1380) { hud.toast(`📞 No answer — ${p.name} must be asleep`, undefined, true); return; }
+  dialogue.start(p, { phone: true });
+}
+/** route to wherever they are now: inside a building, or out walking */
+function findVillager(p: any): void {
+  if (p.state === 'in' && p.at) gps.set(p.at.door.x * TM + 4, p.at.door.y * TM + 4, `${p.name} · ${p.at === p.home ? 'at home' : `the ${CAT[p.at.type].name}`}`);
+  else gps.set(p.x * 0.5, p.y * 0.5, `${p.name} ${p.surname}`);
+}
+let fading = false;
+/** black out, do `fn`, come back */
+function fade(fn: () => void): void {
+  if (fading) return;
+  fading = true;
+  const f = $('fade');
+  f.classList.add('on');
+  setTimeout(() => {
+    fn();
+    fading = false;
+    requestAnimationFrame(() => f.classList.remove('on'));
+  }, 260);
+}
+function goIn(b: any): void {
+  if (wanted.stars > 0) { hud.toast('🚨 Not with the police after you', undefined, true); return; }
+  phone.close();
+  panels.hideInfo();
+  fade(() => {
+    indoors.enter(b);
+    document.body.classList.add('indoors');
+    if (b.type !== 'lodge') Snd.tone(1320, 1320, 0.05, 0.03, 'sine'); // the shop bell
+  });
+}
+function goOut(): void {
+  const b = indoors.b;
+  panels.closeAll();
+  fade(() => {
+    indoors.exit();
+    founder.stepOutOf(b);
+    document.body.classList.remove('indoors');
+  });
+}
+function indoorInteractions(): void {
+  const u = indoors.use(), prompt = $('prompt');
+  prompt.innerHTML = u?.text || '';
+  prompt.style.display = u ? 'block' : 'none';
+  if (!u || !Input.take('interact')) return;
+  if (u.kind === 'person') { dialogue.start(u.who.p, { building: indoors.b }); return; }
+  const s = u.spot;
+  if (s.kind === 'exit') goOut();
+  else if (s.kind === 'seat') { if (indoors.seated) indoors.stand(); else indoors.sit(s); }
+  else if (s.kind === 'counter') {
+    const who = indoors.server(s);
+    if (who) counter.open('counter', indoors.b, who.p);
+    else hud.toast('🛎️ Nobody is serving right now', undefined, true);
+  } else if (s.kind === 'atm') counter.open('atm', indoors.b);
+  else if (s.kind === 'tickets') counter.open('tickets', indoors.b);
+  else if (s.kind === 'desk') panels.showInfo(indoors.b);
+}
 
 /* ---------- photo mode: the world holds still and the camera comes free ---------- */
 const photo = new PhotoMode(stage);
@@ -276,6 +389,20 @@ const phone = new Phone({
   openSettings: () => panels.openSettings(),
   photo: () => { photoWanted = true; },
   photoMode: () => enterPhoto(),
+  contacts: {
+    list: () => contacts(Sim.people),
+    call: (p) => callVillager(p),
+    find: (p) => findVillager(p),
+    job: (p) => jobName(p),
+    opinion: (p) => { const o = Rep.of(p); return { label: Rep.label(o), k: o >= 1 ? 'ok' : o <= -1 ? 'bad' : '' }; },
+  },
+  bag: () => founder.bag,
+  eat: (i) => {
+    const it = founder.bag[i];
+    if (!it) return;
+    founder.bag.splice(i, 1);
+    personalToast(`😋 ${/coffee|tea|chai|shake|cola|lemonade|drink|water|milk|white/i.test(it.name) ? 'You drink' : 'You eat'} the ${it.name.toLowerCase()} from the ${it.from}`);
+  },
   garage: {
     list: () => founder.fleet.list,
     where: (v) => motoring.where(v),
@@ -374,12 +501,18 @@ function interactions(): void {
       text = `<b>F</b> steal the ${family(near.ref.b.residents[0]?.surname || 'neighbour')}' car`;
       if (Input.take('vehicle')) wanted.steal(near.ref);
     } else if (near?.kind === 'person') {
-      text = `<b>E</b> meet ${near.ref.name} ${near.ref.surname}`;
-      if (Input.take('interact')) panels.showPerson(near.ref);
+      text = `<b>E</b> talk to ${near.ref.name} ${near.ref.surname}`;
+      if (Input.take('interact')) dialogue.start(near.ref);
     } else if (near?.kind === 'building') {
-      const d = CAT[near.ref.type];
-      text = `<b>E</b> ${d.emoji} ${d.name}${near.ref.type === 'lodge' ? ' — your home base' : ''}`;
-      if (Input.take('interact')) panels.showInfo(near.ref);
+      // through the door if it's open to the Founder; otherwise the building's card
+      const b = near.ref, d = CAT[b.type], why = doorState(b, householdView(b));
+      if (why === null) {
+        text = `<b>E</b> go into ${b.type === 'lodge' ? 'the Lodge, your home' : `the ${d.name}`}`;
+        if (Input.take('interact')) goIn(b);
+      } else {
+        text = `<b>E</b> ${d.emoji} ${d.name}${why !== 'outdoor' ? ` — ${why}` : ''}`;
+        if (Input.take('interact')) panels.showInfo(b);
+      }
     }
   }
   prompt.innerHTML = text;
@@ -408,13 +541,19 @@ function frame(now: number): void {
   }
 
   // global actions
+  const inside = indoors.active;
+  if (inside) {
+    const ph = Input.take('photo'), pl = Input.take('planner');
+    if (ph || pl) hud.toast('🚪 Step outside first', undefined, true);
+  }
   if (Input.take('photo') && !planner.active) { enterPhoto(); Input.endFrame(); requestAnimationFrame(frame); return; }
   if (Input.take('planner')) togglePlanner();
   if (Input.take('journal')) hud.toggleJournal();
   if (Input.take('help')) panels.show('help');
   if (Input.take('phone')) togglePhone();
   if (Input.take('cancel')) {
-    if (phone.open) phone.close();
+    if (dialogue.open) dialogue.close();
+    else if (phone.open) phone.close();
     else if (planner.active && planner.tool) planner.setTool(null);
     else if (!panels.closeAll() && planner.active && !planner.leaving) planner.exit();
   }
@@ -433,28 +572,42 @@ function frame(now: number): void {
     Sim.welcomeAt = null;
   }
 
-  // the player
-  const street = !planner.active;
-  Input.dragLook = street;
-  if (street && !panels.anyModalOpen()) {
+  // the player: inside a building, or out on the street
+  const street = !planner.active && !inside;
+  const free = !panels.anyModalOpen() && !dialogue.open;
+  Input.dragLook = !planner.active;
+  if (inside) {
+    // the building burns, falls or is pulled down around you: out you go
+    const b = indoors.b;
+    if (!fading && (b.fire || b.ruined || !World.buildings.includes(b))) {
+      if (b.fire) hud.toast(`🔥 Fire! Everyone out of the ${CAT[b.type].name}!`, undefined, true);
+      dialogue.close();
+      goOut();
+    }
+    const look = free && !phone.open ? Input.look(Settings.get('mouseSens') || 1, !!Settings.get('invertY')) : { dx: 0, dy: 0 };
+    indoors.update(dt, free && !phone.open ? Input.move() : { x: 0, y: 0 }, look, Input.running(), 1 - stage.night, lightsOn.value);
+    if (free) indoorInteractions();
+    else $('prompt').style.display = 'none';
+  } else if (street && free) {
     founder.update(dt);
     interactions();
   } else if (!street) $('prompt').style.display = 'none';
   planner.update(dt);
   // errands and directions follow the Founder (in the car, from the car)
   const fx = founder.driving ? founder.car.x : founder.pos.x, fz = founder.driving ? founder.car.z : founder.pos.z;
-  errands.update(dt, street && !panels.anyModalOpen());
+  errands.update(dt, street && free);
   motoring.update(dt);
-  if (street && !panels.anyModalOpen()) {
+  if (street && free) {
     wanted.update(dt);
     streetLife.update(dt);
   }
   gps.update(dt, fx, fz);
 
-  // cameras: street, aerial, or a blend while rising/descending
+  // cameras: street, aerial, or a blend while rising/descending (indoors, the room's own)
   stage.camera.fov = Settings.get('fov') || 70;
   stage.camera.updateProjectionMatrix();
-  if (planner.active) {
+  if (inside) focus.copy(founder.pos);
+  else if (planner.active) {
     planner.pose(stage.camera);
     if (planner.blend < 1) {
       tmpCam.copy(stage.camera);
@@ -474,8 +627,10 @@ function frame(now: number): void {
 
   const range = planner.active ? Math.min(700, planner.dist * 1.6 + 120) : 240;
   stage.update(dt, focus, terrain.lampSpots);
-  terrain.frame(stage.night, stage.camera.position);
-  actors.update(dt, focus.x, focus.z, range, now, stage.night);
+  if (!inside) {
+    terrain.frame(stage.night, stage.camera.position);
+    actors.update(dt, focus.x, focus.z, range, now, stage.night);
+  }
   if (gps.dest && street) arrows.update(dt, gps.route, fx, fz, (x, z) => founder.groundAt(x, z), stage.sky.exposure, stage.night);
   else arrows.hide();
   stage.render();
@@ -533,6 +688,7 @@ function frame(now: number): void {
     if (planner.active) hud.markTool(planner.tool);
     else {
       const hint = Input.usingTouch ? 'Left thumb moves · right thumb looks'
+        : indoors.active ? `${Input.locked ? '' : 'Drag to look · '}${WASD} walk · <kbd>E</kbd> use or talk · <kbd>Tab</kbd> phone`
         : Input.locked ? `${WASD} move · <kbd>Shift</kbd> run · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>F2</kbd> photo · <kbd>P</kbd> Planner · <kbd>Esc</kbd> frees the mouse`
           : `Drag to look · ${WASD} move · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>F2</kbd> photo · <kbd>P</kbd> Planner`;
       if ($('hint').innerHTML !== hint) $('hint').innerHTML = hint;
@@ -600,4 +756,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient };

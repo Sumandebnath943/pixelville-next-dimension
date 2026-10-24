@@ -163,6 +163,13 @@ export class Pipeline {
   }
   onResize?: (w: number, h: number) => void;
 
+  /** draw another scene through the same post (an interior); pass the world's scene to go back */
+  setScene(scene: THREE.Scene): void {
+    this.renderPass.scene = scene;
+    if (this.gtao) this.gtao.scene = scene;
+    if (this.bokeh) this.bokeh.scene = scene;
+  }
+
   /** depth of field for photo mode, made the first time it's asked for (it costs a second render of the scene) */
   private bokeh: BokehPass | null = null;
   dofPass(): BokehPass | null {

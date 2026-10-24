@@ -179,14 +179,41 @@ The vertical slice is still at `slice.html` (the "look lab"):
 
 ---
 
-## Milestone 3 — Doors open
+## Milestone 3 — Doors open (done 2026-10-24: 3a–3d below)
 
 - **Interiors:** the 12 templates, themed per building type; enter/exit transitions; real occupants from the sim; buy, order, sit, ATM, ticket machines.
 - **Villager AI chat:** `api/chat.ts` Groq proxy, context builder, in-world Founder persona rules, validated effects (memory, bond, knowledge, mood), rate limiting, conversation summaries saved to minds.
 - **Template dialogue** fallback driven by the same context.
 - **Phone Contacts:** villagers you've met; call or chat remotely.
 
-**Done when:** you can walk into the bakery, buy a pastry from the real baker, ask them about last week's fire, and they remember the conversation tomorrow.
+**Done when:** you can walk into the bakery, buy a pastry from the real baker, ask them about last week's fire, and they remember the conversation tomorrow. *(Checked in the test town: Greta Ali served a croissant at the Bakery counter, answered about the fire at the Bank, and on the phone the next morning said "You were asking me about the fire at the bank yesterday — I've been thinking about it since.")*
+
+### 3a · Interiors
+- **Rooms** (`src/interiors/plan.ts`): twelve templates (home, shop, food & drink, office, workshop, classroom, hospital, police, fire station, terminal, venue, civic hall) re-themed per type: wall and floor (wood, tile, stone, carpet, concrete), accent colours, wares, signs, and layout variants (a bakery's glass case and oven, a fast-food menu board, a bank's teller counter and cash machine, the PVTV news set, a car on the garage lift, the fire engine in its bay, a church's pews, altar and stained glass, cinema rows and screen, the station's departure board and ticket machines…). 81 building types open into a room; parks, plazas, farms, the zoo, bus stops and nature stay outdoors. A room is laid out from the building's own seed, so it's the same every visit, and plain data (furniture boxes, what you can't walk through, staff posts, customers' places, counters, seats, machines, lights), which is tested without WebGL.
+- **Drawing** (`src/render/interior.ts`): a small scene of its own through the same post-processing. Textured floors, plaster walls, a front wall with glazed doors and windows that glow with the light outside (bright by day, dark at night), furniture merged per surface, ceiling lamps (four cast light, the rest glow), a shadowed daylight from the windows, a soft room environment for reflections. The street keeps simulating outside, unseen.
+- **Going in** (`src/player/indoors.ts`): at a door, <kbd>E</kbd> goes in (a quick fade, a shop bell), in first person; <kbd>E</kbd> by the door goes back out to the doorstep. Closed outside opening hours, on fire, ruined or still being built: the building's card instead. Homes: only if someone's in and the household likes the Founder ("They won't ask you in"); the Founder's Lodge always. Not with the police after you. If it catches fire or comes down while you're in, everyone's out.
+- **Real occupants**: the staff the sim says are on shift stand at their posts (the first serves at the counter), customers sit at tables or browse the aisles, a family is at home; they come and go as the sim moves them (at most 14 drawn, using the detailed person model). Whoever you talk to turns to face you.
+- **Using things**: the **counter** (only when someone is serving: "nobody's serving" at lunch) sells the place's own goods (a croissant at the bakery, a film ticket at the cinema, stamps at the post office: every kind of business its own list), paid into the business's till at its price less any discount the staff give the Founder (rounded in your favour), or refused; the server remembers serving you. The counter also offers "Talk to …", the building card's own actions (browse the cars, collect an impounded car, a scratch card) and "About". **Seats** (sit, stand up), the **cash machine** (balance, today, recent spending, fines owed) and **ticket machines** at stations, the airport, the dock and the heliport (tickets kept for the journeys of Milestone 5). The Lodge has the garage keys on a hook.
+- **The bag** (saved): what you buy goes in it; the phone's Wallet shows it, and food and drink can be eaten or drunk from there.
+
+### 3b · Template dialogue
+- **Talking** (`src/ui/dialogue.ts`): <kbd>E</kbd> beside anyone in the street (they stop to talk) or indoors. A panel with what they say, topic buttons and a box to type in; <kbd>Esc</kbd> says goodbye.
+- **Context** (`src/ai/context.ts`): who they are (age, family, job and workplace, home, two strongest traits, mood), their own recent memories, everything they remember of the Founder and their opinion, friends and favourite place, the last nine days of village news (real events first: fires, burglaries, crashes, floods, storms, weddings, elections, festivals; never "a raise at the Fire Station"), the weather, the hour and where you're talking.
+- **Template lines** (`src/ai/templates.ts`): greetings by opinion (warm, cool, "What do *you* want?"), time of day and whether you've met; topics built from their life: how they are (with what's on their mind), their work (in their trade's voice), their family, what's new in town, the events in the news to ask about ("Ask about the fire at the bank"), their own big news, what people say about you, where's good to go. Someone who can't stand you won't chat. A typed line without the AI goes to the nearest topic, or gets a shrug.
+- **Remembered** (`src/ai/memory.ts`): one memory per conversation ("talked with the Founder about the fire at the bank"), a record of meeting you (first and last day, how often, what about) that their greeting brings up next time, and a slightly warmer view after a friendly chat (once a day).
+
+### 3c · Villager AI chat
+- **The proxy** (`api/_chat.ts`, served by the Vercel function `api/chat.ts` and, in development, by the dev server from `vite.config.ts`): the Groq key stays on the server (`.env.local` locally, Vercel's environment variables in production). The persona rules live here, not in the browser: stay in the village, never mention AI or games, the Founder is a mysterious local figure, short plain replies in your own manner, only what you'd know, no graphic content or real-world politics; the browser sends only the villager's compact context, eight turns of history and the line (system turns from the browser are dropped). 12 requests a minute and 400 a day per address. `GET /api/chat` says only whether a key is set.
+- **Models**: `GROQ_MODEL` if set; otherwise a small Llama model, and if Groq has retired it, a current chat model from Groq's own model list (on this account: `openai/gpt-oss-20b`, asked for low reasoning effort). Models without JSON mode are asked again in plain text, and answers wrapped in prose or cut off part-way are still read.
+- **Effects**, validated and clamped (`src/ai/effects.ts`): opinion of the Founder (±1 a turn, at most −2…+1.5 a conversation), mood (±5), a short memory, and a place they've now heard of; anything else is ignored. The model's memory, if any, becomes the conversation's.
+- **The client** (`src/ai/client.ts`): asks once whether chat is on; one request in flight, 8 a minute, 150 a session, a 12 s timeout; on any failure that line falls back to template dialogue, and without a key the whole session does.
+
+### 3d · Phone Contacts
+- **Contacts** on the phone: everyone you've talked to, most recent first, with their job, when you last talked and what about, and what they think of you. **Call** opens the conversation on the phone (nobody picks up between 23:00 and 06:30); **Find** routes the GPS to where they are now (the building they're in, or where they're walking).
+- The villager card shows how often you've talked and about what.
+
+**Not in 3: (a) "start a shift" at the workplace arrives with the playable jobs of Milestone 6; (b) boarding with the tickets you buy arrives with Milestone 5; (c) photo mode works outdoors only.**
+- Covered by `tests/interiors.test.ts` (every type has a reachable room, deterministic layouts, door rules, buying) and `tests/chat.test.ts` (news topics, template answers, memory and next-day greetings, clamped effects, the proxy: key, limits, persona, retired models, broken JSON).
 
 ---
 
