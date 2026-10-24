@@ -217,7 +217,7 @@ The vertical slice is still at `slice.html` (the "look lab"):
 
 ---
 
-## Milestone 4 — Deeper village
+## Milestone 4 — Deeper village (done 2026-10-24: 4a–4e below)
 
 - **Health & ambulances:** health, injuries, seasonal illness, hospital beds, ambulance dispatch, recovery.
 - **Supply chain:** food, materials, textiles, products; stock in producers and shops; delivery trucks; freight trains; construction consuming materials; imports/exports; prices and shortages; tickers.
@@ -225,7 +225,42 @@ The vertical slice is still at `slice.html` (the "look lab"):
 - **Power & blackouts:** demand vs. capacity, district blackouts, dark traffic lights, repair crews.
 - Rebalance V1 economy and needs around the new systems.
 
-**Done when:** a storm blacks out a district, an accident there sends a villager to hospital by ambulance, and a materials shortage visibly stalls a construction site — all from simulation, not scripts.
+**Done when:** a storm blacks out a district, an accident there sends a villager to hospital by ambulance, and a materials shortage visibly stalls a construction site — all from simulation, not scripts. *(Covered end to end by `tests/deeper.test.ts`: lightning strikes a district's substation, its junction's lights go out, two villagers' cars collide there, a hurt driver is treated in the road and taken to the ward by ambulance; and a building boom with nothing made in town and the day's imports spent stalls its sites. Checked in the browser too: rolling blackouts in the test town, the ambulance crew at a casualty, an idle building site with its card saying why, a delivery truck bringing the load, a dark traffic light, the repair van at work.)*
+
+### 4a · Health & ambulances
+- **Health** (`src/sim/health.ts`): every villager has health (0–100, lower in old age) and sometimes a condition. Colds and the flu come more in autumn and winter, more to the old, the young and the low, and go round the house; a flu wave arrives once a winter (now and then in autumn) with a PVTV bulletin. A badly ill elder gets pneumonia.
+- **Injuries** from what already happens: a car crash (more often and worse at a dark junction), a fire (some of those inside are carried out with smoke in their lungs), a collapse, the earthquake, the tornado, a street argument that comes to blows, and the Founder's car (a nudge knocks someone down as before; at speed it's an injury). Nobody dies of an injury.
+- **Ambulances**: a serious condition puts the villager on the ground (or on the pavement outside the building). The nearest hospital sends an ambulance by road like the fire brigade. It pulls up just short of the casualty and two paramedics treat them for a few minutes, then it drives them to the ward on blue lights. No hospital, or no road to them: after a while the neighbours help them home. The seriously ill walk in to be seen (the frail get the ambulance at their door).
+- **The ward**: a hospital has 12 beds when fully staffed (at least 3); a full ward sees people in casualty and sends them home. Recovery is fastest on the ward with doctors, slower at home, slowest in a town with no hospital, where the family frets too. Patients are discharged by day, pay $14 a day (the village fund covers what they can't) and walk home. The sick stay off work and school; a pharmacy visit takes the edge off a cold. Old-age odds now follow health.
+
+### 4b · Power & blackouts
+- **The grid** (`src/sim/power.ts`): every building draws power (a home 1 per floor, an apartment block 4, a skyscraper 14, a steelworks 12…), less at night and more in the evening peak. A power plant gives up to 160 when staffed with its engineers, and the county line along the highway brings 60. Districts are 32 × 32-tile squares. When the town wants more than it has, districts take turns in the dark: rolling blackouts move on every 90 minutes, and the hospital's district goes last.
+- **Faults**: a lightning flash in a thunderstorm can strike a substation; heavy rain brings trees down on the lines; ice comes with heavy snow. The tornado cuts every district it crosses, the earthquake one or two, a flood the one under water. At most three at a time.
+- **Repair crews**: a van drives out from the power plant through the traffic, the linesmen work on the lines for 40–75 minutes, and the lights come back (with a toast saying how long it took). Without a power plant the county sends one from the highway an hour later; with no road at all, the county fixes it in its own time. Faults survive a save, and their crews are sent again.
+- **In the dark**: windows, signs, neon and street lanterns go out across the district (a per-tile power map read by the window, sign and lantern shaders, `src/render/powermap.ts`), and street lamps cast no light. The hospital keeps its generator. **Traffic lights** are now drawn at the junctions the sim lights (red, amber, green, back to back on a post). In a blackout they go dark, drivers treat the junction as unsignalled, and they misjudge each other there. Shops and venues shut ("no power until the lights come back"), works stop producing, and families sit by candlelight (a little mood, a memory). Running a dark red light isn't an offence.
+
+### 4c · Education
+- **Schooling** (`src/sim/education.ts`): none, a school leaving certificate, or a college degree. Kids who went to school (10 days or more) leave with the certificate at 18. The jobless go to college most weekdays, and ambitious adults under 42 enrol and take two weekdays in five off work to study. A degree takes 12 days at a fully staffed college (more where it's short of lecturers). Old saves get seeded schooling.
+- **Graduate posts**: half the hospital's posts (doctors), 70% of the college's (lecturers), half the school's (teachers), 40% of the power plant's (engineers), and posts at the bank, exchange, airport (pilots), TV station, courthouse, offices, skyscraper, town hall and pharmacy. Only graduates fill them, and they earn 45% more there. A graduate in an ordinary job moves to an open graduate post. A post nobody in town can fill draws a skilled family in from outside (one a day at most). Short-staffed graduate posts matter: fewer doctors heal slower, fewer engineers mean less power.
+- **Essential services hire first**: in a town with more jobs than hands, a hospital, power plant, fire or police station, water tower or school that is badly short takes on two people a day from ordinary workplaces, and graduate promotions don't take people away from them.
+
+### 4d · Supply chain
+- **Goods** (`src/sim/supply.ts`): food (farms, cannery, fish market, bakery), materials (sawmill, brickworks, steelworks, glassworks), textiles (textile mill) and products (factory). Producers fill their yards while their staff are on shift (farms slow in winter and drought, nothing runs in a blackout).
+- **Shops sell from their shelves**: each kind holds its own good (a supermarket 60 of food, a hardware store 30 of materials, a tailor 24 of textiles, an electronics store 30 of products…). Thin shelves cost more (up to 40%), and bare ones sell nothing: the customer goes home disappointed. The Founder's counter shows the shelves, raises its prices to match, and says "Sold out".
+- **Delivery trucks**, visible in the traffic and painted by what they carry, take loads (up to 20) from yards, the warehouse or the station's goods shed to shops running low and to building sites, and the driver wheels the load in. Full yards haul to the warehouse, ship by rail (sold through the station) or export by road (income to the works and the village fund).
+- **Imports**: what the town can't make comes in by truck from the map edge, dearer, and only so much a day (60 food, 40 materials, 30 textiles, 40 products; half as much again with a freight railway). The **freight train** stocks the terminus station's goods shed on every call, more of whatever is short.
+- **Building eats materials**: a site needs 8 + 2.5 per tile of footprint, and the builders bring 40% with them. A site that runs out stands idle (its builders help elsewhere) with an empty yard and the crew waiting (⏳) until a load arrives. Pallets of bricks and timber stand on site as the loads come in. Shortages begin and end in the news, and the tickers feel them (AGRI, INDL, RETL).
+
+### 4e · Rebalance and where it shows
+- **The mayor**: rolling blackouts put a power plant at the top of the needs list (one plant per 120 villagers allowed now). Two or more badly hurt or ill with no ward bring a hospital forward, and a full ward asks for a second. Unfilled graduate posts ask for a college, a flu wave for a pharmacy. Shortages ask for a sawmill or brickworks, a farm or cannery, a factory or textile mill, and full yards for a warehouse. The county bills the village fund for the power it carries.
+- **Grievances and votes**: blackouts, the sick with no hospital and empty shelves are reasons to protest, and they weigh on each voter (their own dark home most).
+- **Cards**: a building's card shows its power (and why it's dark), its plant output, graduate posts filled, beds and who's on the ward, the shelves or the yard and what's on its way, the warehouse's store, and a site's materials, with the reason it stalled. A villager's card shows health (and how they were hurt) and schooling, and wages in graduate posts. The mayor's report adds the grid, the hospital, graduates and goods.
+- **The street HUD** carries one alert line (a power cut here or elsewhere, rolling blackouts, a shortage with its waiting sites, flu season); a click opens the mayor's report.
+- **Talking**: villagers know how they are, how they were hurt, their schooling and whether their lights are out (the template lines and the AI context both). "Ask about the power cut / the shortage / the flu" join the news topics.
+- **Performance on the way**: footpath and road searches reuse shared scratch buffers (a cache miss used to allocate two 64k arrays, tens of milliseconds a time in a grown town), and the traffic index clears only the tiles used last frame.
+- Covered by `tests/health.test.ts`, `tests/power.test.ts`, `tests/education.test.ts`, `tests/supply.test.ts` and `tests/deeper.test.ts`.
+
+**Not in 4: the playable paramedic, electrician and delivery-driver shifts arrive with Milestone 6.**
 
 ---
 

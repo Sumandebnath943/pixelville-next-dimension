@@ -20,6 +20,9 @@ import { Tasks } from './tasks';
 import { News } from './news';
 import { Settings } from './settings';
 import { Traffic } from './traffic';
+import { Health } from './health';
+import { Power } from './power';
+import { Supply } from './supply';
 
 /** Speed steps (× real time). Street mode is capped at 1× (design §6). */
 export const SPEEDS = [0, 1, 2, 4, 8];
@@ -86,6 +89,9 @@ export const Game = {
     Festivals.reset();
     News.reset();
     Traffic.reset();
+    Health.reset();
+    Power.reset();
+    Supply.reset();
     Life.onEvent = (msg: string, at?: { x: number; y: number }) => this.toast(msg, at);
     this.undoStack = [];
   },
@@ -160,6 +166,7 @@ export const Game = {
       Life.tick(dts, dt);
       Calamity.tick(dts);
       Festivals.tick(dts);
+      this.tickSystems(dts);
     }
     // ribbon-cuttings: construction sites that just finished
     while (Sim.completed.length) {
@@ -211,6 +218,7 @@ export const Game = {
       Life.tick(step, step);
       Calamity.tick(step);
       Festivals.tick(step);
+      this.tickSystems(step);
       Weather.tick(step, step);
     }
     while (Sim.completed.length) {
@@ -222,10 +230,18 @@ export const Game = {
     if (World.dirty) this.refreshDerived();
   },
 
+  /** V2 (Milestone 4): health and ambulances, the power grid, the supply chain */
+  tickSystems(dts: number): void {
+    Health.tick(dts);
+    Power.tick(dts);
+    Supply.tick(dts);
+  },
+
   refreshDerived(): void {
     World.rebuildDerived(Weather.season, Calamity.droughtLevel >= 0.5);
     World.dirty = false;
     this.mapVersion++;
+    Power.refreshDark(); // the junctions may have changed under a blackout
   },
 
   /* ---------- toasts: everything also lands in the task book ---------- */
@@ -394,6 +410,10 @@ export const Game = {
       scenario: Sim.scenario || null,
       lodge: this.lodgeId,
       founder: this.founderHooks ? this.founderHooks.get() : null,
+      // V2 (Milestone 4)
+      health: { w: Health.wave, wy: Health.waveYear },
+      power: Power.serialize(),
+      supply: Supply.serialize(),
       meta: { name: World.name, day: Sim.day, pop: Sim.people.length, at: Date.now() },
     });
   },
@@ -431,6 +451,9 @@ export const Game = {
     }
     Sim.grandOpening = null;
     Gov.restore(extra.gov);
+    if (extra.health) { Health.wave = extra.health.w || 0; Health.waveYear = extra.health.wy ?? -1; }
+    Power.restoreState(extra.power || null);
+    Supply.restoreState(extra.supply || null);
     this.lodgeId = extra.lodge || 0;
     this.ensureLodge();
     this.founderHooks?.set(extra._fromV1 ? null : extra.founder || null);

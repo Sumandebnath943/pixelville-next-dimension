@@ -61,7 +61,7 @@ export function topics(c: ChatContext): Topic[] {
 }
 function eventName(n: NewsItem): string {
   const at = n.where && n.where.length < 24 ? ` at the ${n.where.toLowerCase().replace(/^the /, '')}` : '';
-  return ({ fire: 'fire', burglary: 'burglary', crash: 'crash', flood: 'flood', storm: 'storm', wedding: 'wedding', election: 'election', festival: 'festival', police: 'police business', opening: 'new building' } as Record<string, string>)[n.topic!] + (n.topic === 'fire' || n.topic === 'burglary' ? at : '');
+  return ({ fire: 'fire', burglary: 'burglary', crash: 'crash', flood: 'flood', storm: 'storm', wedding: 'wedding', election: 'election', festival: 'festival', police: 'police business', opening: 'new building', blackout: 'power cut', shortage: 'shortage', flu: 'flu going round' } as Record<string, string>)[n.topic!] + (n.topic === 'fire' || n.topic === 'burglary' ? at : '');
 }
 
 /** their answer, and what it was about (for their memory of the conversation) */
@@ -71,6 +71,11 @@ export function reply(c: ChatContext, topicId: string, seed = 0): { text: string
   if (op <= -6 && topicId !== 'me') return { text: pick(seed, [`I don't want to talk to you.`, `Leave me alone, Founder.`, `Ask someone who cares.`]), about };
   switch (topicId.split(':')[0]) {
     case 'how': {
+      // V2: the body first: on the ward, hurt, or laid up
+      if (c.unwell === 'ward') return { text: pick(seed, ['They\'re looking after me well in here. A few more days, the doctors say.', 'Better than I was. The nurses are angels.']), about };
+      if (c.unwell === 'hurt') return { text: `${pick(seed, ['Still sore, to be honest.', 'On the mend, slowly.'])} ${/hurt (.+)\)$/.test(c.health) ? `I was hurt ${/hurt (.+)\)$/.exec(c.health)![1]}.` : ''}`.trim(), about };
+      if (c.unwell === 'ill') return { text: pick(seed, ['Laid up, I\'m afraid. Don\'t come too close!', 'Under the weather. Bed and soup for me.']), about };
+      if (c.powerCut) return { text: pick(seed, ['We\'re sitting in the dark — the power\'s out on our street.', 'No power at home since the storm. Candles and cold tea.']), about };
       const worry = c.memories.find((m) => m.feel < 0 && m.ago <= 5);
       const joy = c.memories.find((m) => m.feel > 0 && m.ago <= 5);
       if (c.mood >= 62) return { text: `${pick(seed, ['Couldn\'t be better!', 'Really well, thanks.', 'Good, good.'])}${joy ? ` I ${joy.text} ${when(joy.ago)}, you know.` : ''}`, about };
@@ -119,6 +124,9 @@ export function reply(c: ChatContext, topicId: string, seed = 0): { text: string
         election: ['We\'ll see if they keep their promises.', 'I voted. Did you? Oh — you can\'t, can you.'],
         festival: ['The whole village came out for it.', 'Best night of the year.'],
         police: ['The squad cars were out in force.', 'Never a dull moment.'],
+        blackout: ['We sat by candlelight all evening.', 'The traffic lights went out — chaos at the junction.', 'The repair crew was up the pole half the night.'],
+        shortage: ['The shelves were bare at the shop.', 'Prices went up overnight, I tell you.'],
+        flu: ['Half my street is coughing.', 'Wrap up warm, Founder.'],
       };
       return { text: `The ${eventName(n)} ${when(n.ago)}? ${pick(seed, lines[topic] || ['I heard about that.'])}`, about };
     }
@@ -157,6 +165,7 @@ const EVENT_WORDS: [RegExp, string][] = [
   [/\b(fire|burn|smoke|blaze|flames)/, 'fire'], [/\b(burglar|robb|thief|theft|stole)/, 'burglary'], [/\b(crash|accident|collision)/, 'crash'],
   [/\bflood/, 'flood'], [/\b(storm|tornado|quake|lightning)/, 'storm'], [/\b(wedding|married|bride|groom)/, 'wedding'],
   [/\b(election|mayor|vote|voting)/, 'election'], [/\b(festival|christmas|diwali|easter|fireworks)/, 'festival'],
+  [/\b(power|blackout|lights out|electric)/, 'blackout'], [/\b(shortage|shelves|sold out|prices)/, 'shortage'], [/\b(flu|cough)/, 'flu'],
 ];
 
 /** a free-text line, without the AI: the nearest topic by its words, or a polite shrug */

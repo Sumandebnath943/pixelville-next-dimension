@@ -83,6 +83,57 @@ export const VEHICLES: Record<string, VModel> = {
     s.box(-0.9, 2.7, 2.9, -0.05, 2.95, 3.3, W).box(0.05, 2.7, 2.9, 0.9, 2.95, 3.3, W);
     return { paint: p.build(), fixed: f.build(), lights: l.build(), siren: s.build() };
   })(),
+  /* V2 (Milestone 4): the ambulance, the delivery truck, the power company's van */
+  ambulance: (() => {
+    const p = new MeshBuilder(), f = new MeshBuilder(), l = new MeshBuilder(), s = new MeshBuilder();
+    p.box(-1.05, 0.4, -2.9, 1.05, 2.55, 1.0, W); // the box body
+    p.box(-1.0, 0.4, 1.0, 1.0, 1.75, 2.75, W);   // the cab
+    const glass = hex('#2a3a4a');
+    f.quad([-0.92, 1.25, 2.76], [0.92, 1.25, 2.76], [0.86, 1.7, 2.3], [-0.86, 1.7, 2.3], glass);
+    for (const sx of [-1, 1]) f.box(sx * 1.01 - 0.02, 1.2, 1.15, sx * 1.01 + 0.02, 1.65, 2.2, glass);
+    for (const sx of [-1, 1]) {
+      f.box(sx * 1.06 - 0.02, 1.05, -2.85, sx * 1.06 + 0.02, 1.35, 0.95, hex('#d8262a')); // red band
+      f.box(sx * 1.06 - 0.02, 0.85, -2.85, sx * 1.06 + 0.02, 1.0, 0.95, hex('#f2c230'));  // and yellow
+      f.box(sx * 1.07 - 0.02, 1.7, -1.4, sx * 1.07 + 0.02, 2.2, -0.9, hex('#d8262a'));   // the cross
+      f.box(sx * 1.07 - 0.02, 1.85, -1.65, sx * 1.07 + 0.02, 2.05, -0.65, hex('#d8262a'));
+    }
+    f.box(-1.0, 0.45, -2.92, 1.0, 2.45, -2.9, hex('#e8e8e8'));
+    wheels(f, 0.95, [-1.9, 1.85], 0.4, 0.28);
+    lightsFB(l, 1.0, 2.77, -2.93, 0.75);
+    s.box(-0.8, 2.55, 0.55, -0.05, 2.75, 0.9, W).box(0.05, 2.55, 0.55, 0.8, 2.75, 0.9, W);
+    return { paint: p.build(), fixed: f.build(), lights: l.build(), siren: s.build() };
+  })(),
+  truck: (() => {
+    const p = new MeshBuilder(), f = new MeshBuilder(), l = new MeshBuilder();
+    p.box(-1.1, 0.75, -3.4, 1.1, 3.0, 1.1, W);    // the box, painted by what it carries
+    f.box(-1.05, 0.45, 1.15, 1.05, 2.3, 3.1, hex('#e8e6e0')); // the cab
+    const glass = hex('#2a3a4a');
+    f.quad([-0.95, 1.5, 3.11], [0.95, 1.5, 3.11], [0.9, 2.2, 2.85], [-0.9, 2.2, 2.85], glass);
+    for (const sx of [-1, 1]) f.box(sx * 1.06 - 0.02, 1.45, 1.4, sx * 1.06 + 0.02, 2.1, 2.6, glass);
+    f.box(-1.15, 0.45, -3.45, 1.15, 0.75, 3.15, hex('#2a2a2a')); // the chassis
+    f.box(-1.12, 0.9, -3.42, 1.12, 2.9, -3.4, hex('#d0d0d0'));   // the rear doors
+    wheels(f, 1.0, [-2.6, -1.7, 2.2], 0.45, 0.3);
+    lightsFB(l, 1.05, 3.12, -3.46, 0.8);
+    return { paint: p.build(), fixed: f.build(), lights: l.build() };
+  })(),
+  van: (() => {
+    const p = new MeshBuilder(), f = new MeshBuilder(), l = new MeshBuilder(), s = new MeshBuilder();
+    p.box(-0.95, 0.38, -2.3, 0.95, 2.05, 1.2, W);
+    p.box(-0.92, 0.38, 1.2, 0.92, 1.4, 2.35, W);
+    const glass = hex('#2a3a4a');
+    f.quad([-0.86, 1.05, 2.36], [0.86, 1.05, 2.36], [0.8, 1.9, 1.25], [-0.8, 1.9, 1.25], glass);
+    for (const sx of [-1, 1]) {
+      f.box(sx * 0.96 - 0.02, 1.15, 0.4, sx * 0.96 + 0.02, 1.75, 1.15, glass);
+      f.box(sx * 0.97 - 0.02, 0.7, -2.25, sx * 0.97 + 0.02, 0.95, 2.3, hex('#1e5a9a')); // the company stripe
+    }
+    // a ladder on the roof rack
+    for (const sx of [-0.35, 0.35]) f.box(sx - 0.03, 2.12, -2.2, sx + 0.03, 2.18, 1.0, hex('#9aa0a8'));
+    for (let z = -2.1; z < 1.0; z += 0.4) f.box(-0.35, 2.12, z, 0.35, 2.17, z + 0.05, hex('#9aa0a8'));
+    wheels(f, 0.86, [-1.5, 1.55], 0.36, 0.26);
+    lightsFB(l, 0.95, 2.37, -2.32, 0.65);
+    s.box(-0.5, 2.05, 1.0, -0.15, 2.22, 1.15, W).box(0.15, 2.05, 1.0, 0.5, 2.22, 1.15, W);
+    return { paint: p.build(), fixed: f.build(), lights: l.build(), siren: s.build() };
+  })(),
   bus: (() => {
     const p = new MeshBuilder(), f = new MeshBuilder(), l = new MeshBuilder();
     p.box(-1.25, 0.4, -5.2, 1.25, 3.0, 5.2, W);
@@ -252,4 +303,15 @@ export const PROPS: Record<string, { geo: THREE.BufferGeometry; tinted?: boolean
   funnel: { geo: new MeshBuilder().cyl(0, 0, 0, 1.5, 34, 10, W, W, 9).build(), tinted: true },
   log: { geo: new MeshBuilder().box(-0.5, 0, -6, 0.5, 1.0, 6, hex('#5a3a22')).cone(0, 0.4, 5, 1.8, 4, 6, hex('#2a6a3a')).build() },
   crate: { geo: new MeshBuilder().box(-0.5, 0, -0.5, 0.5, 0.9, 0.5, hex('#a07a4a')).build() },
+  /* V2 (Milestone 4): building materials on site, a traffic signal, a paramedic's bag */
+  bricks: { geo: new MeshBuilder().box(-0.6, 0, -0.5, 0.6, 0.14, 0.5, hex('#8a6a46')).box(-0.55, 0.14, -0.45, 0.55, 0.78, 0.45, hex('#9a4a34')).box(-0.56, 0.4, -0.46, 0.56, 0.43, 0.46, hex('#b8ad9c')).build() },
+  timber: { geo: new MeshBuilder().box(-0.6, 0, -0.5, 0.6, 0.14, 0.5, hex('#8a6a46')).box(-0.55, 0.14, -1.6, -0.05, 0.6, 1.6, hex('#c8a070')).box(0.05, 0.14, -1.6, 0.55, 0.48, 1.6, hex('#b89060')).build() },
+  sigPole: {
+    geo: new MeshBuilder()
+      .box(-0.06, 0, -0.06, 0.06, 3.35, 0.06, hex('#141416'))
+      .box(-0.17, 2.35, 0.06, 0.17, 3.35, 0.29, hex('#0c0c0e')).box(-0.26, 2.26, 0.29, 0.26, 3.44, 0.3, hex('#0c0c0e'))
+      .box(-0.17, 2.35, -0.29, 0.17, 3.35, -0.06, hex('#0c0c0e')).box(-0.26, 2.26, -0.3, 0.26, 3.44, -0.29, hex('#0c0c0e'))
+      .build(),
+  },
+  medbag: { geo: new MeshBuilder().box(-0.22, 0, -0.14, 0.22, 0.28, 0.14, hex('#2a8a4a')).box(-0.05, 0.12, 0.141, 0.05, 0.22, 0.15, hex('#f4f4f4')).build() },
 };

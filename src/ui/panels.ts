@@ -13,6 +13,10 @@ import { Mind } from '../sim/mind';
 import { Rep } from '../sim/reputation';
 import { Settings } from '../sim/settings';
 import { Game } from '../sim/game';
+import { Health } from '../sim/health';
+import { Power, PLANT_CAP } from '../sim/power';
+import { Supply, GOODS, SELLS, MAKES, YARD } from '../sim/supply';
+import { Edu } from '../sim/education';
 import { SLOTS, AUTO, get, put, metaOf } from '../save/store';
 import { Snd } from '../audio/sounds';
 
@@ -127,7 +131,7 @@ export class Panels {
     const wide: string[] = [];
     const notes: string[] = [];
     if (b.type === 'lodge') { pills.push(["The Founder's home", 'warn']); notes.push('Your home base. Your car waits beside it.'); }
-    if (b.construction > 0) pills.push([`Under construction · ${Math.max(1, Math.round(b.construction))} min`, 'warn']);
+    if (b.construction > 0) pills.push([b.stalled ? 'Under construction · stalled' : `Under construction · ${Math.max(1, Math.round(b.construction))} min`, 'warn']);
     if (b.ruined) { pills.push(['In ruins', 'bad']); notes.push('The neighbours will rebuild it, or bulldoze it to clear the plot.'); }
     if (b.fire) pills.push(['On fire', 'bad']);
     if (b.upgrading > 0) pills.push(['Adding a floor', 'warn']);
@@ -159,7 +163,7 @@ export class Panels {
       const fams = [...new Set(b.residents.map((r: any) => r.surname))];
       facts.push(['Residents', `${b.residents.length} · ${esc(fams.join(', '))}`]);
       wide.push(b.residents.slice(0, 8).map((r: any) => `<span class="p-link" data-pid="${r.id}">${esc(r.name)}</span> ${r.age}`).join(', ') + (b.residents.length > 8 ? '…' : ''));
-      const away = b.residents.filter((r: any) => r.at !== b || r.state === 'walk').length;
+      const away = b.residents.filter((r: any) => r.at !== b || r.state !== 'in').length;
       facts.push(['Out right now', String(away)]);
       const am = b.residents.reduce((s: number, r: any) => s + (r.mood ?? 60), 0) / b.residents.length;
       facts.push(['Household mood', `${Math.round(am)}%`]);
@@ -172,6 +176,7 @@ export class Panels {
       facts.push(['Treasury', money(Gov.treasury)]);
     }
     if (d.jobs) facts.push(['Jobs filled', `${b.workers.length} of ${d.jobs}`]);
+    this.systemFacts(b, pills, facts, wide, notes);
     const staff = d.jobs ? Rep.staff(b) : null;
     if (staff !== null && Math.abs(staff) >= 0.5) {
       const deal = Rep.price(b, 100);
@@ -213,6 +218,62 @@ export class Panels {
     ($('info-close') as HTMLButtonElement).onclick = () => this.hideInfo();
     this.wireLinks(el);
   }
+  /* V2 (Milestone 4): power, graduate posts, the ward, the shelves and the yard, a site's materials */
+  private systemFacts(b: any, pills: Pill[], facts: [string, string][], wide: string[], notes: string[]): void {
+    if (b.ruined) return;
+    const dark = Power.dark[Power.districtOfB(b)] === 1;
+    if (dark && b.type === 'hospital') notes.push('The district is blacked out: the hospital runs on its own generator.');
+    else if (dark) {
+      const f = Power.faults.get(Power.districtOfB(b));
+      pills.push(['No power', 'bad']);
+      notes.push(f ? `Power cut: ${esc(f.cause)}. ${Life.crews.some((c: any) => c.d === Power.districtOfB(b) && c.phase === 'fix') ? 'The repair crew is at work on the lines.' : 'A repair crew is on its way.'}`
+        : 'Rolling blackout: the grid is overloaded and this district is taking its turn in the dark.');
+    }
+    if (b.type === 'powerplant' && !b.construction) {
+      facts.push(['Output', `${Math.round(Power.plantOutput(b))} of ${PLANT_CAP} (staff and engineers decide)`]);
+      const r = Power.report();
+      facts.push(['The grid', `${r.demand} wanted · ${r.capacity} to give${r.overloaded ? ' · overloaded' : ''}`]);
+    }
+    const posts = Edu.posts(b);
+    if (posts && !b.construction) {
+      const title = Edu.title(b.type);
+      const filled = Edu.filled(b);
+      facts.push([title[0].toUpperCase() + title.slice(1), `${filled} of ${posts} graduate posts filled`]);
+      if (filled < posts) notes.push(`Short of ${title}: these posts need a college degree${World.buildings.some((q: any) => q.type === 'college' && !q.ruined) ? '' : ', and there is no college in town to train them'}.`);
+    }
+    if (b.type === 'hospital' && !b.construction) {
+      const pts = Health.patients(b);
+      facts.push(['Beds', `${pts.length} of ${Health.beds(b)} taken`]);
+      if (pts.length) wide.push('On the ward: ' + pts.slice(0, 6).map((p: any) => `<span class="p-link" data-pid="${p.id}">${esc(Sim.fullName(p))}</span>`).join(', '));
+      if (pts.length >= Health.beds(b)) pills.push(['Ward full', 'bad']);
+    }
+    const sells = SELLS[b.type];
+    if (sells && !b.construction && b.stock !== undefined) {
+      const g = GOODS[sells.g];
+      facts.push(['On the shelves', `${g.emoji} ${Math.floor(b.stock)} of ${sells.cap} · ${g.name.toLowerCase()}`]);
+      const m = Supply.priceMult(b);
+      if (b.stock < 1) pills.push(['Sold out', 'bad']);
+      else if (m > 1.04) pills.push([`Low stock · prices up ${Math.round((m - 1) * 100)}%`, 'warn']);
+      const due = Supply.incoming(b);
+      if (due) facts.push(['On its way', `${Math.round(due)} by truck`]);
+    }
+    const makes = MAKES[b.type];
+    if (makes && !sells && !b.construction && b.stock !== undefined) {
+      facts.push(['In the yard', `${GOODS[makes.g].emoji} ${Math.floor(b.stock)} of ${YARD} · ${GOODS[makes.g].name.toLowerCase()}`]);
+      if (b.stock >= YARD) pills.push(['Yard full', 'warn']);
+    }
+    if (b.store) facts.push(['In store', (Object.keys(GOODS) as (keyof typeof GOODS)[]).filter((k) => b.store[k] >= 1).map((k) => `${GOODS[k].emoji} ${Math.floor(b.store[k])}`).join(' · ') || 'empty']);
+    if (b.construction > 0 && b.matsNeed !== undefined) {
+      facts.push(['Materials', `${Math.round(b.matsUsed + b.mats)} of ${b.matsNeed} delivered · ${Math.round(b.mats)} on site`]);
+      const due = Supply.incoming(b);
+      if (due) facts.push(['On its way', `${Math.round(due)} by truck`]);
+      if (b.stalled) {
+        pills.push(['Waiting for materials', 'bad']);
+        notes.push(`Work has stopped: the builders are idle until a load arrives.${Supply.wanting.has('mats') ? ' Materials are short in town; a sawmill or brickworks would help.' : ''}`);
+      }
+    }
+  }
+
   hideInfo(): void {
     $('info').style.display = 'none';
     this.selected = null;
@@ -231,6 +292,10 @@ export class Panels {
     const m = Math.round(p.mood ?? 60);
     const pills: Pill[] = [[`Mood ${m}%`, m >= 60 ? 'ok' : m >= 36 ? 'warn' : 'bad']];
     if (p.heldUntil > Sim.day) pills.push([`In custody until day ${p.heldUntil}`, 'bad']);
+    // V2: health
+    if (p.state === 'hurt' || p.state === 'amb') pills.push(['Hurt', 'bad']);
+    else if (p.ward) pills.push(['In hospital', 'bad']);
+    else if (p.cond && p.cond.sev >= 12) pills.push(['Unwell', 'warn']);
     if (p.lifestyle) pills.push([p.lifestyle, '']);
     if (p.ownsBusiness) pills.push(['Owns a business', '']);
     // what they make of the Founder, and the last thing they saw or heard
@@ -240,10 +305,12 @@ export class Panels {
     const facts: [string, string][] = [];
     if (heard) facts.push(['About you', `${esc(heard.text)} <span class="day">day ${heard.day}</span>`]);
     facts.push(['Home', `The ${esc(p.surname)} household${p.home && p.home.ownerId ? ' (renting)' : ''}`]);
-    if (p.work) facts.push(['Work', `${CAT[p.work.type].name} · $${Math.round(((WAGES as Record<string, number>)[p.work.type] || 15) * (p.wageMult || 1))} a day${(p.wageMult || 1) > 1.5 ? ' · senior' : ''}`]);
+    if (p.work) facts.push(['Work', `${CAT[p.work.type].name} · $${Math.round(((WAGES as Record<string, number>)[p.work.type] || 15) * (p.wageMult || 1) * Edu.payMult(p, p.work))} a day${(p.wageMult || 1) > 1.5 ? ' · senior' : ''}${Edu.payMult(p, p.work) > 1 ? ' · graduate post' : ''}`]);
     else if (p.kind === 'kid') facts.push(['School', p.school ? 'Goes to school' : 'Too young yet']);
     else if (p.age >= AGE_RETIRE) facts.push(['Work', 'Retired']);
     else facts.push(['Work', `Between jobs${p.lastGig ? ` · lately ${esc(p.lastGig)}` : ''}`]);
+    facts.push(['Health', `${Math.round(Health.hp(p))}% · ${esc(Health.label(p))}${p.cond?.cause && p.cond.k === 'injury' ? ` (hurt ${esc(p.cond.cause)})` : ''}`]);
+    facts.push(['Schooling', esc(Edu.label(p))]);
     facts.push(['Savings', money(p.savings || 0)]);
     if (p.loan) facts.push(['Loan', `${money(p.loan.balance)} left`]);
     const partner = p.partnerId ? Sim.people.find((q: any) => q.id === p.partnerId) : null;
@@ -315,6 +382,16 @@ export class Panels {
       if (Gov.election && Gov.election.candidates) c.notes!.push(`Last election: ${Gov.election.candidates.map((k: any) => `${esc(k.name)} ${k.votes}`).join(' · ')}`);
       if (mp) c.notes!.push(`<span class="p-link" data-pid="${mp.id}">Meet the mayor in person</span>`);
     }
+    // V2 (Milestone 4): how the village's systems are holding up
+    const pw = Power.report(), hr = Health.report(), sr = Supply.report();
+    const openPosts = Sim.workplaces().reduce((n: number, w: any) => n + Edu.open(w), 0);
+    const grads = Sim.people.filter((q: any) => (q.edu || 0) >= 2).length;
+    c.facts!.push(
+      ['Power', `${pw.demand} wanted of ${pw.capacity}${pw.plants ? '' : ' (county line only)'}${pw.overloaded ? ' · rolling blackouts' : ''}${pw.faults ? ` · ${pw.faults} power cut${pw.faults > 1 ? 's' : ''}` : ''}`],
+      ['Health', hr.hospitals ? `${hr.ward} of ${hr.beds} hospital beds taken · ${hr.sick} unwell${Health.wave ? ' · flu season' : ''}` : `No hospital · ${hr.sick} unwell${hr.serious ? `, ${hr.serious} badly` : ''}`],
+      ['Graduates', `${grads}${openPosts ? ` · ${openPosts} graduate post${openPosts > 1 ? 's' : ''} unfilled` : ''}`],
+      ['Goods', `${sr.wanting.length ? `short of ${sr.wanting.map((g: keyof typeof GOODS) => GOODS[g].name.toLowerCase()).join(', ')}` : 'flowing'}${sr.bare ? ` · ${sr.bare} shop${sr.bare > 1 ? 's' : ''} sold out` : ''}${sr.stalled ? ` · ${sr.stalled} site${sr.stalled > 1 ? 's' : ''} waiting for materials` : ''}`],
+    );
     c.notes!.push(`<b>Tax policy</b>, yours to set:<select id="tax-select">
       <option value="low"${Gov.taxRate === 'low' ? ' selected' : ''}>Low — happy homes, lean treasury</option>
       <option value="normal"${Gov.taxRate === 'normal' ? ' selected' : ''}>Normal — the steady middle</option>

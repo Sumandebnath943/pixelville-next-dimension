@@ -192,6 +192,10 @@ body.gps #gps-pill { display: inline-flex !important; }
 
 #fuel-pill { display: none !important; }
 body.driving #fuel-pill { display: inline-flex !important; }
+/* V2 (Milestone 4): a blackout, a shortage, the flu: one line, click for the mayor's report */
+#alert-pill { display: none !important; font-size: 12.5px; pointer-events: auto; cursor: pointer; }
+body.alert #alert-pill { display: inline-flex !important; }
+#alert-pill.bad { color: var(--bad); border-color: rgba(255, 110, 96, 0.45); }
 .gauge { display: block; width: 46px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
 .gauge b { display: block; height: 100%; width: 100%; border-radius: 3px; background: var(--accent); transition: width 0.4s; }
 .gauge.low b { background: var(--bad); }

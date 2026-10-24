@@ -516,7 +516,7 @@ export class Founder {
     const key = World.inB(tx, tz) ? World.idx(tx, tz) : -1;
     // through a red light: entering a signalled junction against the phase
     if (key !== this.lastTile) {
-      if (key >= 0 && World.signals.has(key) && sp > 2) {
+      if (key >= 0 && World.signalOn(key) && sp > 2) { // (no red light to run when the lights are out)
         const movingNS = Math.abs(fz) > Math.abs(fx);
         if (movingNS !== World.nsGreen()) this.offence('red light');
       }

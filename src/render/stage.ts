@@ -262,15 +262,18 @@ export class Stage {
     leafFall.value += (fallTarget - leafFall.value) * Math.min(1, dt * 0.1);
   }
 
+  /** V2: is the street lamp at (x, z) metres powered? (the game says; dark in a blackout) */
+  lampLit: ((x: number, z: number) => boolean) | null = null;
   private updateLamps(focus: THREE.Vector3, lamps: { x: number; z: number }[], lampK: number): void {
     if (lampK < 0.01 || !this.lampLights.length) {
       for (const l of this.lampLights) l.intensity = 0;
       return;
     }
     const cam = this.camera.position;
+    const lit = this.lampLit;
     const near = lamps
       .map((l) => ({ l, d: (l.x - cam.x) ** 2 + (l.z - cam.z) ** 2 + ((l.x - focus.x) ** 2 + (l.z - focus.z) ** 2) * 0.5 }))
-      .filter((o) => o.d < 160 * 160)
+      .filter((o) => o.d < 160 * 160 && (!lit || lit(o.l.x, o.l.z)))
       .sort((a, b) => a.d - b.d);
     this.lampLights.forEach((pl, i) => {
       const o = near[i];

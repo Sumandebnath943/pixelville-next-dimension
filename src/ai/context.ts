@@ -15,6 +15,9 @@ import { Tasks } from '../sim/tasks';
 import { Weather } from '../sim/weather';
 import { Gov } from '../sim/gov';
 import { jobName } from '../player/indoors';
+import { Health } from '../sim/health';
+import { Power } from '../sim/power';
+import { EDU_LABEL } from '../sim/education';
 
 export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -50,6 +53,11 @@ export interface ChatContext {
   day: number;
   where: string;
   phone: boolean;
+  /** V2 (Milestone 4): how they are in body, their schooling, and their home's lights */
+  health: string;
+  unwell: 'no' | 'ill' | 'hurt' | 'ward';
+  schooling: string;
+  powerCut: boolean;
 }
 
 /** what a news line is about, for "ask about the fire" (and where it happened, if it says) */
@@ -61,6 +69,10 @@ export function newsTopic(text: string): { topic: string | null; where: string |
   if (/\bfire at\b|on fire|caught fire|catch fire|flames|blaze|burn(ed|ing|t)\b|bucket brigade/.test(t)) return { topic: 'fire', where };
   if (/burglar|robbed|robbery|loot/.test(t)) return { topic: 'burglary', where };
   if (/crash|collision|knocked down/.test(t)) return { topic: 'crash', where };
+  // V2 (Milestone 4): power cuts, shortages, the flu
+  if (/power cut|blackout|lights are back|grid can't/.test(t)) return { topic: 'blackout', where: null };
+  if (/shortage|are short in|sold out/.test(t)) return { topic: 'shortage', where: null };
+  if (/\bflu\b/.test(t)) return { topic: 'flu', where: null };
   if (/flood/.test(t)) return { topic: 'flood', where };
   if (/tornado|storm|quake|earthquake|lightning/.test(t)) return { topic: 'storm', where };
   if (/married|wedding/.test(t)) return { topic: 'wedding', where };
@@ -138,6 +150,10 @@ export function buildContext(p: any, where: { building?: any; phone?: boolean } 
     day: Sim.day,
     where: where.phone ? 'on the phone' : b ? (b.type === 'lodge' ? "the Founder's Lodge" : `the ${CAT[b.type].name}`) : 'out in the street',
     phone: !!where.phone,
+    health: Health.label(p) + (p.cond?.k === 'injury' && p.cond.cause ? ` (hurt ${p.cond.cause})` : ''),
+    unwell: p.ward ? 'ward' : p.cond?.k === 'injury' && p.cond.sev >= 12 ? 'hurt' : p.cond && p.cond.sev >= 12 ? 'ill' : 'no',
+    schooling: EDU_LABEL[p.edu || 0],
+    powerCut: !!p.home && Power.isDark(p.home),
   };
 }
 

@@ -6,6 +6,7 @@ import { AGE_RETIRE, Sim, WAGES } from './agents';
 import { Life } from './life';
 import { CAT } from './catalog';
 import { Rep } from './reputation';
+import { Edu } from './education';
 /* ============================================================
    PixelVille — the villager mind: knowledge, memory, decisions.
 
@@ -160,9 +161,9 @@ export const Mind: any = {
       const cur = (WAGES[p.work.type] || 15) * (p.wageMult || 1);
       let best = null, bw = cur * 1.25; // a move has to be clearly worth it
       for (const w of Sim.workplaces()) {
-        if (w === p.work || w.workers.length >= w.jobs) continue;
+        if (w === p.work || !Edu.canTake(p, w)) continue; // V2: graduate posts need a degree
         if (!m.knows.has(w.id)) continue; // can't apply to a job you've never heard of
-        const eff = (WAGES[w.type] || 15) - (Math.abs(w.x - p.home.x) + Math.abs(w.y - p.home.y)) * 0.06;
+        const eff = (WAGES[w.type] || 15) * Edu.payMult(p, w) - (Math.abs(w.x - p.home.x) + Math.abs(w.y - p.home.y)) * 0.06;
         if (eff > bw) { bw = eff; best = w; }
       }
       if (best) {

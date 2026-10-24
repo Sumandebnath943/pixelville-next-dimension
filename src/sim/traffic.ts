@@ -58,6 +58,8 @@ const rank = (o: unknown): number => {
 };
 
 const grid = new Map<number, Ob[]>();
+/** the tiles holding anyone this tick (only these are cleared next tick) */
+const filled: number[] = [];
 const pool: Ob[] = [];
 let used = 0;
 /** junction tile → who holds it, on which axis, last refreshed on which tick */
@@ -73,6 +75,7 @@ function put(o: unknown, x: number, y: number, dx: number, dy: number, car: bool
   ob.o = o; ob.x = x / T; ob.y = y / T; ob.dx = dx || 0; ob.dy = dy || 0; ob.car = car; ob.len = len; ob.still = still; ob.wide = wide;
   let list = grid.get(key);
   if (!list) grid.set(key, (list = []));
+  if (!list.length) filled.push(key);
   list.push(ob);
 }
 
@@ -82,7 +85,7 @@ function put(o: unknown, x: number, y: number, dx: number, dy: number, car: bool
  * it and this tile both carry on in the same direction.
  */
 export function isJunction(x: number, y: number): boolean {
-  if (World.signals.has(World.idx(x, y))) return false;
+  if (World.signalOn(World.idx(x, y))) return false; // V2: dark lights make it an ordinary junction
   const ew = (yy: number): boolean => World.isRoad(x - 1, yy) && World.isRoad(x + 1, yy);
   const ns = (xx: number): boolean => World.isRoad(xx, y - 1) && World.isRoad(xx, y + 1);
   let n = 0;
@@ -123,7 +126,8 @@ export const Traffic = {
    */
   begin(people: any[], life: any): void {
     tick++;
-    for (const list of grid.values()) list.length = 0;
+    for (const k of filled) grid.get(k)!.length = 0;
+    filled.length = 0;
     used = 0;
     gateClosed = (tx, ty) => life.trainNearTile(tx, ty, 5);
     // "still" marks what is parked on the road for a while (a bus at its stop, a squad car at a
@@ -140,6 +144,10 @@ export const Traffic = {
     for (const c of life.campaignCars || []) put(c, c.x, c.y, c.dirx, c.diry, true, CAR_LEN);
     for (const u of life.police || []) put(u, u.x, u.y, u.dirx, u.diry, true, CAR_LEN, u.phase === 'scene');
     for (const u of life.fireTrucks || []) put(u, u.x, u.y, u.dirx, u.diry, true, 1.1, u.phase === 'douse');
+    // V2: ambulances at a scene, delivery trucks unloading and repair vans at work stand in the road
+    for (const u of life.ambulances || []) put(u, u.x, u.y, u.dirx, u.diry, true, 0.75, u.phase === 'treat');
+    for (const u of life.trucks || []) put(u, u.x, u.y, u.dirx, u.diry, true, 0.9, u.phase === 'drop');
+    for (const u of life.crews || []) put(u, u.x, u.y, u.dirx, u.diry, true, 0.7, u.phase === 'fix');
     if (life.crash) put(life.crash, life.crash.x, life.crash.y, 1, 0, true, 1.2, true);
     // the Founder's car sits anywhere across the road, so it blocks a wider strip than a lane
     for (const g of this.guests) put(g.car ? FOUNDER_CAR : FOUNDER, g.x, g.y, g.dx, g.dy, g.car, g.car ? g.len ?? CAR_LEN : 0, g.still, g.car ? 0.14 : 0);
@@ -209,7 +217,7 @@ export const Traffic = {
       const v = st.v || 0;
       const canStop = v * v / (2 * DEC_MAX) <= entry + 0.05;
       if (entry > -0.05 && entry < LOOK) {
-        if (World.signals.size && World.signals.has(key) && ns !== World.nsGreen() && canStop) {
+        if (World.signals.size && World.signalOn(key) && ns !== World.nsGreen() && canStop) { // V2: dark in a blackout
           if (entry - 0.05 < free) { free = entry - 0.05; byTraffic = false; byStill = false; byFounder = false; blocker = null; }
         }
         if (World.crossings.size && World.crossings.has(key) && canStop && gateClosed(b[0], b[1])) {
@@ -346,6 +354,7 @@ export const Traffic = {
   /** forget everything (a new map or a loaded save) */
   reset(): void {
     grid.clear();
+    filled.length = 0;
     claims.clear();
     used = 0;
     this.guests = [];

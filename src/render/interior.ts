@@ -263,15 +263,15 @@ export class InteriorScene {
     this.disposables.push(pane.geometry, f.geometry);
   }
 
-  /** follow the light outside: `day` 0 (night) … 1 (bright day), `lampsOn` 0 … 1 */
-  light(day: number, lampsOn: number): void {
+  /** follow the light outside: `day` 0 (night) … 1 (bright day), `lampsOn` 0 … 1, `power` 0 in a blackout */
+  light(day: number, lampsOn: number, power = 1): void {
     const sky = new THREE.Color('#0e1626').lerp(new THREE.Color('#d8e8f6'), day);
     this.outside.color.copy(sky).multiplyScalar(0.55 + day * 0.5);
     this.sun.intensity = 0.15 + day * 1.6;
-    this.hemi.intensity = 0.5 + day * 0.55;
-    const lit = 0.75 + lampsOn * 0.35;
+    this.hemi.intensity = (0.5 + day * 0.55) * (power ? 1 : 0.35 + day * 0.6);
+    const lit = (0.75 + lampsOn * 0.35) * power;
     for (const p of this.lamps) p.intensity = p.userData.base * lit;
-    this.fixtures.color.setScalar(0.7 + lit * 0.6);
+    this.fixtures.color.setScalar(power ? 0.7 + lit * 0.6 : 0.12);
   }
 
   dispose(): void {

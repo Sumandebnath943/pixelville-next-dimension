@@ -12,6 +12,7 @@ import { Sim } from '../sim/agents';
 import { CAT } from '../sim/catalog';
 import { mulberry32 } from '../sim/core';
 import { Rep } from '../sim/reputation';
+import { Power } from '../sim/power';
 import { Person, randomLook } from '../gfx/person';
 import { InteriorScene } from '../render/interior';
 import { INTERIOR, layoutFor, walkable, Layout, Place, Spot } from '../interiors/plan';
@@ -39,6 +40,7 @@ export function doorState(b: any, founderOpinionOfHome?: number): string | null 
     return null;
   }
   if (d.hours && (Sim.clock < d.hours.s || Sim.clock >= d.hours.e)) return `Closed (opens ${String(Math.floor(d.hours.s / 60)).padStart(2, '0')}:${String(d.hours.s % 60).padStart(2, '0')})`;
+  if (Power.closed(b)) return 'Closed — no power until the lights come back';
   return null;
 }
 /** what the household thinks of the Founder, on average (for being asked in) */
@@ -148,7 +150,7 @@ export class Indoors {
   }
 
   /** one frame: walk (unless seated), look, the people, the light */
-  update(dt: number, move: { x: number; y: number }, look: { dx: number; dy: number }, run: boolean, day: number, lampsOn: number): void {
+  update(dt: number, move: { x: number; y: number }, look: { dx: number; dy: number }, run: boolean, day: number, lampsOn: number, power = 1): void {
     this.yaw -= look.dx;
     this.pitch = THREE.MathUtils.clamp(this.pitch - look.dy, -1.2, 1.2);
     if (!this.seated && (move.x || move.y)) {
@@ -174,7 +176,7 @@ export class Indoors {
       o.body.root.rotation.y = o.facing;
       o.body.animate(dt, o.place.pose, 0, 0);
     }
-    this.room!.light(day, lampsOn);
+    this.room!.light(day, lampsOn, power);
   }
   private clear(x: number, z: number): boolean {
     if (!walkable(this.L!, x, z)) return false;

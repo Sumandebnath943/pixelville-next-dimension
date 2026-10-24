@@ -23,6 +23,7 @@ export function compact(c: ChatContext): Record<string, unknown> {
     friends: c.friends, favourite: c.favourite,
     news: c.news.slice(0, 6).map((n) => `${n.text} (${n.ago}d ago)`),
     village: c.village, mayor: c.mayor, weather: c.weather, time: `${c.weekday} ${c.dayPart}, ${c.time}`, where: c.where,
+    health: c.health, schooling: c.schooling, ...(c.powerCut ? { home: `${c.home} (no power: a blackout)` } : {}),
   };
 }
 

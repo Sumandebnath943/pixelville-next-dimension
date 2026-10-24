@@ -13,6 +13,8 @@ import { Gov } from './gov';
 import { Festivals } from './festivals';
 import { Traffic } from './traffic';
 import { Rep } from './reputation';
+import { Health } from './health';
+import { Supply } from './supply';
 /* ============================================================
    PixelVille — ambient life & the crime and justice system.
    Hikers trek up mountains (torches at night), birds cross the
@@ -31,6 +33,8 @@ export const Life: any = {
   waterTiles: [], edgeRoads: [],  // filled by main on ground rebuild
   crime: null,          // {burglar, target, phase, robT, fled}
   police: [],           // {path, prog, x, y, dirx, phase, station}
+  // V2: ambulances (health.ts), delivery trucks (supply.ts), power repair crews (power.ts)
+  ambulances: [], trucks: [], crews: [],
   arrests: 0, crimes: 0,
   cooldown: 240,        // game-min until first possible crime
   onEvent: null,        // toast hook
@@ -39,6 +43,7 @@ export const Life: any = {
     this.hikers = []; this.birds = []; this.ducks = []; this.butterflies = [];
     this.tourists = []; this.rockets = []; this.sparks = [];
     this.crime = null; this.police = []; this.arrests = 0; this.crimes = 0; this.cooldown = 240;
+    this.ambulances = []; this.trucks = []; this.crews = [];
     this.fireTrucks = []; this.firesRecent = 0; this.buckets = [];
     this.disaster = null; this.collapseCd = 1440;
     this.dispute = null; this.crash = null; this.incidentCd = 120; this.gawkers = [];
@@ -245,6 +250,9 @@ export const Life: any = {
     this.say(causeMsg || `🔥 Fire at the ${CAT[b.type].name}!`, { x: b.x * T + b.w * 8, y: b.y * T + b.h * 8 });
     Tasks.add('fire' + b.id, '🔥', `Put out the fire at the ${CAT[b.type].name}`);
     Snd.siren();
+    // V2: whoever was inside gets out — a few with smoke in their lungs
+    const hurt = Health.casualties(b, 0.22, [24, 55], `in the fire at the ${CAT[b.type].name.toLowerCase()}`);
+    if (hurt) this.say(`🚑 ${hurt === 1 ? 'Someone was' : `${hurt} people were`} carried out of the ${CAT[b.type].name} — ${Health.hospitals().length ? 'ambulance called' : 'no hospital to send them to'}`);
     this.dispatchFire(b, true);
     this.coverStory(b.x * T + b.w * 8, (b.y + b.h) * T, b, `Fire at the ${CAT[b.type].name} — crews responding`);
     return true;
@@ -666,8 +674,8 @@ export const Life: any = {
       if (!active) { tr.prog = 0; tr.dir = 1; tr.pause = 2; tr.lastStop = 0; continue; }
       if (tr.pause > 0) { tr.pause -= gm; continue; }
       tr.prog += (tr.speed || 4.2) * dt * tr.dir;
-      if (tr.prog >= tr.route.length - 1) { tr.prog = tr.route.length - 1; tr.dir = -1; tr.pause = 12; tr.lastStop = tr.route.length - 1; }
-      else if (tr.prog <= 0) { tr.prog = 0; tr.dir = 1; tr.pause = 12; tr.lastStop = 0; }
+      if (tr.prog >= tr.route.length - 1) { tr.prog = tr.route.length - 1; tr.dir = -1; tr.pause = 12; tr.lastStop = tr.route.length - 1; if (tr.type === 'freight') this.freightAt(tr.route[tr.route.length - 1]); }
+      else if (tr.prog <= 0) { tr.prog = 0; tr.dir = 1; tr.pause = 12; tr.lastStop = 0; if (tr.type === 'freight') this.freightAt(tr.route[0]); }
       else if (tr.stopIdx) {
         const at = Math.round(tr.prog);
         if (tr.stopIdx.includes(at) && at !== tr.lastStop && at !== 0 && at !== tr.route.length - 1) {
@@ -676,6 +684,17 @@ export const Life: any = {
       }
       this.followPath(tr, tr.route, tr.prog, 0);
     }
+  },
+
+  /* V2: the freight train unloads at the terminus station nearest the end of its run */
+  freightAt([x, y]) {
+    let best = null, bd = 1e9;
+    for (const s of World.buildings) {
+      if (s.type !== 'trainstation' || s.construction || s.ruined) continue;
+      const d = Math.abs(s.x + s.w / 2 - x) + Math.abs(s.y + s.h / 2 - y);
+      if (d < bd) { bd = d; best = s; }
+    }
+    if (best && bd < 12) Supply.freightCall(best);
   },
 
   /* ---------------- boats & the ferry ---------------- */
@@ -1057,6 +1076,7 @@ export const Life: any = {
         b.type !== 'airport' && CAT[b.type].ex > 4 && Math.random() < 0.002);
       if (cands.length && Math.random() < gm * 0.0006) {
         const b = cands[(Math.random() * cands.length) | 0];
+        Health.casualties(b, 0.5, [30, 75], `when the ${CAT[b.type].name.toLowerCase()} collapsed`); // V2
         b.ruined = true; b.ruinedAt = Sim.day;
         Sim.onBuildingRemoved(b);
         World.dirty = true;
@@ -1223,6 +1243,12 @@ export const Life: any = {
       d0.t -= gm;
       if (!d0.calmed && d0.t % 2 < 0.3) for (const p of d0.ppl) { p.bubble = Math.random() < 0.5 ? '💢' : '😠'; p.bubbleUntil = performance.now() + 1500; }
       if (d0.t <= 0) {
+        // V2: now and then nobody calms it down in time and it comes to blows (bruises, a split lip)
+        if (!d0.calmed && Math.random() < 0.15) {
+          const p = d0.ppl[(Math.random() * 2) | 0];
+          Health.injure(p, 10 + Math.random() * 18, 'in a scuffle in the street');
+          this.say(`🤕 The argument came to blows — ${Sim.fullName(p)} walked away bruised`);
+        }
         for (const p of d0.ppl) { p.freezeT = 0; p.bubble = '🤝'; p.bubbleUntil = performance.now() + 2000; }
         d0.over = true;
         this.dispute = null;
@@ -1241,6 +1267,19 @@ export const Life: any = {
       }
       c.t -= gm;
       if (c.t <= 0) { c.over = true; this.say('🛻 Tow truck cleared the crash site'); this.crash = null; }
+    }
+    // V2: where a blackout has killed the traffic lights, drivers misjudge each other
+    this.darkT = (this.darkT || 0) + gm;
+    if (!this.crash && World.darkZone && World.darkZone.size && this.darkT >= 1) {
+      this.darkT = 0;
+      const cars = Sim.travelers().filter(p => p.trip.car && World.darkZone.has(World.idx(Math.floor(p.x / T), Math.floor(p.y / T))));
+      for (let i = 0; i < cars.length && !this.crash; i++) for (let j = i + 1; j < cars.length; j++) {
+        const a = cars[i], b = cars[j];
+        if ((a.dirx !== 0) !== (b.dirx !== 0) && Math.abs(a.x - b.x) + Math.abs(a.y - b.y) < 26 && Math.random() < 0.3) {
+          this.carCrash(a, b, true);
+          break;
+        }
+      }
     }
     if (this.incidentCd > 0 || Sim.clock < 420 || Sim.clock > 1320) return;
 
@@ -1271,26 +1310,37 @@ export const Life: any = {
         // traffic and must never "crash" and vanish.
         const crossing = (a.dirx !== 0) !== (b.dirx !== 0);
         if (crossing && Math.abs(a.x - b.x) + Math.abs(a.y - b.y) < 11) {
-          this.crash = {
-            x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, t: 30, t0: 30,
-            s1: a.trip.car.seed, s2: b.trip.car.seed,
-            a1: (Math.random() - 0.5) * 1.1, a2: (Math.random() - 0.5) * 1.1 + 1.5,
-          };
-          for (const p of [a, b]) { // shaken drivers head home
-            if (p.trip.car) p.trip.car.free = true;
-            p.state = 'in'; p.at = p.home; p.trip = null; p.dest = null; p.returnAt = undefined; p.backTo = null;
-          }
-          Snd.crunch();
-          this.crash.unit = this.dispatchTo(Math.round(this.crash.x / T), Math.round(this.crash.y / T), this.crash, 12);
-          this.say(this.crash.unit ? '💥 Car crash! Police are on the way' : '💥 Car crash! No squad car can respond — the drivers sort it out themselves', { x: this.crash.x, y: this.crash.y });
-          this.spawnGawkers(this.crash.x, this.crash.y, 5, this.crash);
-          this.coverStory(this.crash.x, this.crash.y, this.crash, 'Two-car collision snarls traffic');
-          Sim.safety = Math.max(20, Sim.safety - 2);
-          this.incidentCd = 400;
+          this.carCrash(a, b, false);
           break;
         }
       }
     }
+  },
+  /* two villagers' cars collide: a wreck in the road, police, onlookers, and (V2) the injured */
+  carCrash(a, b, dark) {
+    this.crash = {
+      x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, t: 30, t0: 30,
+      s1: a.trip.car.seed, s2: b.trip.car.seed,
+      a1: (Math.random() - 0.5) * 1.1, a2: (Math.random() - 0.5) * 1.1 + 1.5, dark: !!dark,
+    };
+    let hurt = 0;
+    const lie = [[-11, 7], [11, -7]];
+    [a, b].forEach((p, i) => {
+      // V2: a hard knock puts a driver on the tarmac until the ambulance comes
+      const sev = 20 + Math.random() * (dark ? 55 : 45);
+      if (Math.random() < (dark ? 0.6 : 0.4) && Health.injure(p, sev, 'in a car crash', { x: this.crash.x + lie[i][0], y: this.crash.y + lie[i][1] })) { hurt++; return; }
+      if (p.trip.car) p.trip.car.free = true; // shaken drivers head home
+      p.state = 'in'; p.at = p.home; p.trip = null; p.dest = null; p.returnAt = undefined; p.backTo = null;
+    });
+    Snd.crunch();
+    this.crash.unit = this.dispatchTo(Math.round(this.crash.x / T), Math.round(this.crash.y / T), this.crash, 12);
+    const where = dark ? ' at a junction with its lights out' : '';
+    const amb = hurt ? (Health.hospitals().length ? ` — ${hurt > 1 ? 'two drivers' : 'a driver'} hurt, ambulance on the way` : ` — ${hurt > 1 ? 'two drivers' : 'a driver'} hurt, and no hospital to call`) : '';
+    this.say(this.crash.unit ? `💥 Car crash${where}! Police are on the way${amb}` : `💥 Car crash${where}! No squad car can respond${amb || ' — the drivers sort it out themselves'}`, { x: this.crash.x, y: this.crash.y });
+    this.spawnGawkers(this.crash.x, this.crash.y, 5, this.crash);
+    this.coverStory(this.crash.x, this.crash.y, this.crash, dark ? 'Blackout crash: collision at a dark junction' : 'Two-car collision snarls traffic');
+    Sim.safety = Math.max(20, Sim.safety - 2);
+    this.incidentCd = 400;
   },
   /* send the nearest squad car to a tile; `scene` (optional) is the incident
      object — it gets .arrived stamped when the car pulls up, and the car then
@@ -1328,10 +1378,13 @@ export const Life: any = {
       a1: yaw + (Math.random() - 0.5) * 0.9, a2: 0, founder: true, taxi: !!(p && p.trip.taxi),
     };
     if (p) {
-      if (p.trip.car) p.trip.car.free = true; // the car is towed home
-      p.state = 'in'; p.at = p.home; p.trip = null; p.dest = null; p.returnAt = undefined; p.backTo = null;
       p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 12);
       Rep.feel(p, -4, "had their car wrecked by the Founder's driving", `crashed into ${p.name}'s car`);
+      // V2: a hard enough hit leaves the other driver hurt on the road
+      if (!(Math.random() < 0.5 && Health.injure(p, 25 + Math.random() * 45, "when the Founder crashed into their car", { x: o.x + 10, y: o.y + 6 }))) {
+        if (p.trip && p.trip.car) p.trip.car.free = true; // the car is towed home
+        p.state = 'in'; p.at = p.home; p.trip = null; p.dest = null; p.returnAt = undefined; p.backTo = null;
+      }
     } else {
       visitor.phase = 'out'; visitor.done = true;
     }
@@ -1357,7 +1410,9 @@ export const Life: any = {
     Rep.broadcast(-0.4);
     Sim.safety = Math.max(20, Sim.safety - 1);
     Snd.crunch();
-    this.say(`🤕 ${Sim.fullName(p)} was knocked down by the Founder's car`, { x: p.x, y: p.y });
+    // V2: at speed it's an injury: they stay down until the ambulance comes (speed in m/s)
+    const down = Health.injure(p, speed * 5.5, "by the Founder's car", { x: p.x, y: p.y });
+    this.say(`🤕 ${Sim.fullName(p)} was knocked down by the Founder's car${down ? (Health.hospitals().length ? ' — an ambulance is on its way' : ' — and there is no hospital') : ''}`, { x: p.x, y: p.y });
   },
 
   /* ---------------- sky events: balloons, UFO ---------------- */

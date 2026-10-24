@@ -16,7 +16,9 @@ import { Calamity } from '../sim/calamity';
 import { Weather } from '../sim/weather';
 import { World } from '../sim/world';
 import { CAT } from '../sim/catalog';
-import { InstancedPool, MAT, hex, hash2 } from './kit';
+import { InstancedPool, MAT, MeshBuilder, hex, hash2 } from './kit';
+import { Power } from '../sim/power';
+import { GOODS } from '../sim/supply';
 import { HAIR, PANTS, PERSON, PROPS, SHIRT, SKIN, VEHICLES } from './models';
 import { heightAt } from './terrain';
 import type { BuildingLayer } from './buildings';
@@ -159,7 +161,7 @@ export class Actors {
     this.head = new InstancedPool(PERSON.head, MAT.tint, PEOPLE_CAP, g);
     this.hair = new InstancedPool(PERSON.hair, MAT.tint, PEOPLE_CAP, g);
     this.hairLong = new InstancedPool(PERSON.hairLong, MAT.tint, PEOPLE_CAP, g);
-    const caps: Record<string, number> = { car: 500, taxi: 40, police: 30, fire: 12, bus: 24, moto: 80, loco: 16, coach: 60, wagon: 50, boat: 30, ferry: 3, raft: 12, heli: 4, plane: 4, balloon: 4, ufo: 1, sleigh: 1 };
+    const caps: Record<string, number> = { car: 500, taxi: 40, police: 30, fire: 12, bus: 24, moto: 80, loco: 16, coach: 60, wagon: 50, boat: 30, ferry: 3, raft: 12, heli: 4, plane: 4, balloon: 4, ufo: 1, sleigh: 1, ambulance: 8, truck: 24, van: 8 };
     for (const [k, m] of Object.entries(VEHICLES)) {
       const cap = caps[k] || 8;
       this.veh[k] = {
@@ -196,7 +198,10 @@ export class Actors {
       g.add(l);
       this.fireLights.push(l);
     }
+    // V2: traffic-signal lenses, full-bright and coloured per instance (red, amber, green, or out)
+    this.lenses = new InstancedPool(new MeshBuilder().box(-0.09, -0.09, -0.015, 0.09, 0.09, 0.015, hex('#ffffff')).build(), this.sirenMat, 720, g, false);
   }
+  private lenses: InstancedPool;
 
   private near(x: number, z: number, extra = 0): boolean {
     return Math.abs(x - this.camX) < this.range + extra && Math.abs(z - this.camZ) < this.range + extra;
@@ -207,7 +212,7 @@ export class Actors {
     if (this.people.length >= PEOPLE_CAP) return;
     this.people.push(p);
   }
-  vehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: { siren?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number } = {}): void {
+  vehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: { siren?: boolean; beacon?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number } = {}): void {
     // nearby cars, cabs and patrol cars are drawn as full models
     if ((type === 'car' || type === 'taxi' || type === 'police') && !opts.scale && this.carWant.length < NEAR_CARS * 2) {
       const d2 = (x - this.camX) ** 2 + (z - this.camZ) ** 2;
@@ -218,7 +223,7 @@ export class Actors {
     }
     this.instancedVehicle(type, x, y, z, yaw, paint, opts);
   }
-  private instancedVehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: { siren?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number } = {}): void {
+  private instancedVehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: { siren?: boolean; beacon?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number } = {}): void {
     const v = this.veh[type];
     if (!v) return;
     const s = opts.scale || 1;
@@ -226,8 +231,10 @@ export class Actors {
     v.fixed.add(x, y, z, yaw, s, null, opts.pitch || 0, opts.roll || 0);
     v.lights.add(x, y, z, yaw, s, null, opts.pitch || 0, opts.roll || 0);
     if (v.siren) {
-      const on = opts.siren ? Math.floor(this.t * 6) % 2 : -1;
-      v.siren.add(x, y, z, yaw, s, on < 0 ? hex('#888888') : on ? hex('#ff2a2a') : hex('#2a6aff'), opts.pitch || 0, opts.roll || 0);
+      const on = opts.siren || opts.beacon ? Math.floor(this.t * 6) % 2 : -1;
+      // blue lights for the emergency services, amber beacons for a works van
+      const col = on < 0 ? (opts.beacon !== undefined ? hex('#7a5a20') : hex('#888888')) : opts.beacon ? (on ? hex('#ffb020') : hex('#7a5a20')) : on ? hex('#ff2a2a') : hex('#2a6aff');
+      v.siren.add(x, y, z, yaw, s, col, opts.pitch || 0, opts.roll || 0);
     }
     if (v.rotor) v.rotor.add(x, y, z, yaw + (opts.rotor || 0), s);
   }
@@ -255,6 +262,7 @@ export class Actors {
       v.paint.begin(); v.fixed.begin(); v.lights.begin(); v.siren?.begin(); v.rotor?.begin();
     }
     for (const p of Object.values(this.props)) p.begin();
+    this.lenses.begin();
     this.lightsMat.color.setScalar(0.5 + night * 0.9);
     // festive bulbs, diyas and torches: bright enough to bloom after dark
     this.glowTint.color.setScalar(0.3 + night * 0.5);
@@ -262,6 +270,8 @@ export class Actors {
     this.collectVillagers(now);
     this.collectParked();
     this.collectServices();
+    this.collectSystems(now);
+    this.collectSignals();
     this.collectTransit();
     this.collectCrowds();
     this.collectNature();
@@ -279,6 +289,7 @@ export class Actors {
       v.paint.end(); v.fixed.end(); v.lights.end(); v.siren?.end(); v.rotor?.end();
     }
     for (const p of Object.values(this.props)) p.end();
+    this.lenses.end();
   }
 
   private groundY(x: number, z: number, onStreet: boolean): number {
@@ -293,6 +304,15 @@ export class Actors {
   private collectVillagers(now: number): void {
     const raining = Weather.isRaining() || Weather.isSnowing();
     for (const p of Sim.people) {
+      if (p.state === 'hurt') { // V2: hurt, on the ground, waiting for the ambulance
+        const x = p.x * PX, z = p.y * PX;
+        if (!this.near(x, z, 40)) continue;
+        const y = this.groundY(x, z, false);
+        this.person({ x, y, z, yaw: (p.seed % 628) / 100, kind: p.kind, seed: p.seed, mode: 'lie', phase: 0 });
+        this.pickables.push({ x, y, z, ref: p });
+        if (p.bubble && p.bubbleUntil > now) this.wantBubble(x, y + 1.0, z, p.bubble);
+        continue;
+      }
       if (p.state !== 'walk' || !p.trip) continue;
       const x = p.x * PX, z = p.y * PX;
       if (!this.near(x, z, 40)) continue;
@@ -332,7 +352,7 @@ export class Actors {
   private collectParked(): void {
     for (const b of World.buildings) {
       const bx = (b.x + b.w / 2) * TM, bz = (b.y + b.h / 2) * TM;
-      if (!this.near(bx, bz, 30) || b.ruined || b.construction > 0) continue;
+      if (!this.near(bx, bz, 30) || b.ruined) continue;
       const f = b.facing || 0;
       const d = CAT[b.type];
       // driveway: along the right-hand side of the plot, nose to the street
@@ -342,7 +362,9 @@ export class Actors {
       };
       const yaw = (f * Math.PI) / 2;
       const W = (d.w || 1) * TM, D = (d.h || 1) * TM;
-      if (d.res && b.cars) {
+      if (b.construction > 0) {
+        // a building site: no cars yet (its crew and materials are drawn below)
+      } else if (d.res && b.cars) {
         for (const c of drivewayCars(b, this.drive)) this.vehicle('car', c.x, 0.13, c.z, c.yaw, c.color);
         this.drive.length = 0;
         if (b.bikes) {
@@ -355,12 +377,26 @@ export class Actors {
           this.vehicle('car', x, 0.13, z, yaw + Math.PI / 2, CAR_COLORS[(b.id + k * 3) % CAR_COLORS.length]);
         }
       }
-      // construction crews on site
-      if (b.construction > 0 || b.upgrading > 0) {
+      // construction crews on site (V2: idle by an empty yard while they wait for materials)
+      if (b.construction > 0 && b.stalled) {
+        for (let k = 0; k < 2; k++) {
+          const [x, z] = toWorld(-W / 2 + 1.2 + k * 1.1, D / 2 + 0.6);
+          this.person({ x, y: 0.1, z, yaw: yaw + (k ? 0.6 : -0.4), kind: 'man', seed: b.id * 7 + k, mode: 'stand', phase: 0, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+          if (k === 0 && Math.floor(this.t / 4 + b.id) % 3 === 0) this.wantBubble(x, 2.5, z, '⏳');
+        }
+      } else if (b.construction > 0 || b.upgrading > 0) {
         for (let k = 0; k < 2; k++) {
           const a = this.t * 0.25 + k * Math.PI + b.id;
           const x = bx + Math.cos(a) * (b.w * TM * 0.5 + 0.8), z = bz + Math.sin(a) * (b.h * TM * 0.5 + 0.8);
           this.person({ x, y: 0.1, z, yaw: a + Math.PI, kind: 'man', seed: b.id * 7 + k, mode: 'walk', phase: this.t * 4 + k, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+        }
+      }
+      // V2: the materials on site, a pallet for every few loads (none left: the site stalls)
+      if (b.construction > 0 && b.mats > 0.3) {
+        const n = Math.min(4, Math.ceil(b.mats / 5));
+        for (let k = 0; k < n; k++) {
+          const [x, z] = toWorld(W / 2 - 1.2 - k * 1.5, D / 2 - 1.1);
+          this.prop(k % 2 ? 'timber' : 'bricks', x, 0.05, z, yaw + (k % 2 ? Math.PI / 2 : 0));
         }
       }
     }
@@ -425,6 +461,81 @@ export class Actors {
       this.person({ x: x + Math.sin(this.t) * 1.2, y: 0.03, z: z + 0.5, yaw: this.t, kind: 'man', seed: rw.x * 13 + rw.y, mode: 'stand', phase: 0, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
     }
     for (const r of Life.reporters) this.lerpPerson(r, 'stand', { camera: true, shirt: hex('#3a5ad0') });
+  }
+
+  /* V2 (Milestone 4): ambulances and their crews, delivery trucks, the power company's vans */
+  private collectSystems(now: number): void {
+    for (const a of Life.ambulances) {
+      const x = a.x * PX, z = a.y * PX;
+      if (!this.near(x, z, 40)) continue;
+      const sm = smooth(a, x, z, dirYaw(a.dirx, a.diry));
+      this.vehicle('ambulance', x, this.groundY(x, z, true), z, sm.yaw, hex('#f6f6f2'), { siren: a.phase !== 'return' || a.patient?.state === 'amb' });
+      if (a.phase === 'treat' && a.patient) {
+        // two paramedics over the casualty, the bag open beside them
+        const p = a.patient, px = p.x * PX, pz = p.y * PX, py = this.groundY(px, pz, false);
+        for (let k = 0; k < 2; k++) {
+          const ang = k * Math.PI + (p.seed % 7) * 0.3;
+          const mx = px + Math.cos(ang) * 1.0, mz = pz + Math.sin(ang) * 1.0;
+          this.person({ x: mx, y: py, z: mz, yaw: Math.atan2(px - mx, pz - mz), kind: k ? 'woman' : 'man', seed: a.from.id * 13 + k, mode: 'stand', phase: 0, shirt: hex('#2e8a4e'), pants: hex('#24603a') });
+        }
+        this.prop('medbag', px + 0.6, py, pz + 0.7, 0.4);
+        void now;
+      }
+    }
+    for (const t of Life.trucks) {
+      const x = t.x * PX, z = t.y * PX;
+      if (!this.near(x, z, 40)) continue;
+      const sm = smooth(t, x, z, dirYaw(t.dirx, t.diry));
+      this.vehicle('truck', x, this.groundY(x, z, true), z, sm.yaw, hex(GOODS[t.g as keyof typeof GOODS].color));
+      if (t.phase === 'drop') {
+        // the driver wheels the load in
+        const bx = x - Math.sin(sm.yaw) * 4.2, bz = z - Math.cos(sm.yaw) * 4.2;
+        this.person({ x: bx + Math.cos(sm.yaw) * 1.4, y: this.groundY(bx, bz, false), z: bz - Math.sin(sm.yaw) * 1.4, yaw: sm.yaw + Math.PI / 2, kind: 'man', seed: t.seed, mode: 'stand', phase: 0, shirt: hex('#3a4a5a') });
+        this.prop('crate', bx + Math.cos(sm.yaw) * 2, 0.05, bz - Math.sin(sm.yaw) * 2, sm.yaw);
+      }
+    }
+    for (const c of Life.crews) {
+      if (c.phase === 'wait') continue; // still setting out from the county yard
+      const x = c.x * PX, z = c.y * PX;
+      if (!this.near(x, z, 40)) continue;
+      const sm = smooth(c, x, z, dirYaw(c.dirx, c.diry));
+      this.vehicle('van', x, this.groundY(x, z, true), z, sm.yaw, hex('#f2f0e8'), { beacon: c.phase === 'fix' || c.phase === 'go' });
+      if (c.phase === 'fix') {
+        // two linesmen in hi-vis at the kerb, one up a ladder at the pole
+        for (let k = 0; k < 2; k++) {
+          const ox = Math.cos(sm.yaw) * (2.2 + k * 0.8), oz = -Math.sin(sm.yaw) * (2.2 + k * 0.8);
+          const px = x + ox - Math.sin(sm.yaw) * (k ? 1.5 : -1), pz = z + oz - Math.cos(sm.yaw) * (k ? 1.5 : -1);
+          this.person({ x: px, y: this.groundY(px, pz, false) + (k ? 1.4 : 0), z: pz, yaw: sm.yaw - Math.PI / 2, kind: 'man', seed: c.seed + k, mode: 'stand', phase: 0, shirt: hex('#f2c230'), hair: hex('#f2f2f2') });
+        }
+      }
+    }
+  }
+
+  /* V2: traffic signals at the junctions the sim lights; dark when the district's power is out.
+     Each post carries two three-lamp heads back to back, facing the traffic it governs. */
+  private collectSignals(): void {
+    const heads = World.signalHeads as [number, number, number][] | undefined;
+    if (!heads || !heads.length) return;
+    const ms = performance.now();
+    const nsGreen = World.nsGreen();
+    const amber = (ms % 8000) / 8000 > 0.8;
+    const OFF = hex('#151413'), RED = hex('#ff2a18'), AMB = hex('#ffa412'), GRN = hex('#22ff78');
+    for (const [hx, hy, aspect] of heads) {
+      const x = aspect === 0 ? hx * TM + TM - 0.9 : hx * TM + 0.9;
+      const z = aspect === 0 ? hy * TM + TM - 0.9 : hy * TM + 0.9;
+      if (!this.near(x, z, -60)) continue;
+      const yaw = aspect === 0 ? 0 : Math.PI / 2;
+      const y = this.groundY(x, z, false);
+      this.prop('sigPole', x, y, z, yaw);
+      const dark = Power.tileDark(Math.floor(x / TM), Math.floor(z / TM));
+      const go = aspect === 0 ? nsGreen : !nsGreen;
+      const cols = dark ? [OFF, OFF, OFF] : go ? [OFF, amber ? AMB : OFF, amber ? OFF : GRN] : [RED, OFF, OFF];
+      const sy = Math.sin(yaw), cy = Math.cos(yaw);
+      for (const side of [1, -1]) {
+        const zl = 0.31 * side;
+        [3.17, 2.85, 2.53].forEach((ly, i) => this.lenses.add(x + sy * zl, y + ly, z + cy * zl, yaw, 1, cols[i]));
+      }
+    }
   }
 
   /* someone hurrying from a doorway (sx,sy) to a scene (tx,ty) by fraction f */

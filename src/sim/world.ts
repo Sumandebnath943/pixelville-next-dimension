@@ -41,6 +41,24 @@ export function originForDoor(key, f, tx, ty): { x: number; y: number } {
   }
 }
 
+/* V2: scratch space shared by the road and footpath searches. A tile counts as
+   visited only when `seen` holds the current search's generation, so nothing
+   needs clearing between searches. */
+const DX4 = [0, 1, 0, -1], DY4 = [-1, 0, 1, 0];
+const SCRATCH = {
+  gen: 0,
+  seen: new Uint32Array(GW * GH),
+  prev: new Int32Array(GW * GH),
+  dist: new Float32Array(GW * GH),
+  queue: new Int32Array(GW * GH),
+  heapC: new Float64Array(4096),
+  heapN: new Int32Array(4096),
+  grow() {
+    const c = new Float64Array(this.heapC.length * 2), n = new Int32Array(this.heapN.length * 2);
+    c.set(this.heapC); n.set(this.heapN);
+    this.heapC = c; this.heapN = n;
+  },
+};
 
 export const World: any = {
   name: 'PixelVille',                  // the village's name — travels with the save
@@ -58,6 +76,8 @@ export const World: any = {
   roadStamp: 0,                        // bumped on every road edit (bus routes re-check)
   waterStamp: 0,                       // bumped on water edits (ferry route re-check)
   signals: new Set(),                  // road-junction tiles governed by traffic lights
+  darkSignals: new Set(),              // V2: signal tiles whose lights are out in a blackout (power.ts)
+  darkZone: new Set(),                 // V2: those tiles and their approaches, where drivers misjudge
   crossings: new Set(),                // rail-over-road tiles with level-crossing gates
   onChange: null,                      // callback
 
@@ -66,6 +86,8 @@ export const World: any = {
   /* traffic-signal phase runs on REAL time (8s each way) so lights read as
      lights at every game speed instead of strobing under fast-forward */
   nsGreen() { return Math.floor(performance.now() / 8000) % 2 === 0; },
+  /** V2: a signalled tile whose lights are working */
+  signalOn(i) { return this.signals.has(i) && !this.darkSignals.has(i); },
   isRoad(x, y) { return this.inB(x, y) && this.roadMap[this.idx(x, y)] === 1; },
   isRail(x, y) { return this.inB(x, y) && this.railMap[this.idx(x, y)] === 1; },
 
@@ -74,7 +96,7 @@ export const World: any = {
     this.reserved.fill(0);
     this.buildings = []; this.mountains = []; this.nextId = 1; this.dirty = true; this.railStamp++;
     this.roadStamp++; this.waterStamp++; // V2: a new map must invalidate the path caches
-    this.signals.clear(); this.crossings.clear();
+    this.signals.clear(); this.crossings.clear(); this.darkSignals.clear(); this.darkZone.clear();
     this.highway = null; this.signalHeads = [];
   },
 
@@ -766,25 +788,29 @@ export const World: any = {
   _roadPathRaw(ax, ay, bx, by) {
     if (!this.isRoad(ax, ay) || !this.isRoad(bx, by)) return null;
     if (ax === bx && ay === by) return [[ax, ay]];
-    const prev = new Int32Array(GW * GH).fill(-1);
+    // V2: shared scratch buffers stamped per search (allocating and clearing two 64k
+    // arrays per search cost tens of milliseconds a miss on the 256² map)
+    const S = SCRATCH, gen = ++S.gen;
+    const prev = S.prev, seen = S.seen;
     const start = this.idx(ax, ay), goal = this.idx(bx, by);
-    prev[start] = start;
-    const q = [start];
-    let qi = 0;
-    while (qi < q.length) {
+    prev[start] = start; seen[start] = gen;
+    const q = S.queue;
+    let qn = 0, qi = 0;
+    q[qn++] = start;
+    while (qi < qn) {
       const cur = q[qi++];
       if (cur === goal) break;
       const cx = cur % GW, cy = (cur / GW) | 0;
-      for (const [ddx, ddy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
-        const nx = cx + ddx, ny = cy + ddy;
+      for (let k = 0; k < 4; k++) {
+        const nx = cx + DX4[k], ny = cy + DY4[k];
         if (!this.isRoad(nx, ny)) continue;
-        const ni = this.idx(nx, ny);
-        if (prev[ni] !== -1) continue;
-        prev[ni] = cur;
-        q.push(ni);
+        const ni = ny * GW + nx;
+        if (seen[ni] === gen) continue;
+        seen[ni] = gen; prev[ni] = cur;
+        q[qn++] = ni;
       }
     }
-    if (prev[goal] === -1) return null;
+    if (seen[goal] !== gen) return null;
     const path = [];
     let cur = goal;
     while (cur !== start) { path.push([cur % GW, (cur / GW) | 0]); cur = prev[cur]; }
@@ -817,47 +843,62 @@ export const World: any = {
   _walkPathRaw(ax, ay, bx, by) {
     if (!this.isRoad(ax, ay) || !this.isRoad(bx, by)) return null;
     if (ax === bx && ay === by) return [[ax, ay]];
-    const dist = new Float32Array(GW * GH).fill(Infinity);
-    const prev = new Int32Array(GW * GH).fill(-1);
+    // V2: shared scratch buffers stamped per search, and a heap of parallel
+    // typed arrays (no per-push garbage)
+    const S = SCRATCH, gen = ++S.gen;
+    const dist = S.dist, prev = S.prev, seen = S.seen;
+    let hl = 0;
     const start = this.idx(ax, ay), goal = this.idx(bx, by);
-    const heap = [];
     const push = (c, s) => {
-      heap.push([c, s]);
-      let i = heap.length - 1;
-      while (i > 0) { const q = (i - 1) >> 1; if (heap[q][0] <= heap[i][0]) break; [heap[q], heap[i]] = [heap[i], heap[q]]; i = q; }
+      if (hl >= S.heapC.length) S.grow();
+      let i = hl++;
+      const C = S.heapC, N = S.heapN;
+      while (i > 0) {
+        const q = (i - 1) >> 1;
+        if (C[q] <= c) break;
+        C[i] = C[q]; N[i] = N[q]; i = q;
+      }
+      C[i] = c; N[i] = s;
     };
+    let popC = 0;
     const pop = () => {
-      const top = heap[0], last = heap.pop();
-      if (heap.length) {
-        heap[0] = last;
+      const C = S.heapC, N = S.heapN;
+      const top = N[0];
+      popC = C[0];
+      hl--;
+      if (hl > 0) {
+        const lc = C[hl], ln = N[hl];
         let i = 0;
         for (;;) {
-          let m = i; const l = 2 * i + 1, r = l + 1;
-          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
-          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
-          if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
+          const l = 2 * i + 1, r = l + 1;
+          let m = i, mc = lc;
+          if (l < hl && C[l] < mc) { m = l; mc = C[l]; }
+          if (r < hl && C[r] < mc) { m = r; }
+          if (m === i) break;
+          C[i] = C[m]; N[i] = N[m]; i = m;
         }
+        C[i] = lc; N[i] = ln;
       }
       return top;
     };
     const kerbCost = (x, y) =>
       (!this.isRoad(x, y - 1) || !this.isRoad(x, y + 1) || !this.isRoad(x - 1, y) || !this.isRoad(x + 1, y)) ? 1 : 2.6;
-    dist[start] = 0;
+    dist[start] = 0; seen[start] = gen; prev[start] = -1;
     push(0, start);
-    while (heap.length) {
-      const [c, cur] = pop();
+    while (hl > 0) {
+      const cur = pop(), c = popC;
       if (c > dist[cur]) continue;
       if (cur === goal) break;
       const cx = cur % GW, cy = (cur / GW) | 0;
-      for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
-        const nx = cx + dx, ny = cy + dy;
+      for (let k = 0; k < 4; k++) {
+        const nx = cx + DX4[k], ny = cy + DY4[k];
         if (!this.isRoad(nx, ny)) continue;
-        const ni = this.idx(nx, ny);
+        const ni = ny * GW + nx;
         const nc = c + kerbCost(nx, ny);
-        if (nc < dist[ni]) { dist[ni] = nc; prev[ni] = cur; push(nc, ni); }
+        if (seen[ni] !== gen || nc < dist[ni]) { seen[ni] = gen; dist[ni] = nc; prev[ni] = cur; push(nc, ni); }
       }
     }
-    if (prev[goal] === -1 && goal !== start) return null;
+    if (seen[goal] !== gen) return null;
     const path = [];
     let cur = goal;
     while (cur !== start) { path.push([cur % GW, (cur / GW) | 0]); cur = prev[cur]; }
@@ -953,6 +994,10 @@ export const World: any = {
         own: b.ownerId || 0, fdr: b.founderId || 0, lp: b.landPrice || 0,
         cars: b.cars.map(c => c.seed), bikes: b.bikes || 0, boat: b.boat ? 1 : 0,
         bad: b.badDays || 0,
+        // V2: goods on the shelves or in the yard, the warehouse, a site's materials
+        sk: b.stock !== undefined ? Math.round(b.stock * 10) / 10 : undefined,
+        st: b.store || undefined,
+        mt: b.matsNeed !== undefined ? [Math.round(b.mats * 10) / 10, b.matsNeed, Math.round(b.matsUsed * 10) / 10] : undefined,
       })),
       extra: extra || {},
     });
@@ -1016,6 +1061,9 @@ export const World: any = {
         bikes: bs.bikes || 0, boat: !!bs.boat, badDays: bs.bad || 0,
       };
       b.conTotal = Math.max(b.construction, 40 + w * h * 22);
+      if (bs.sk !== undefined) b.stock = bs.sk;
+      if (bs.st) b.store = { food: 0, mats: 0, tex: 0, prod: 0, ...bs.st };
+      if (bs.mt && b.construction > 0) { b.mats = bs.mt[0]; b.matsNeed = bs.mt[1]; b.matsUsed = bs.mt[2]; b.stalled = b.mats <= 0.01; }
       this.buildings.push(b);
       for (let j = 0; j < h; j++) for (let i = 0; i < w; i++)
         this.bmap[this.idx(bx + i, by + j)] = this.buildings.length;

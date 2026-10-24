@@ -15,7 +15,9 @@ const tr = (x: number, y: number, z: number): THREE.Matrix4 => new THREE.Matrix4
 
 /** emissive materials whose intensity the scene drives */
 export const GLOW = {
-  lantern: new THREE.MeshStandardMaterial({ color: 0xfff1d6, emissive: 0xffc47a, emissiveIntensity: 0, roughness: 0.3, transparent: true, opacity: 0.92 }),
+  // (V2: a lantern in a blacked-out district stays dark)
+  lantern: surface(new THREE.MeshStandardMaterial({ color: 0xfff1d6, emissive: 0xffc47a, emissiveIntensity: 0, roughness: 0.3, transparent: true, opacity: 0.92 }),
+    { wet: 0, fEmissive: 'totalEmissiveRadiance *= pvPower(vWPos);' }, 'lantern'),
 };
 
 export function lampPost(kit: Kit, x: number, z: number): THREE.Vector3 {

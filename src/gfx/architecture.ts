@@ -42,6 +42,9 @@ vec3 pvInterior() {
   float seed = vRoom.z;
   float kind = floor(vRoom.w / 2.0 + 0.01);
   float lit = mod(vRoom.w, 2.0);
+  // a blacked-out district: every lamp in every room goes out
+  float pw = pvPower(vWPos);
+  float uLightsOnK = uLightsOn * pw;
   // stained glass: leaded panes of colour, glowing when the church is lit
   if (kind > 3.5) {
     vec2 q = vec2(vRoom.x * 5.0, vRoom.y * 3.2);
@@ -50,7 +53,7 @@ vec3 pvInterior() {
     vec3 gl = vec3(pvHash12(cid * 1.7), pvHash12(cid * 3.1 + 2.0), pvHash12(cid * 5.3 + 7.0));
     gl = mix(vec3(0.7, 0.15, 0.12), mix(vec3(0.15, 0.25, 0.7), vec3(0.85, 0.65, 0.15), gl.y), gl.x);
     vec3 g2 = gl * (1.0 - min(1.0, lead));
-    return g2 * (uInteriorDay * 0.35 + uLightsOn * 0.5);
+    return g2 * (uInteriorDay * 0.35 + uLightsOnK * 0.5);
   }
   float W = 3.4 + fract(seed * 7.13) * 1.8;
   float Hr = 2.6;
@@ -61,7 +64,7 @@ vec3 pvInterior() {
 
   vec3 lampC = mix(vec3(1.0, 0.68, 0.38), vec3(1.0, 0.82, 0.6), fract(seed * 17.0));
   // homes light up at dusk; shops and the pub trade with their lights on all day; offices work late
-  float lampOn = kind > 2.5 ? max(uLightsOn * lit, 0.6 * (1.0 - uLightsOn) + 0.2) : kind > 0.5 ? max(uLightsOn, 0.85) : lit * uLightsOn;
+  float lampOn = (kind > 2.5 ? max(uLightsOnK * lit, 0.6 * (1.0 - uLightsOn) + 0.2) : kind > 0.5 ? max(uLightsOnK, 0.85) : lit * uLightsOnK) * pw;
   if (kind > 0.5) lampC = mix(lampC, vec3(1.0, 0.92, 0.8), 0.6);
   float day = uInteriorDay;
 
@@ -93,7 +96,7 @@ vec3 pvInterior() {
     if (kind > 2.5) {
       // an office: partitions, desks and screens
       if (h.y < 1.1 && fract(h.x * 0.45 + seed) > 0.25) col = mix(vec3(0.35, 0.33, 0.3), vec3(0.55, 0.5, 0.45), step(0.75, h.y));
-      if (h.y > 0.78 && h.y < 1.05 && fract(h.x * 0.9 + seed * 3.0) < 0.2) col = vec3(0.15, 0.2, 0.28) + uLightsOn * vec3(0.2, 0.3, 0.45);
+      if (h.y > 0.78 && h.y < 1.05 && fract(h.x * 0.9 + seed * 3.0) < 0.2) col = vec3(0.15, 0.2, 0.28) + uLightsOnK * vec3(0.2, 0.3, 0.45);
     } else if (kind > 0.5) {
       // shop: shelves of goods; pub: a bar back with bottles
       float shelf = step(0.82, fract(h.y * 2.2));
@@ -131,11 +134,11 @@ vec3 pvInterior() {
   vec3 light = vec3(day) * depthK * vec3(0.95, 0.97, 1.0);
   float ld = length(h - vec3(0.0, Hr - 0.3, D * 0.45));
   if (kind > 2.5) { lampC = vec3(0.92, 0.96, 1.0); ld = 1.5; }
-  light += lampC * lampOn * (kind > 2.5 ? 1.4 : kind > 0.5 ? 2.6 * (0.5 + 0.5 * uLightsOn) + 0.6 : 0.34) * (0.7 + 0.6 * fract(seed * 23.0)) / (1.0 + ld * ld * 0.18);
+  light += lampC * lampOn * (kind > 2.5 ? 1.4 : kind > 0.5 ? 2.6 * (0.5 + 0.5 * uLightsOnK) + 0.6 : 0.34) * (0.7 + 0.6 * fract(seed * 23.0)) / (1.0 + ld * ld * 0.18);
   // a TV flickering in some dark rooms
   if (lit < 0.5 && fract(seed * 43.0) > 0.7 && kind < 0.5) {
     float fl = 0.6 + 0.4 * sin(uTime * 7.0 + seed * 50.0) * sin(uTime * 2.3 + seed);
-    light += vec3(0.35, 0.45, 0.8) * 0.05 * fl * uLightsOn / (1.0 + h.z * 0.5);
+    light += vec3(0.35, 0.45, 0.8) * 0.05 * fl * uLightsOnK / (1.0 + h.z * 0.5);
   }
   return col * light;
 }
@@ -215,7 +218,7 @@ export class Palette {
     add('glassPlain', surface(std({ color: 0x0a1016, roughness: 0.05, metalness: 0.3 }), { wet: 0.1 }, 'glassPlain'));
     // lit panels (neon, beacons, signal lamps): coloured by day, glowing after dusk
     add('glowPanel', surface(std({ vertexColors: true, roughness: 0.35 }), {
-      fEmissive: 'totalEmissiveRadiance += diffuseColor.rgb * (0.25 + uLightsOn * 3.5);',
+      fEmissive: 'totalEmissiveRadiance += diffuseColor.rgb * (0.25 + uLightsOn * 3.5) * pvPower(vWPos);',
       fDecl: 'uniform float uLightsOn;',
       uniforms: { uLightsOn: lightsOn },
     }, 'glowPanel'));
@@ -236,7 +239,7 @@ export class Palette {
       this.defs[k] = {
         mat: surface(std({ map: tex, roughness: 0.4 }), {
           snow: 0.4, wet: 0.3,
-          fEmissive: 'totalEmissiveRadiance += diffuseColor.rgb * uLightsOn * 2.2;',
+          fEmissive: 'totalEmissiveRadiance += diffuseColor.rgb * uLightsOn * 2.2 * pvPower(vWPos);',
           fDecl: 'uniform float uLightsOn;',
           uniforms: { uLightsOn: lightsOn },
         }, 'signLit'),

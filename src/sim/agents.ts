@@ -14,6 +14,10 @@ import { Calamity } from './calamity';
 import { Settings } from './settings';
 import { Traffic, CAR_LEN } from './traffic';
 import { Rep } from './reputation';
+import { Health } from './health';
+import { Edu, ESSENTIAL } from './education';
+import { Supply } from './supply';
+import { Power } from './power';
 /* ============================================================
    PixelVille — citizens, jobs, daily schedules, movement.
    People live in residential buildings, get jobs at workplaces,
@@ -333,10 +337,12 @@ export const Sim: any = {
       wageMult: 1, jobDays: 0,
       heldUntil: 0, lastIllegalDay: -99,
       mood: 58 + Math.random() * 22, // 0-100: feelings drive votes, riots & outings
+      hp: 100, cond: null, // V2: health (src/sim/health.ts)
       x: 0, y: 0,
     };
     home.residents.push(p); this.people.push(p);
     Mind.init(p); // a personality, and an empty head to fill
+    Edu.init(p);  // V2: schooling (src/sim/education.ts)
     return p;
   },
 
@@ -363,8 +369,9 @@ export const Sim: any = {
     for (const p of seekers) {
       let best = null, bd = 1e9;
       for (const w of this.workplaces()) {
-        if (w.workers.length >= w.jobs) continue;
-        const d = Math.abs(w.x - p.home.x) + Math.abs(w.y - p.home.y);
+        if (!Edu.canTake(p, w)) continue; // V2: graduate posts need a degree
+        let d = Math.abs(w.x - p.home.x) + Math.abs(w.y - p.home.y);
+        if ((p.edu || 0) >= 2 && Edu.open(w) > 0) d -= 40; // graduates go where they're needed
         if (d < bd) { bd = d; best = w; }
       }
       if (best) { p.work = best; best.workers.push(p); }
@@ -389,6 +396,7 @@ export const Sim: any = {
   planDay(p) {
     p.events = [];
     if (p.kind !== 'kid' && p.heldUntil > this.day) return; // behind bars — no plans today
+    if (Health.resting(p)) { Health.sickPlan(p); return; }   // V2: too unwell for work or school
     const wkend = this.isWeekend();
     const jit = () => (Math.random() * 40 - 20) | 0;
     const add = (t, dest, until) => {
@@ -422,8 +430,13 @@ export const Sim: any = {
       }
     } else {
       const wd = p.work ? CAT[p.work.type] : null;
-      const worksToday = p.work && (!wkend || wd.wkd);
-      if (worksToday) {
+      let worksToday = p.work && (!wkend || wd.wkd);
+      // V2: an enrolled worker takes some weekdays off to study at the college
+      const college = World.buildings.find(b => CAT[b.type].college && b.connected && !b.construction && !b.ruined);
+      if (worksToday && !wkend && college && Edu.studyDay(p)) {
+        worksToday = false;
+        add(530 + jit(), college, 900 + jit());
+      } else if (worksToday) {
         add(wd.hours.s - 40 + jit(), p.work, wd.hours.e + jit());
         // lunch break at a nearby café or restaurant
         const food = World.buildings.filter(v =>
@@ -433,9 +446,8 @@ export const Sim: any = {
           const lt = wd.hours.s + 230 + jit();
           p.events.push({ t: lt, dest: food[(Math.random() * food.length) | 0], until: lt + 40, back: 'work' });
         }
-      } else {
+      } else if (!p.work) {
         // college for the jobless on weekdays
-        const college = World.buildings.find(b => CAT[b.type].college && b.connected);
         if (!wkend && college && Math.random() < 0.65) add(530 + jit(), college, 900 + jit());
       }
       // errand: someone from the house goes shopping
@@ -507,7 +519,8 @@ export const Sim: any = {
     if (go && go.day === this.day && CAT[go.b.type].visit === kind &&
         go.b.connected && Math.random() < 0.5 && World.buildings.includes(go.b))
       return go.b;
-    let opts = World.buildings.filter(b => CAT[b.type].visit === kind && b.connected && !b.construction && !b.ruined && b !== p.home);
+    let opts = World.buildings.filter(b => CAT[b.type].visit === kind && b.connected && !b.construction && !b.ruined && b !== p.home &&
+      !Power.closed(b)); // V2: a shop in a blacked-out district shuts its doors
     if (!preferTypes && kind === 'leisure' && p.home.funds < 30) preferTypes = ['park', 'playground', 'library', 'temple']; // broke week: free fun
     if (preferTypes) {
       const pref = opts.filter(b => preferTypes.includes(b.type));
@@ -560,12 +573,13 @@ export const Sim: any = {
     // construction sites make progress — but the village shares one crew of
     // builders, so many simultaneous projects all move more slowly
     const gm = dtSim * MIN_PER_SEC;
-    const sites = World.buildings.filter(b => b.construction > 0).length;
+    // V2: a site waiting for materials stands idle, and its builders help elsewhere
+    const sites = World.buildings.filter(b => b.construction > 0 && !b.stalled).length;
     const builders = 3 + Math.floor(this.people.filter(p => p.kind !== 'kid').length / 8);
     const crewRate = sites > 0 ? Math.min(1, builders / sites) : 1;
     for (const b of World.buildings) {
       if (b.construction > 0) {
-        b.construction -= gm * crewRate;
+        b.construction -= Supply.build(b, gm * crewRate); // V2: building eats materials (src/sim/supply.ts)
         if (b.construction <= 0) {
           b.construction = 0; this.completed.push(b); World.dirty = true;
           Tasks.done('b' + b.id, true, `Build the ${CAT[b.type].name}`);
@@ -658,7 +672,8 @@ export const Sim: any = {
         p.businessKind = style.kinds ? style.kinds[(Math.random() * style.kinds.length) | 0] : null;
         p.savings = 5 + Math.random() * 15;
         p.school = null;
-        say(`🎓 ${this.fullName(p)} turned ${AGE_ADULT} and is looking for work${p.aspiration === 'business' ? ' — and dreams of a business' : ''}`);
+        Edu.comeOfAge(p); // V2: the school leaving certificate goes to those who went
+        say(`🎓 ${this.fullName(p)} turned ${AGE_ADULT}${p.edu ? ', certificate in hand,' : ''} and is looking for work${p.aspiration === 'business' ? ' — and dreams of a business' : ''}`);
         this.assignJobs();
       }
 
@@ -670,12 +685,12 @@ export const Sim: any = {
         this.assignJobs();
       }
 
-      // old age claims its own
-      if (p.age > AGE_FRAIL && Math.random() < (p.age - AGE_FRAIL) * 0.013) toRemove.push(p);
+      // old age claims its own (V2: sooner for the frail, later for the hale)
+      if (p.age > AGE_FRAIL && Math.random() < (p.age - AGE_FRAIL) * 0.013 * Health.frailty(p)) toRemove.push(p);
     }
 
     for (const p of toRemove) {
-      say(`🕊️ ${this.fullName(p)} passed away peacefully at ${p.age} — the village mourns`);
+      say(`🕊️ ${this.fullName(p)} passed away peacefully${p.ward ? ' in hospital' : ''} at ${p.age} — the village mourns`);
       for (const r of p.home.residents) if (r !== p) {
         r.mood = Math.max(5, (r.mood === undefined ? 60 : r.mood) - 18);
         Mind.remember(r, 'grief', `said goodbye to ${p.name}`, -2);
@@ -911,10 +926,45 @@ export const Sim: any = {
     this.tickWellbeing();
     this.tickStocks();
     this.tickPioneers();
+    this.staffEssentials(); // V2: the hospital and the power plant hire first
+    Health.daily();  // V2: illness, flu waves, health drifting back
+    Edu.daily();     // V2: the ambitious enrol, graduates find graduate posts
+    Power.daily();   // V2: the grid's bill and its record
+    Supply.daily();  // V2: the market report, import allowances
     {
       Mind.tickCareers();                             // the ambitious hunt better jobs
       for (const b of World.buildings) if (b.residents?.length > 1) Rep.household(b); // V2: the day's news over dinner
       for (const p of this.people) Mind.reflect(p);   // and everyone sleeps on the day
+    }
+  },
+
+  /* ---------- V2: essential services hire first ----------
+     In a town with more jobs than hands, everyone takes the nearest post and
+     the hospital or the power plant can stand empty. Once a day each one that
+     is badly short of staff takes on a couple of people from ordinary
+     workplaces (the better pay draws them), graduates first for its
+     graduate posts. */
+  staffEssentials() {
+    for (const w of this.workplaces()) {
+      if (!ESSENTIAL.includes(w.type) || w.workers.length >= Math.ceil(w.jobs * 0.6)) continue;
+      for (let n = 0; n < 2 && w.workers.length < w.jobs; n++) {
+        let best = null, bs = -1e9;
+        for (const p of this.people) {
+          if (p.kind === 'kid' || !p.work || p.work === w || p.ownsBusiness || ESSENTIAL.includes(p.work.type)) continue;
+          if (!Edu.canTake(p, w)) continue;
+          const d = Math.abs(w.x - p.home.x) + Math.abs(w.y - p.home.y);
+          const s = -d + (Edu.open(w) > 0 && (p.edu || 0) >= 2 ? 60 : 0) + p.work.workers.length; // from the best-staffed places first
+          if (s > bs) { bs = s; best = p; }
+        }
+        if (!best) break;
+        const old = best.work;
+        old.workers = old.workers.filter(q => q !== best);
+        best.work = w; w.workers.push(best);
+        best.wageMult = 1; best.jobDays = 0;
+        if (best.state === 'in' && best.at === best.home) this.planDay(best); // today's shift is at the new place
+        Mind.remember(best, 'career', `was taken on at the ${CAT[w.type].name.toLowerCase()}`, 1, w.id);
+        if (n === 0 && Math.random() < 0.5) Life.say(`📣 The ${CAT[w.type].name} took on ${this.fullName(best)} from the ${CAT[old.type].name} — it was badly short of staff`);
+      }
     }
   },
 
@@ -1050,7 +1100,8 @@ export const Sim: any = {
     let shock = null;
     for (const s of this.stocks) {
       s.drift = s.drift * 0.8 + (Math.random() - 0.5) * 0.05;
-      let change = s.drift + Math.min(0.02, health[s.sym] * 0.002) + (Math.random() - 0.5) * 0.09;
+      let change = s.drift + Math.min(0.02, health[s.sym] * 0.002) + (Math.random() - 0.5) * 0.09 +
+        Supply.marketMood(s.sym); // V2: plenty lifts the tickers, shortages sink them
       if (Math.random() < 0.012) { change += Math.random() < 0.5 ? -0.3 : 0.35; shock = s; }
       s.prev = s.price;
       s.price = Math.max(2, s.price * (1 + change));
@@ -1380,6 +1431,8 @@ export const Sim: any = {
     const s = this.stats();
     const vacantHomes = World.buildings.filter(b => CAT[b.type].res && !b.construction && !b.ruined &&
       b.connected && b.residents.length === 0);
+    // V2: graduate posts nobody here can fill draw a skilled family in
+    if (Edu.migrate(vacantHomes)) return;
     if (vacantHomes.length && s.jobs - s.employed > 2 && Math.random() < 0.5 * paceMult) {
       const home = vacantHomes[(Math.random() * vacantHomes.length) | 0];
       const fam = this.spawnFamily(home);
@@ -1479,18 +1532,21 @@ export const Sim: any = {
               p.mood = Math.min(98, (p.mood === undefined ? 60 : p.mood) + 4);
               p.funDay = this.day;
             }
-            const price = PRICES[dest.type] || 0; // money changes hands
+            // V2: a shop sells from its shelves — scarce stock costs more, empty shelves sell nothing
+            const mult = Supply.sale(dest, p);
+            const price = mult === null ? 0 : Math.round((PRICES[dest.type] || 0) * mult); // money changes hands
             if (price && p.home.funds > price) {
               p.home.funds -= price;
               const owner = dest.ownerId ? World.buildings.find(o => o.id === dest.ownerId) : null;
               if (owner && owner.residents.length) { owner.funds += price * 0.7; dest.funds += price * 0.3; }
               else dest.funds += price;
             }
+            if (dest.type === 'pharmacy') Health.medicine(p);
             if (dest.type === 'casino' && p.kind !== 'kid') this.gamble(p, dest);
           }
           if (dest === p.work && p.paidDay !== this.day) { // payday
             p.paidDay = this.day;
-            let wage = (WAGES[dest.type] || 15) * (p.wageMult || 1);
+            let wage = (WAGES[dest.type] || 15) * (p.wageMult || 1) * Edu.payMult(p, dest); // V2: graduate posts pay more
             // parched fields yield half a day's pay
             if (dest.type === 'farm' && Calamity.droughtLevel >= 0.6) wage *= 0.5;
             // Each adult keeps a small personal fund for their own ambitions;
@@ -1508,6 +1564,8 @@ export const Sim: any = {
               Mind.remember(p, 'career', `earned ${rank}`, 1, dest.id);
             }
           }
+          Edu.arrive(p, dest);    // V2: a day at school or at the college
+          Health.arrive(p, dest); // V2: walked to the hospital to be seen
         } else {
           if (t.car) t.car.free = true;
           p.carHeld = null;
@@ -1746,6 +1804,9 @@ export const Sim: any = {
       mo: Math.round(p.mood === undefined ? 60 : p.mood), ob: p.ownsBusiness ? 1 : 0,
       ln: p.loan || 0, pf: p.portfolio || 0, pg: p.pregnantUntil || 0,
       mind: (p.mind) ? Mind.pack(p) : 0,
+      // V2: health and schooling
+      ...Health.pack(p),
+      ed: p.edu || 0, sd: p.schoolDays || 0, cl: Math.round((p.collegeDays || 0) * 10) / 10, en: p.enrolled ? 1 : 0,
     }));
   },
   restorePeople(arr, nextPid) {
@@ -1766,8 +1827,11 @@ export const Sim: any = {
         heldUntil: s.hu || 0, lastIllegalDay: -99,
         mood: s.mo === undefined ? 60 : s.mo, ownsBusiness: !!s.ob,
         loan: s.ln || null, portfolio: s.pf || undefined, pregnantUntil: s.pg || 0,
+        edu: s.ed, schoolDays: s.sd || 0, collegeDays: s.cl || 0, enrolled: !!s.en,
         x: 0, y: 0,
       };
+      Health.unpack(p, s);
+      if (p.edu === undefined) Edu.init(p); // saves from before 4c: seeded schooling
       home.residents.push(p);
       const work = byId.get(s.w);
       if (work && (CAT[work.type].jobs || 0) > 0) { p.work = work; work.workers.push(p); }
@@ -1783,6 +1847,7 @@ export const Sim: any = {
     const ids = new Set(this.people.map(p => p.id));
     for (const p of this.people) if (p.partnerId && !ids.has(p.partnerId)) p.partnerId = null;
     this.assignJobs(); this.assignSchools();
+    Health.afterLoad(); // patients go back onto their ward
     for (const p of this.people) this.planDay(p);
     this.firstFamilyDone = this.people.length > 0; // a loaded village was founded long ago
   },

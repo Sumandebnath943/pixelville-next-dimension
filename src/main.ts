@@ -44,6 +44,11 @@ import { contacts } from './ai/memory';
 import { jobName } from './player/indoors';
 import { Dialogue } from './ui/dialogue';
 import { Rep } from './sim/reputation';
+import { Health } from './sim/health';
+import { Power } from './sim/power';
+import { Supply, GOODS } from './sim/supply';
+import { Edu } from './sim/education';
+import { syncPowerMap } from './render/powermap';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -59,6 +64,9 @@ stage.onResize = (w, h) => terrain.water.reflection.setSize(w, h);
 stage.resize();
 const buildings = new BuildingLayer(stage.scene);
 const actors = new Actors(stage.scene, buildings);
+// V2 (Milestone 4): street lamps in a blacked-out district stay dark
+stage.lampLit = (x, z) => !Power.tileDark(Math.floor(x / TM), Math.floor(z / TM));
+$('alert-pill').addEventListener('click', () => panels.showMayor());
 const founder = new Founder(stage.scene, buildings);
 const planner = new Planner(stage.scene, canvas, stage.camera, buildings, actors);
 Game.founderHooks = {
@@ -166,6 +174,7 @@ function callVillager(p: any): void {
   if (!Sim.people.includes(p)) return;
   phone.close();
   if (Sim.clock < 390 || Sim.clock >= 1380) { hud.toast(`📞 No answer — ${p.name} must be asleep`, undefined, true); return; }
+  if (p.state === 'hurt' || p.state === 'amb') { hud.toast(`📞 No answer — ${p.name} was hurt and is waiting for the ambulance`, undefined, true); return; }
   dialogue.start(p, { phone: true });
 }
 /** route to wherever they are now: inside a building, or out walking */
@@ -585,7 +594,7 @@ function frame(now: number): void {
       goOut();
     }
     const look = free && !phone.open ? Input.look(Settings.get('mouseSens') || 1, !!Settings.get('invertY')) : { dx: 0, dy: 0 };
-    indoors.update(dt, free && !phone.open ? Input.move() : { x: 0, y: 0 }, look, Input.running(), 1 - stage.night, lightsOn.value);
+    indoors.update(dt, free && !phone.open ? Input.move() : { x: 0, y: 0 }, look, Input.running(), 1 - stage.night, lightsOn.value, Power.isDark(indoors.b) ? 0 : 1);
     if (free) indoorInteractions();
     else $('prompt').style.display = 'none';
   } else if (street && free) {
@@ -626,6 +635,7 @@ function frame(now: number): void {
   document.body.classList.toggle('fp', street && founder.firstPerson && !founder.driving);
 
   const range = planner.active ? Math.min(700, planner.dist * 1.6 + 120) : 240;
+  syncPowerMap(Game.mapVersion); // V2: blacked-out districts go dark in every window, sign and lantern
   stage.update(dt, focus, terrain.lampSpots);
   if (!inside) {
     terrain.frame(stage.night, stage.camera.position);
@@ -677,6 +687,11 @@ function frame(now: number): void {
     repPill.classList.toggle('good', town.score >= 1);
     repPill.classList.toggle('bad', town.score <= -1);
     repPill.title = `What the village thinks of you: ${town.label.toLowerCase()} · ${Math.round(town.known * 100)}% of villagers have an opinion of you`;
+    // V2 (Milestone 4): trouble in the village, in a line (your own street first)
+    const alert = villageAlert(fx, fz);
+    document.body.classList.toggle('alert', !!alert.text);
+    if ($('alert-text').textContent !== alert.text) $('alert-text').textContent = alert.text;
+    $('alert-pill').classList.toggle('bad', alert.bad);
     // the wanted level: lit stars, flashing while a crew has eyes on the Founder, and how close they are to losing them
     document.body.classList.toggle('wanted', wanted.stars > 0);
     if (wanted.stars > 0) {
@@ -705,6 +720,18 @@ function frame(now: number): void {
 
   Input.endFrame();
   requestAnimationFrame(frame);
+}
+
+/** V2 (Milestone 4): the most pressing trouble in the village, for the street HUD */
+function villageAlert(x: number, z: number): { text: string; bad: boolean } {
+  const here = Power.districtOf(Math.floor(x / TM), Math.floor(z / TM));
+  if (Power.dark[here]) return { text: Power.faults.has(here) ? '⚡ Power cut here' : '⚡ Rolling blackout here', bad: true };
+  if (Power.faults.size) return { text: `⚡ Power cut · ${Power.where([...Power.faults.keys()][0])}`, bad: false };
+  if (Power.overloaded) return { text: '⚡ Rolling blackouts', bad: false };
+  const sr = Supply.report();
+  if (sr.wanting.length) return { text: `${sr.wanting.map((g) => GOODS[g].emoji).join('')} ${GOODS[sr.wanting[0]].name} short${sr.stalled ? ` · ${sr.stalled} site${sr.stalled > 1 ? 's' : ''} waiting` : ''}`, bad: false };
+  if (Health.wave) return { text: '🤧 Flu season', bad: false };
+  return { text: '', bad: false };
 }
 
 /* idle progress while the tab is hidden (V1 behaviour) */
@@ -756,4 +783,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu };

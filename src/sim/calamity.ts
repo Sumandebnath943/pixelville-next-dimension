@@ -8,6 +8,7 @@ import { Sim } from './agents';
 import { Weather } from './weather';
 import { Tasks } from './tasks';
 import { CAT } from './catalog';
+import { Health } from './health';
 /* ============================================================
    PixelVille — natural calamities.
    Very rare, very dramatic, always survived together: droughts
@@ -255,6 +256,7 @@ export const Calamity: any = {
       const b = cands[(Math.random() * cands.length) | 0];
       if (b.quakeDamage || b.ruined) continue;
       if (Math.random() < 0.35) {
+        Health.casualties(b, 0.5, [30, 75], 'when the earthquake brought the building down'); // V2
         b.ruined = true; b.ruinedAt = Sim.day;
         Sim.onBuildingRemoved(b); b.jobs = 0; collapsed++;
       } else {
@@ -323,6 +325,7 @@ export const Calamity: any = {
     const b = World.buildingAt(tx, ty);
     if (b && !b.ruined && !b.construction && Math.random() < dtSim * 0.8) {
       if (Math.random() < 0.4) {
+        Health.casualties(b, 0.45, [28, 70], 'when the tornado tore the building apart'); // V2
         b.ruined = true; b.ruinedAt = Sim.day;
         Sim.onBuildingRemoved(b); b.jobs = 0; World.dirty = true;
         this.say(`💥 The tornado tore the ${CAT[b.type].name} apart!`);

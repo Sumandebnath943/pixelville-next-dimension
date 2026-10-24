@@ -6,6 +6,10 @@ import { CAT } from './catalog';
 import { STARTUP_COSTS, Sim } from './agents';
 import { Tasks } from './tasks';
 import { Snd, T, family } from './core';
+import { Health } from './health';
+import { Power } from './power';
+import { Supply } from './supply';
+import { Edu } from './education';
 /* ============================================================
    PixelVille — village government, elections & community spirit.
    Adults vote once every 28 in-game days. Their vote is based on
@@ -211,6 +215,11 @@ export const Gov: any = {
       if (Life.crimes >= 2 && !active('police')) score -= 10;
     }
     if (home && (home.ruined || home.fire)) score -= 24;
+    // V2: the lights, the ward, the shelves
+    if (home && Power.isDark(home)) score -= 6;
+    if (Power.recent >= 2) score -= Math.min(8, Power.recent * 2);
+    if (!active('hospital') && home && home.residents.some(r => r.cond && r.cond.sev >= 35)) score -= 8;
+    if (Supply.wanting.has('food')) score -= 5;
     score += ((person.mood === undefined ? 60 : person.mood) - 55) * 0.22; // feelings colour the ballot
     return civicClamp(score, 2, 98);
   },
@@ -238,6 +247,10 @@ export const Gov: any = {
     if (Life.crimes >= 2 && !this.has('police')) {
       severity += 14; issues.push('crime without police protection');
     }
+    // V2 (Milestone 4): blackouts, the sick with nowhere to go, bare shelves
+    if (Power.recent >= 2) { severity += Math.min(20, Power.recent * 6); issues.push('the blackouts'); }
+    if (!this.has('hospital') && Health.report().serious >= 2) { severity += 14; issues.push('no hospital for the sick'); }
+    if (Supply.wanting.has('food')) { severity += 12; issues.push('empty shelves'); }
     if (this.scandals >= 2) { severity += this.scandals * 8; issues.push('missing public money'); }
     if (this.leader && this.approval < 30) { severity += (30 - this.approval) * 0.55; issues.push('lost trust in town hall'); }
     for (const days of Object.values(this.unmetNeeds)) {
@@ -775,6 +788,17 @@ export const Gov: any = {
       const cap = 1 + Math.floor(pop / 90);
       if (this.hasPlanned(svc) && !underCon(svc) && this.countOf(svc) < cap && this.coverageGap(svc)) needs.push(svc);
     }
+    // V2 (Milestone 4): rolling blackouts put a power plant at the top of the pile;
+    // the sick with no ward, a hospital; graduate posts nobody can fill, a college
+    const plants = this.countOf('powerplant');
+    if (Power.overloaded && !underCon('powerplant') && plants < this.civicCap('powerplant')) needs.push('powerplant');
+    if (!this.hasPlanned('hospital') && pop >= 20 && Health.report().serious >= 2) needs.push('hospital');
+    else if (this.hasPlanned('hospital') && !underCon('hospital')) {
+      const hr = Health.report();
+      if (hr.beds && hr.ward >= hr.beds) needs.push('hospital'); // a full ward: a second hospital
+    }
+    if (pop >= 30 && !this.hasPlanned('college') && Sim.workplaces().reduce((n, w) => n + Edu.open(w), 0) >= 3) needs.push('college');
+    if (Health.wave && !this.hasPlanned('pharmacy')) needs.push('pharmacy');
     if (this.leader && !this.hasPlanned('townhall')) needs.push('townhall');
     if (kids >= 4 && !this.hasPlanned('school')) needs.push('school');
     // crowded classrooms → a second school across town
@@ -822,6 +846,15 @@ export const Gov: any = {
     // media & finance
     if (pop >= 40 && !this.hasPlanned('tvstation')) needs.push('tvstation');
     if (pop >= 78 && !this.hasPlanned('exchange')) needs.push('exchange');
+    // V2: the supply chain asks for what's going short
+    if (Supply.wanting.has('mats')) {
+      const mill = ['sawmill', 'brickworks', 'glassworks', 'steelworks'].find(k => !this.hasPlanned(k));
+      if (mill) needs.push(mill);
+    }
+    if (Supply.wanting.has('food') && !underCon('farm') && farms < this.civicCap('farm') + 1) needs.push(farms < this.civicCap('farm') ? 'farm' : 'cannery');
+    if (Supply.wanting.has('prod') && !this.hasPlanned('factory')) needs.push('factory');
+    if (Supply.wanting.has('tex') && !this.hasPlanned('textilemill')) needs.push('textilemill');
+    if (!this.hasPlanned('warehouse') && World.buildings.filter(b => b.stock >= 60 && ['farm', 'cannery', 'sawmill', 'brickworks', 'glassworks', 'steelworks', 'textilemill', 'factory'].includes(b.type)).length >= 2) needs.push('warehouse');
     // a JOBS PROGRAMME: idle hands demand industry — and always a KIND the
     // town doesn't have yet, so work & industry fills out over time
     const jobless = Math.max(0, stats.adults - stats.employed);
@@ -887,9 +920,10 @@ export const Gov: any = {
   civicCap(key) {
     const pop = Sim.people.length;
     const UNIQUE = ['townhall', 'courthouse', 'airport', 'stadium', 'amusement', 'zoo', 'grandpark',
-      'college', 'exchange', 'tvstation', 'museum', 'theater', 'powerplant', 'heliport', 'casino', 'mall'];
+      'college', 'exchange', 'tvstation', 'museum', 'theater', 'heliport', 'casino', 'mall'];
     if (UNIQUE.includes(key)) return 1;
     switch (key) {
+      case 'powerplant': return 1 + Math.floor(pop / 120); // V2: a city outgrows one plant (power.ts)
       case 'police': case 'fire': return 1 + Math.floor(pop / 90);
       case 'school': return 1 + Math.floor(pop / 80);
       case 'hospital': return 1 + Math.floor(pop / 150);

@@ -7,7 +7,8 @@
 import { CAT } from '../sim/catalog';
 import { Rep } from '../sim/reputation';
 import { TICKETS, WARES, Ware } from '../interiors/plan';
-import { buy, BagItem } from '../player/shopping';
+import { buy, listPrice, BagItem } from '../player/shopping';
+import { Supply } from '../sim/supply';
 import type { Wallet } from '../player/wallet';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -43,13 +44,17 @@ export class Counter {
       const list: Ware[] = kind === 'tickets' ? TICKETS[b.type] || [] : WARES[b.type] || [];
       const deal = Rep.price(b, 100);
       $('cu-title').textContent = kind === 'tickets' ? 'Ticket machine' : name;
+      // V2: what's on the shelves (thin shelves cost more; bare ones sell nothing)
+      const shelf = kind === 'counter' ? Supply.shelf(b) : null;
+      const stock = shelf ? ` Shelves: ${shelf.label.toLowerCase()}${shelf.mult > 1.04 ? ` (prices up ${Math.round((shelf.mult - 1) * 100)}%)` : ''}.` : '';
       $('cu-sub').textContent = kind === 'tickets' ? 'Keep the ticket in your bag for the journey.'
         : deal.refused ? `${server ? server.name : 'The staff'} won't serve you: they've heard about you.`
-          : `${server ? `${server.name} ${server.surname} is serving.` : ''}${deal.note ? ` ${deal.note[0].toUpperCase()}${deal.note.slice(1)}.` : ''} You have $${Math.floor(this.api.purse.balance)}.`;
+          : `${server ? `${server.name} ${server.surname} is serving.` : ''}${deal.note ? ` ${deal.note[0].toUpperCase()}${deal.note.slice(1)}.` : ''}${stock} You have $${Math.floor(this.api.purse.balance)}.`;
       if (!deal.refused || kind === 'tickets') {
         html += list.map((w, i) => {
-          const p = Rep.price(b, w.price);
-          const price = w.price === 0 ? 'Free' : `${p.cost < w.price ? `<s>$${w.price}</s> ` : ''}$${p.cost}`;
+          const base = listPrice(b, w, kind === 'tickets');
+          const p = Rep.price(b, base);
+          const price = w.price === 0 ? 'Free' : shelf?.empty ? 'Sold out' : `${p.cost < base ? `<s>$${base}</s> ` : ''}$${p.cost}`;
           return `<div class="save-slot"><span class="slot-name">${esc(w.name)}<small>${price}</small></span><button class="primary" data-buy="${i}">${w.price === 0 ? 'Take one' : 'Buy'}</button></div>`;
         }).join('') || '<p class="note">Nothing for sale here.</p>';
       }

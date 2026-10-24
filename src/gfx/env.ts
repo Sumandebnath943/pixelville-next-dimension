@@ -39,7 +39,19 @@ export const ENV = {
   /** traffic-wear mask: R = cleared by wheels/feet, G = piled snow (kerbs) */
   wearTex: { value: null as THREE.Texture | null },
   wearRect: { value: new THREE.Vector4(-200, -200, 1 / 400, 1 / 400) },
+  /** V2 (Milestone 4): one texel per map tile, 1 where the power is on (blackouts turn lit windows,
+      signs and lanterns off); the map is 256 tiles of 8 m. Lit everywhere until the game says otherwise. */
+  power: { value: powerTexture() as THREE.Texture },
 };
+
+function powerTexture(): THREE.DataTexture {
+  const t = new THREE.DataTexture(new Uint8Array(256 * 256).fill(255), 256, 256, THREE.RedFormat, THREE.UnsignedByteType);
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+}
 
 /** GLSL shared by every patched shader: noise, fog, wind */
 export const GLSL_COMMON = /* glsl */ `
@@ -56,6 +68,14 @@ uniform vec3 uFogAway;
 uniform vec3 uFogSun;
 uniform float uFogDensity;
 uniform float uFogHeight;
+uniform sampler2D uPower;
+
+/* 1 where the power is on (the map is 256 tiles of 8 m; off the map it's always on) */
+float pvPower(vec3 wp) {
+  vec2 uv = wp.xz / 2048.0;
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 1.0;
+  return texture2D(uPower, uv).r;
+}
 
 float pvHash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -113,4 +133,5 @@ export function bindEnv(u: Record<string, THREE.IUniform>): void {
   u.uFogSun = ENV.fogSun;
   u.uFogDensity = ENV.fogDensity;
   u.uFogHeight = ENV.fogHeight;
+  u.uPower = ENV.power;
 }
