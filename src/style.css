@@ -415,6 +415,34 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
 #curtain-text { margin: 0; max-width: min(520px, 88vw); text-align: center; color: var(--ink-2); line-height: 1.55; font-size: 14px; }
 #curtain-clock { font-style: normal; font-size: 22px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
 
+/* trips off the map (Milestone 5): the journey, the city, what changed while you were away */
+#travel {
+  position: fixed; inset: 0; z-index: 45; display: none; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 40%, rgba(24, 32, 46, 0.86) 0%, rgba(6, 8, 12, 0.96) 75%); opacity: 0; transition: opacity 0.5s ease;
+}
+#travel.on { display: flex; }
+#travel.shown { opacity: 1; }
+#tv-card { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 22px 26px; border-radius: 18px; }
+.tv-over { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+.tv-title { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
+.tv-title .emo { font-size: 30px; }
+.tv-route { display: flex; align-items: center; gap: 12px; margin: 26px 0 14px; font-size: 13px; color: var(--ink-2); }
+.tv-line { position: relative; flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); }
+.tv-line em { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 2px; background: var(--accent); }
+.tv-line b { position: absolute; top: 50%; left: 0; transform: translate(-50%, -54%); font-size: 22px; font-weight: 400; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
+.tv-clock { display: block; font-style: normal; font-size: 22px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; text-align: center; margin: 6px 0 10px; }
+.tv-event { min-height: 3em; margin: 0; color: var(--ink-2); line-height: 1.55; font-size: 14px; text-align: center; opacity: 0; transition: opacity 0.8s ease; }
+.tv-event.in { opacity: 1; }
+.tv-blurb { color: var(--ink-2); line-height: 1.55; font-size: 14px; margin: 8px 0 12px; }
+.tv-notes p, .tv-news p { margin: 6px 0; line-height: 1.5; font-size: 13.5px; }
+.tv-notes { border-left: 2px solid var(--accent); padding-left: 12px; margin: 10px 0 14px; }
+.tv-news { margin: 12px 0; font-size: 13px; color: var(--ink-2); }
+.tv-news b { display: block; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+.tv-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.tv-actions button { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 14px; text-align: left; }
+.tv-actions button small { color: var(--ink-3); font-size: 12px; }
+.tv-actions button.primary small { color: inherit; opacity: 0.8; }
+
 /* ---------- PVTV and the map ---------- */
 #sc-panel { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 8px; align-items: flex-end; }
 #tv { width: 252px; overflow: hidden; }

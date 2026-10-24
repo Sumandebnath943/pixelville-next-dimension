@@ -15,6 +15,7 @@ import { Traffic } from './traffic';
 import { Rep } from './reputation';
 import { Health } from './health';
 import { Supply } from './supply';
+import { Gateways } from './gateways';
 /* ============================================================
    PixelVille — ambient life & the crime and justice system.
    Hikers trek up mountains (torches at night), birds cross the
@@ -35,6 +36,7 @@ export const Life: any = {
   police: [],           // {path, prog, x, y, dirx, phase, station}
   // V2: ambulances (health.ts), delivery trucks (supply.ts), power repair crews (power.ts)
   ambulances: [], trucks: [], crews: [],
+  intercity: null,      // V2: the Intercity Express on the national line (gateways.ts)
   arrests: 0, crimes: 0,
   cooldown: 240,        // game-min until first possible crime
   onEvent: null,        // toast hook
@@ -43,7 +45,7 @@ export const Life: any = {
     this.hikers = []; this.birds = []; this.ducks = []; this.butterflies = [];
     this.tourists = []; this.rockets = []; this.sparks = [];
     this.crime = null; this.police = []; this.arrests = 0; this.crimes = 0; this.cooldown = 240;
-    this.ambulances = []; this.trucks = []; this.crews = [];
+    this.ambulances = []; this.trucks = []; this.crews = []; this.intercity = null;
     this.fireTrucks = []; this.firesRecent = 0; this.buckets = [];
     this.disaster = null; this.collapseCd = 1440;
     this.dispute = null; this.crash = null; this.incidentCd = 120; this.gawkers = [];
@@ -456,6 +458,7 @@ export const Life: any = {
       }
     }
     for (const cab of this.taxis) {
+      if (cab.hired) continue; // V2: hired by the Founder (src/player/transit.ts drives it)
       if (cab.pause > 0) { cab.pause -= gm; cab.v = 0; continue; }
       // V2: cabs drive in the traffic (queues, junctions, crossings, gates)
       cab.prog += Traffic.advance(cab, cab, cab.route, cab.prog, cab.dir, 1.6, dt) * cab.dir; // ~46 km/h
@@ -762,8 +765,8 @@ export const Life: any = {
         if (this.ferry.pause > 0) this.ferry.pause -= gm;
         else {
           this.ferry.prog += 1.0 * dt * this.ferry.dir; // V2: ferry pace
-          if (this.ferry.prog >= this.ferry.route.length - 1) { this.ferry.prog = this.ferry.route.length - 1; this.ferry.dir = -1; this.ferry.pause = 14; }
-          if (this.ferry.prog <= 0) { this.ferry.prog = 0; this.ferry.dir = 1; this.ferry.pause = 14; }
+          if (this.ferry.prog >= this.ferry.route.length - 1) { this.ferry.prog = this.ferry.route.length - 1; this.ferry.dir = -1; this.ferry.pause = 14; this.ferry.at = docks[1]; Gateways.docked(docks[1]); }
+          if (this.ferry.prog <= 0) { this.ferry.prog = 0; this.ferry.dir = 1; this.ferry.pause = 14; this.ferry.at = docks[0]; Gateways.docked(docks[0]); }
           this.followPath(this.ferry, this.ferry.route, this.ferry.prog, 0, this.ferry.dir);
         }
       }
@@ -993,7 +996,10 @@ export const Life: any = {
         if (pl.x < pl.rx0 + 20) pl.alt = Math.max(0, pl.alt - 20 * dtReal * (pl.v / 60));
         else if (pl.alt > 0) pl.alt = Math.max(0, pl.alt - 30 * dtReal);
         if (pl.alt <= 0) pl.v = Math.max(0, pl.v - 55 * dtReal);
-        if (pl.v <= 1 || pl.x > pl.stop + 60) { pl.done = true; airport.visitors += 3 + (Math.random() * 4 | 0); }
+        if (pl.v <= 1 || pl.x > pl.stop + 60) {
+          pl.done = true; airport.visitors += 3 + (Math.random() * 4 | 0);
+          if (!pl.founder) Gateways.landed(airport); // V2: visitors come off the plane and see the town
+        }
       }
     }
     this.planes = this.planes.filter(p => !p.done);
@@ -1796,7 +1802,7 @@ export const Life: any = {
      A train dwelling at a station platform doesn't keep distant gates
      down for the whole stop — only one actually ON the crossing does. */
   trainNearTile(x, y, r) {
-    for (const tr of this.trains) {
+    for (const tr of this.intercity ? this.trains.concat([this.intercity]) : this.trains) { // V2: the intercity holds the gates too
       if (tr.hidden) continue; // stabled services don't hold gates
       const d = Math.abs(tr.x / T - x) + Math.abs(tr.y / T - y);
       if (d >= r) continue;

@@ -54,6 +54,7 @@
       <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
       <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="1.5" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" /></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6" /><path d="M15 15l5 5" /></symbol>
+      <symbol id="i-bus" viewBox="0 0 24 24"><path d="M6 17V5.5C6 4.7 6.7 4 7.5 4h9c.8 0 1.5.7 1.5 1.5V17M6 17h12M6 11h12M6 17v2M18 17v2M9 7.5h6" /><circle cx="8.8" cy="14" r="0.9" /><circle cx="15.2" cy="14" r="0.9" /></symbol>
       <symbol id="i-fuel" viewBox="0 0 24 24"><path d="M5 20V5.5C5 4.7 5.7 4 6.5 4h6c.8 0 1.5.7 1.5 1.5V20M4 20h11M5 10h9M14 9.5l3 1.5v6.5c0 .8.6 1.5 1.5 1.5s1.5-.7 1.5-1.5V8l-2.5-2.5" /></symbol>
       <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 4.5a4.5 4.5 0 0 0-4.3 5.8L4.5 16a2.1 2.1 0 0 0 3 3l5.7-5.7a4.5 4.5 0 0 0 5.8-4.3l-2.7 2.7-2.6-.7-.7-2.6z" /></symbol>
     </svg>
@@ -230,6 +231,12 @@
         <div id="sr-trade"></div>
       </div></div>
 
+      <div id="departui" class="modal"><div class="modal-card glass">
+        <header class="m-head"><h1 id="dp-title">Departures</h1><button class="ib" data-close="departui" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <p class="note" id="dp-sub"></p>
+        <div id="dp-body"></div>
+      </div></div>
+
       <div id="counterui" class="modal"><div class="modal-card glass">
         <header class="m-head"><h1 id="cu-title">Counter</h1><button class="ib" data-close="counterui" title="Close"><svg><use href="#i-close" /></svg></button></header>
         <p class="note" id="cu-sub"></p>
@@ -290,6 +297,7 @@
       <p id="curtain-text"></p>
       <i id="curtain-clock"></i>
     </div>
+    <div id="travel"><div id="tv-card" class="glass"></div></div>
     <div id="loading">
       <div class="title"><b>PixelVille</b><span>Next Dimension</span></div>
       <p id="loading-text">Raising the village…</p>

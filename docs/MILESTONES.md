@@ -264,14 +264,43 @@ The vertical slice is still at `slice.html` (the "look lab"):
 
 ---
 
-## Milestone 5 — Going places
+## Milestone 5 — Going places (done 2026-10-25: 5a–5d below)
 
 - **Ride everything:** board buses at shelters, trains at stations, ferries at docks, taxis via phone or rank, helicopters at heliports. Tickets from the wallet.
 - **Off-map world:** highways, rail exits, sea lanes and the airport lead to named destination cities (travel cinematic + time skip + small events).
 - **Flights:** buy a ticket, check in at the terminal, board, fly, arrive.
 - Tourists, migrants and trade flowing through the gateways.
 
-**Done when:** you can take the bus to the station, ride the express to the edge of the map, fly out of the airport and come back to find the village has moved on without you.
+**Done when:** you can take the bus to the station, ride the express to the edge of the map, fly out of the airport and come back to find the village has moved on without you. *(Checked in the test town: the bus, waited for at a stop, pulls in and takes the Founder aboard for $2; a new station brought the national line, and the Intercity Express to Northbridge stood at the platform, ran out to the map's west edge with the camera aboard, and the journey screen passed the hours; the city screen, the trip home, and "while you were away" with the news missed. A flight from a new airport: check-in for the 12:30, a wait at the gate, the take-off followed out over the fields. Covered by `tests/travel.test.ts`.)*
+
+### 5a · Riding in town
+- **F at a stop, station, dock, taxi rank or heliport** opens a departures board (`src/ui/departures.ts`): what leaves from here, the fare (or "your ticket", "your pass"), and the next departure. From inside a terminal, the ticket office offers the same board ("Check in for a flight" at the airport), and you step out to the platform.
+- **Buses, trains and the ferry** (`src/player/transit.ts`): you wait at the kerb (the bus doesn't stop short for you) until the village's own vehicle pulls in and stops, then you're aboard. The fare goes to the stop, station or dock, or a ticket from the bag is punched: a single, a day return or a week rover from the station's machine, a ferry ticket from the dock's. The camera rides along (drag to look around, the wheel to pull back). At each stop F gets you off, or it's automatic at the stop you chose, or at the one nearest your GPS destination. Trains go to the station you picked (locals call everywhere, the express at the ends).
+- **Cabs**: call one from the phone's Ride app or take one at the rank. A real cab from the nearest rank drives to you through the traffic, waits ("F get in the cab to …"), takes you to the GPS destination (no destination: the Map opens to pick one), and you pay the meter ($3 plus a little a tile) to the rank. Then it goes back to work.
+- **The sightseeing flight** from a heliport ($60, or the ticket from M3): up to 75 m, a wide circle round the village with the view swinging to the town centre, and back down to the pad.
+- **The phone's Ride app**: call a cab, the timetables (the bus line, the village trains, the Intercity Express, the ferry, flights, cabs), and every city with how to get there from this village, plus a button that routes the GPS to the right gateway.
+
+### 5b · The off-map world
+- **Six cities** (`src/sim/gateways.ts`), each with its own blurb, sights and souvenir: Westmere (down the west highway, or by intercity), Northbridge (up the north highway, or by intercity), Avalon City the capital (intercity, flights, air taxi), Harbourton the port (intercity or by sea), Saltmarsh Isle (by sea) and Solano, a sunny resort (flights). Each way has a journey time and a fare.
+- **The national railway**: when the village has a train station, a branch line is laid from it to the nearest map edge (west, north or east), the rails like the government builder's. The **Intercity Express** sets off for the village every three hours (07:00–22:00), runs in from the edge, stands at the platform for fourteen minutes, and runs back out; the departures board and the Ride app show when it leaves. It holds the level crossings like any train, and it's drawn in its own livery.
+- **A trip** (`src/player/travel.ts`): leave from a gateway, seen in the world (ride the intercity out to the edge; watch the plane take off; the steamer sails from the dock out to sea; the air taxi lifts off; or drive your own vehicle off the end of a highway, where "E drive on to Westmere" appears). Then the **journey screen** (`src/ui/travelui.ts`): a line from here to there with the vehicle moving along it, the clock racing at home (the time skip runs the real simulation), and something on the way (a job lead that pays, the papers, a delay, a view, a chat). Then the **city**: look around (two hours: a sight, sometimes an odd job), buy its souvenir (into the bag), stay the night ($30, on your way by 08:00), or head home the same way (the fare again, unless your ticket was a return; broke, you work a day for it). The way back ends in the world again: the intercity pulls in with you aboard, the plane lands, the steamer docks, the air taxi sets down, or your vehicle comes in off the highway. Last comes **while you were away**: how long you were gone, villagers gained or lost, what was finished, what's going up, and the news you missed. The village's news notes the Founder leaving and coming back.
+- **Tickets from the bag** (`src/player/tickets.ts`): the M3 machines' tickets now work. "Island day trip" is a return to Saltmarsh Isle, "Economy to the capital" a flight to Avalon City, "Weekend in the sun" a flight to Solano, "Air taxi to the city" the helicopter to Avalon City, and "Sightseeing flight" the tour.
+
+### 5c · Flights
+- At the airport (F at the door, or the check-in desk inside): flights to Avalon City and Solano, every three hours 06:30–21:30, check-in closing 20 minutes before. Checking in books the flight shown. Then wait in the terminal (E waits at the gate) until boarding, and the plane takes off from the runway with the camera following it out. Coming home, a plane comes in to land with you aboard and you step out at the terminal.
+
+### 5d · Through the gateways
+- **Visitors**: people step off the intercity (one to four on each call), the planes and the ferry, walk to the shops, sights and the hotel, spend a little more than villagers do, and walk back.
+- **Newcomers**: families who move in for the jobs come in on the intercity and walk from the station to their new door; skilled families taking graduate posts fly in when there's an airport. They remember where they came from.
+- **Trade**: imports already come in by truck off the highways and by freight on the national line (Milestone 4).
+
+### Fixed on the way
+- **Footpaths**: the pedestrian route search compared 64-bit costs with a 32-bit distance table, so any route through a mid-road tile was thrown away and villagers fell back to walking the carriageway (this predated Milestone 4). Footpaths now resolve.
+- **Vans and trucks stuck short of their stop** call the shared "nearly there" check with their own route (a cab keeps its route under another name, and the old check crashed the frame loop).
+- **"While you were away"** finds the news by when it was written (the news log keeps only its last 250 lines).
+- Covered by `tests/travel.test.ts`: the national line and the intercity's timetable, visitors spending, newcomers arriving by train, the bus (including waiting by the door without blocking it), the cab and its meter, a road trip with a souvenir, a flight with check-in, the gate, take-off and landing, and a trip ticket from the bag.
+
+**Not in 5: the bus, taxi, train and pilot shifts (driving them yourself) arrive with Milestone 6.**
 
 ---
 

@@ -19,6 +19,7 @@ import { CAT } from '../sim/catalog';
 import { InstancedPool, MAT, MeshBuilder, hex, hash2 } from './kit';
 import { Power } from '../sim/power';
 import { GOODS } from '../sim/supply';
+import { Gateways } from '../sim/gateways';
 import { HAIR, PANTS, PERSON, PROPS, SHIRT, SKIN, VEHICLES } from './models';
 import { heightAt } from './terrain';
 import type { BuildingLayer } from './buildings';
@@ -581,8 +582,8 @@ export class Actors {
       const col = Gov.campaign ? hex(Gov.campaign.candidates[cc.ci]?.color || '#4f8ede') : hex('#4f8ede');
       this.vehicle('car', x, this.groundY(x, z, true), z, sm.yaw, col);
     }
-    // trains: the consist trails behind the engine along the track
-    for (const tr of Life.trains) {
+    // trains: the consist trails behind the engine along the track (V2: and the Intercity Express on the national line)
+    for (const tr of Life.intercity ? Life.trains.concat([Life.intercity]) : Life.trains) {
       if (tr.hidden || !tr.route) continue;
       const lane = (tr.lane || 0) * PX;
       const n = (tr.cars || 3) + 1;
@@ -597,7 +598,7 @@ export class Actors {
         const onBridge = World.ground[World.idx(Math.floor(pt.x + 0.5), Math.floor(pt.y + 0.5))] === 1;
         const y = onBridge ? 0.5 : 0.38;
         const type = k === 0 ? 'loco' : tr.type === 'freight' ? 'wagon' : 'coach';
-        const paint = tr.type === 'freight' ? hex(k === 0 ? '#3a4a3a' : '#8a5a3a') : tr.type === 'express' ? hex('#c8ccd4') : tr.type === 'nightliner' ? hex('#2a3a6a') : hex('#c0392b');
+        const paint = tr.type === 'freight' ? hex(k === 0 ? '#3a4a3a' : '#8a5a3a') : tr.type === 'express' ? hex('#c8ccd4') : tr.type === 'nightliner' ? hex('#2a3a6a') : tr.type === 'intercity' ? hex(k === 0 ? '#e8e4da' : '#2a5a9a') : hex('#c0392b');
         this.vehicle(type, x, y, z, yaw, paint);
       }
     }
@@ -622,6 +623,14 @@ export class Actors {
   /* crowds: gawkers, bucket brigades, rubble-clearers, rallies, riots, queues, beach days, hikers */
   private collectCrowds(): void {
     for (const gk of Life.gawkers) this.lerpPerson(gk, 'stand', { face: { x: gk.tx * PX, z: gk.ty * PX } });
+    // V2 (Milestone 5): visitors from out of town, walking between the gateway and the sights
+    for (const v of Gateways.visitors) {
+      if (v.phase === 'stay') continue;
+      const x = v.x * PX, z = v.y * PX;
+      if (!this.near(x, z)) continue;
+      const sm = smooth(v, x, z, dirYaw(v.dirx || 0, v.diry || 0));
+      this.person({ x, y: this.groundY(x, z, false), z, yaw: sm.yaw, kind: v.kind, seed: v.seed, mode: 'walk', phase: sm.phase });
+    }
     for (const k of Life.buckets) for (const h of k.helpers) this.lerpPerson(h, 'stand', { bucket: true, face: { x: (k.b.x + k.b.w / 2) * TM, z: (k.b.y + k.b.h / 2) * TM } });
     if (Life.disaster) for (const h of Life.disaster.helpers) this.lerpPerson(h, 'stand', { face: { x: (Life.disaster.b.x + Life.disaster.b.w / 2) * TM, z: (Life.disaster.b.y + Life.disaster.b.h / 2) * TM } });
     const rally = Life.rally;

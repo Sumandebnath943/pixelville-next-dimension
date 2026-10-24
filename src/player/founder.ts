@@ -422,6 +422,36 @@ export class Founder {
     this.reportToTraffic(dt);
   }
 
+  /* ---------- V2 (Milestone 5): a passenger on the village's transport ---------- */
+  /** set while riding: the camera orbits the vehicle at `dist` metres; the body stays out of sight */
+  passenger: { dist: number } | null = null;
+  /** a frame aboard: the Founder is at (x, y, z) inside the vehicle; mouse and wheel still look around */
+  passengerAt(x: number, y: number, z: number, dist: number): void {
+    const look = Input.look(Settings.get('mouseSens') || 1, !!Settings.get('invertY'));
+    this.camYaw -= look.dx;
+    this.camPitch = Math.max(-1.25, Math.min(0.4, this.camPitch - look.dy));
+    if (!this.passenger) { this.passenger = { dist }; this.camInit = false; }
+    if (Input.wheel) this.passenger.dist = Math.max(dist * 0.5, Math.min(dist * 2.5, this.passenger.dist + Input.wheel * 1.2));
+    this.pos.set(x, y, z);
+    this.mesh.visible = false;
+    // nobody stands at the stop any more; the car the Founder came in is still parked in the road
+    const v = this.fleet.cur, c = this.car;
+    Traffic.guests = v && !this.hijacked ? [{ x: c.x * 2, y: c.z * 2, dx: Math.sin(c.yaw), dy: Math.cos(c.yaw), car: true, still: true, len: v.kind === 'moto' ? 0.3 : undefined }] : [];
+  }
+  endRide(): void {
+    this.passenger = null;
+    this.camInit = false;
+  }
+  /** on foot at (x, z) facing `yaw` (stepping out of a cab at the kerb) */
+  placeAt(x: number, z: number, yaw: number): void {
+    if (this.driving) this.exitCar();
+    const p = { x, z };
+    this.collide(p, R_BODY);
+    this.pos.set(p.x, this.groundAt(p.x, p.z), p.z);
+    this.yaw = this.camYaw = yaw;
+    this.camInit = false;
+  }
+
   /** tell the village's traffic where the Founder and their car are */
   private reportToTraffic(dt: number): void {
     const c = this.car;
@@ -682,7 +712,8 @@ export class Founder {
   applyCamera(cam: THREE.PerspectiveCamera, dt: number, night: number): void {
     const head = this.carMesh.userData.head as THREE.SpotLight;
     head.intensity = this.driving || night > 0.3 ? 30 * night : 0;
-    if (this.firstPerson && !this.driving) {
+    const aboard = this.passenger;
+    if (this.firstPerson && !this.driving && !aboard) {
       cam.position.set(this.pos.x, this.pos.y + 1.65, this.pos.z);
       const look = new THREE.Vector3(Math.sin(this.camYaw) * Math.cos(this.camPitch), Math.sin(this.camPitch), Math.cos(this.camYaw) * Math.cos(this.camPitch));
       cam.lookAt(cam.position.clone().add(look));
@@ -690,19 +721,19 @@ export class Founder {
       return;
     }
     const target = new THREE.Vector3(this.pos.x, this.pos.y + (this.driving ? 1.6 : 1.55), this.pos.z);
-    const dist = this.driving ? (this.firstPerson ? 0.01 : this.ride instanceof Moto ? 6 : 8.5) : this.camDist;
-    if (this.driving && this.firstPerson) {
+    const dist = aboard ? aboard.dist : this.driving ? (this.firstPerson ? 0.01 : this.ride instanceof Moto ? 6 : 8.5) : this.camDist;
+    if (this.driving && this.firstPerson && !aboard) {
       const c = this.car;
       cam.position.set(c.x + Math.sin(c.yaw) * 0.3 - Math.cos(c.yaw) * 0.35, c.y + 1.3, c.z + Math.cos(c.yaw) * 0.3 + Math.sin(c.yaw) * 0.35);
       const look = new THREE.Vector3(Math.sin(this.camYaw) * Math.cos(this.camPitch), Math.sin(this.camPitch), Math.cos(this.camYaw) * Math.cos(this.camPitch));
       cam.lookAt(cam.position.clone().add(look));
       return;
     }
-    const pitch = this.driving ? Math.min(this.camPitch, -0.08) : this.camPitch;
+    const pitch = this.driving || aboard ? Math.min(this.camPitch, -0.08) : this.camPitch;
     const dir = new THREE.Vector3(-Math.sin(this.camYaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(this.camYaw) * Math.cos(pitch));
     const want = target.clone().addScaledVector(dir, dist);
     if (!this.camInit) { this.camPos.copy(want); this.camInit = true; }
-    this.camPos.lerp(want, Math.min(1, dt * (this.driving ? 10 : 18)));
+    this.camPos.lerp(want, Math.min(1, dt * (this.driving || aboard ? 10 : 18)));
     // then pull it in front of whatever lies between: it snaps in at once and eases back out
     const ray = this.camPos.clone().sub(target);
     const len = ray.length();
@@ -711,7 +742,7 @@ export class Founder {
       const reach = this.camReach(target, ray, len);
       if (reach < len) this.camPos.copy(target).addScaledVector(ray, reach);
       // too close to see past the Founder: look over their shoulder instead
-      if (!this.driving && reach < 0.9) this.mesh.visible = false;
+      if (!this.driving && !aboard && reach < 0.9) this.mesh.visible = false;
     }
     cam.position.copy(this.camPos);
     cam.lookAt(target);

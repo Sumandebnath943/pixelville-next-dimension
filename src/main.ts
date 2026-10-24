@@ -49,6 +49,11 @@ import { Power } from './sim/power';
 import { Supply, GOODS } from './sim/supply';
 import { Edu } from './sim/education';
 import { syncPowerMap } from './render/powermap';
+import { Gateways, CITIES, MODE_LABEL } from './sim/gateways';
+import { Transit, placeName } from './player/transit';
+import { Travel, hhmm, hoursLabel } from './player/travel';
+import { Departures } from './ui/departures';
+import { TravelUI } from './ui/travelui';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -133,6 +138,32 @@ const showroom = new Showroom(motoring, founder.purse, () => panels.show('showro
 const wanted = new Wanted(founder, personalToast);
 const streetLife = new Street(founder, wanted, personalToast);
 
+/* ---------- Milestone 5: riding the village's transport, and trips off the map ---------- */
+const transit = new Transit(founder, gps, personalToast, () => { phone.show('map'); Input.releaseLock(); });
+const travelUI = new TravelUI();
+const travel = new Travel(founder, transit, travelUI, personalToast, {
+  hideCar: () => { founder.car.speed = 0; },
+  carBack: (x, z, yaw) => {
+    Object.assign(founder.car, { x, z, yaw, speed: 6, y: founder.groundAt(x, z), pitch: 0 });
+    founder.driving = true;
+    founder.camYaw = yaw;
+  },
+});
+const departures = new Departures(() => panels.show('departui'), () => panels.close('departui'));
+const GATEWAYS = ['busstop', 'trainstation', 'dock', 'taxistand', 'heliport', 'airport'];
+/** what leaves from `b` (from inside a terminal, you step out first) */
+function openDepartures(b: any): void {
+  if (wanted.stars > 0) { hud.toast('🚨 Not with the police after you — lose them first', undefined, true); return; }
+  if (travel.active || transit.riding()) return;
+  const list = [...transit.options(b), ...travel.options(b)].map((d) => ({ ...d, act: () => { if (indoors.active) goOut(); d.act(); } }));
+  const name = b.type === 'busstop' ? placeName(b) : `the ${CAT[b.type].name}`;
+  const sub = b.type === 'trainstation' && !Gateways.line ? 'The national railway hasn\'t reached this station.'
+    : b.type === 'airport' ? `Flights leave every three hours; check-in closes 20 minutes before. You have $${Math.floor(founder.wallet)}.`
+      : `You have $${Math.floor(founder.wallet)}.`;
+  departures.open(`Departures · ${name[0].toUpperCase()}${name.slice(1)}`, sub, list);
+  Input.releaseLock();
+}
+
 /* ---------- going inside: a fade, the room, and back out to the doorstep ---------- */
 const indoors = new Indoors(stage);
 const counter = new Counter({
@@ -145,6 +176,8 @@ const counter = new Counter({
   extra: (b) => [
     ...(errands.canScratch(b) ? [{ label: 'Scratch card · $2', run: () => errands.scratch(b) }] : []),
     ...motoring.buildingActions(b),
+    // Milestone 5: the ticket office sells the journeys too (and the airport's desk checks you in)
+    ...(GATEWAYS.includes(b.type) ? [{ label: b.type === 'airport' ? 'Check in for a flight' : 'Departures and trips', run: () => openDepartures(b) }] : []),
   ],
   about: (b) => panels.showInfo(b),
   talk: (p) => dialogue.start(p, { building: indoors.b }),
@@ -405,6 +438,11 @@ const phone = new Phone({
     job: (p) => jobName(p),
     opinion: (p) => { const o = Rep.of(p); return { label: Rep.label(o), k: o >= 1 ? 'ok' : o <= -1 ? 'bad' : '' }; },
   },
+  ride: {
+    callCab: () => { transit.callCab(); },
+    timetable: () => rideTimetable(),
+    trips: () => rideTrips(),
+  },
   bag: () => founder.bag,
   eat: (i) => {
     const it = founder.bag[i];
@@ -440,6 +478,10 @@ founder.purse.onChange = (e) => {
 actors.extra = (a) => {
   errands.draw((k, x, y, z, yaw, s, col) => a.prop(k, x, y, z, yaw, s, new THREE.Color(col)), (x, z) => founder.groundAt(x, z));
   wanted.draw(a);
+  // Milestone 5: the sightseeing helicopter, the steamer, the air taxi
+  const draw = (type: string, x: number, y: number, z: number, yaw: number, paint: string, rotor: number): void => a.vehicle(type, x, y, z, yaw, new THREE.Color(paint), { rotor });
+  transit.draw(draw);
+  travel.draw(draw);
 };
 planner.onBuilding = (b) => panels.showInfo(b);
 planner.onPerson = (p) => panels.showPerson(p);
@@ -461,6 +503,15 @@ const focus = new THREE.Vector3();
 function interactions(): void {
   const prompt = $('prompt');
   let text = '';
+  // Milestone 5: waiting for a bus, aboard one, a trip about to leave: that's all F does now
+  const tp: { text: string; act: () => void; alt?: { act: () => void } } | null = travel.interaction() || transit.interaction();
+  if (tp) {
+    prompt.innerHTML = tp.text;
+    prompt.style.display = tp.text ? 'block' : 'none';
+    if (Input.take('vehicle')) tp.act();
+    if (tp.alt && Input.take('interact')) tp.alt.act();
+    return;
+  }
   // an errand right here (a runaway dog to call, a dog to hand back) comes first
   const errand = errands.interaction();
   if (errand) {
@@ -471,6 +522,13 @@ function interactions(): void {
     const service = motoring.interaction();
     text = (service ? `${service.text} &nbsp; ` : '') + `<b>F</b> get ${founder.vehicle?.kind === 'moto' ? 'off' : 'out'}`;
     if (service && Input.take('interact')) service.act();
+    // Milestone 5: at the end of a highway, the road goes on to another town
+    const c = founder.car, edge = c.x < 16 && World.isRoad(0, Math.floor(c.z / TM)) ? 'west' : c.z < 16 && World.isRoad(Math.floor(c.x / TM), 0) ? 'north' : null;
+    const away = edge ? travel.roadTrip(edge) : null;
+    if (away && !service && !founder.hijacked && wanted.stars === 0) {
+      text = `<b>E</b> drive on to ${away.name} (${hoursLabel(away.modes.road!.hours)}) &nbsp; ${text}`;
+      if (Input.take('interact')) travel.start(away, 'road', null, edge);
+    }
     if (Input.take('vehicle')) founder.exitCar();
   } else {
     // the nearest door, villager or the Founder's car
@@ -522,6 +580,11 @@ function interactions(): void {
         text = `<b>E</b> ${d.emoji} ${d.name}${why !== 'outdoor' ? ` — ${why}` : ''}`;
         if (Input.take('interact')) panels.showInfo(b);
       }
+      // Milestone 5: what leaves from here
+      if (GATEWAYS.includes(b.type) && !b.construction && !b.ruined) {
+        text += ` &nbsp; <b>F</b> departures`;
+        if (Input.take('vehicle')) openDepartures(b);
+      }
     }
   }
   prompt.innerHTML = text;
@@ -536,6 +599,14 @@ function frame(now: number): void {
   // behind the curtain (busted, wasted) the hours pass and nothing else happens
   if (scene) {
     playScene(now);
+    Input.endFrame();
+    requestAnimationFrame(frame);
+    return;
+  }
+  // Milestone 5: away from the village (the journey, the city): the hours pass at home behind the screen
+  if (travel.overlay) {
+    travel.frame(now);
+    if (now - lastHud > 400) { lastHud = now; hud.update(); } // (the clock behind the screen keeps up)
     Input.endFrame();
     requestAnimationFrame(frame);
     return;
@@ -598,9 +669,13 @@ function frame(now: number): void {
     if (free) indoorInteractions();
     else $('prompt').style.display = 'none';
   } else if (street && free) {
-    founder.update(dt);
+    // Milestone 5: aboard a bus, a train, a cab, the helicopter, or watching a trip leave: the vehicle carries the Founder
+    if (!transit.riding()) founder.update(dt);
+    transit.update(dt);
+    travel.update();
     interactions();
   } else if (!street) $('prompt').style.display = 'none';
+  if (!street && !inside && transit.riding()) transit.update(dt); // (the ride goes on under the Planner)
   planner.update(dt);
   // errands and directions follow the Founder (in the car, from the car)
   const fx = founder.driving ? founder.car.x : founder.pos.x, fz = founder.driving ? founder.car.z : founder.pos.z;
@@ -722,6 +797,37 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 
+/** Milestone 5: the phone's timetables */
+function rideTimetable(): { title: string; sub: string }[] {
+  const out: { title: string; sub: string }[] = [];
+  for (const bus of Life.buses.slice(0, 1)) out.push({ title: '🚌 The village bus', sub: `${bus.stops.length} stops on the loop · ${Life.buses.length} bus${Life.buses.length > 1 ? 'es' : ''} running · $2` });
+  const pass = Life.trains.filter((t: any) => t.type !== 'freight');
+  if (pass.length) out.push({ title: '🚆 Trains on the village line', sub: `${pass.map((t: any) => t.type).join(', ')} · locals stop everywhere · $4 (express $6)` });
+  if (Gateways.line) out.push({ title: '🚄 Intercity Express', sub: `from the station ${Gateways.boarding() ? 'boarding now' : `next departure ${hhmm(Gateways.nextDeparture())}`} · every three hours, 07:00–22:00` });
+  if (Life.ferry) out.push({ title: '⛴️ The ferry', sub: 'between the docks, all day except in winter · $5' });
+  if (World.buildings.some((b: any) => b.type === 'airport' && !b.ruined && !b.construction)) out.push({ title: '✈️ Flights', sub: `next departure ${hhmm(travel.nextFlight())} · every three hours, 06:30–21:30` });
+  if (Life.taxis.length) out.push({ title: '🚕 Cabs', sub: `${Life.taxis.length} on the road · $3 plus a little a mile` });
+  return out;
+}
+/** Milestone 5: every city, and how (and from where) to get there */
+function rideTrips(): { title: string; sub: string; go?: () => void }[] {
+  const has = (t: string): any => World.buildings.find((b: any) => b.type === t && b.connected && !b.ruined && !b.construction);
+  return CITIES.map((c) => {
+    const ways: string[] = [];
+    let go: (() => void) | undefined;
+    for (const [m, leg] of Object.entries(c.modes)) {
+      const at = m === 'road' ? null : m === 'rail' ? Gateways.station() : m === 'sea' ? has('dock') : m === 'air' ? has('airport') : has('heliport');
+      if (m !== 'road' && !at) continue;
+      ways.push(`${MODE_LABEL[m as keyof typeof MODE_LABEL]} ${hoursLabel(leg!.hours)}${leg!.fare ? ` $${leg!.fare}` : ''}`);
+      if (!go) {
+        if (at) go = () => gps.set(at.door.x * TM + 4, at.door.y * TM + 4, `${CAT[at.type].name} (for ${c.name})`);
+        else if (leg!.gate) { const hw = World.highway?.[leg!.gate]; if (hw) go = () => gps.set(leg!.gate === 'west' ? 8 : hw.x * TM + 4, leg!.gate === 'west' ? hw.y * TM + 4 : 8, `The ${leg!.gate} highway (for ${c.name})`); }
+      }
+    }
+    return { title: `${c.emoji} ${c.name}`, sub: ways.length ? ways.join(' · ') : 'No way to get there from here yet', go };
+  });
+}
+
 /** V2 (Milestone 4): the most pressing trouble in the village, for the street HUD */
 function villageAlert(x: number, z: number): { text: string; bad: boolean } {
   const here = Power.districtOf(Math.floor(x / TM), Math.floor(z / TM));
@@ -783,4 +889,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures };

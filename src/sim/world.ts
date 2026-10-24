@@ -49,7 +49,9 @@ const SCRATCH = {
   gen: 0,
   seen: new Uint32Array(GW * GH),
   prev: new Int32Array(GW * GH),
-  dist: new Float32Array(GW * GH),
+  // (64-bit: the heap's costs are doubles, and a 32-bit copy of 3.6 reads as less than 3.6,
+  // which used to discard every step through a mid-road tile and lose the route)
+  dist: new Float64Array(GW * GH),
   queue: new Int32Array(GW * GH),
   heapC: new Float64Array(4096),
   heapN: new Int32Array(4096),

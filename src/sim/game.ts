@@ -23,6 +23,7 @@ import { Traffic } from './traffic';
 import { Health } from './health';
 import { Power } from './power';
 import { Supply } from './supply';
+import { Gateways } from './gateways';
 
 /** Speed steps (× real time). Street mode is capped at 1× (design §6). */
 export const SPEEDS = [0, 1, 2, 4, 8];
@@ -92,6 +93,7 @@ export const Game = {
     Health.reset();
     Power.reset();
     Supply.reset();
+    Gateways.reset();
     Life.onEvent = (msg: string, at?: { x: number; y: number }) => this.toast(msg, at);
     this.undoStack = [];
   },
@@ -230,11 +232,12 @@ export const Game = {
     if (World.dirty) this.refreshDerived();
   },
 
-  /** V2 (Milestone 4): health and ambulances, the power grid, the supply chain */
+  /** V2 (Milestones 4–5): health and ambulances, the power grid, the supply chain, the gateways */
   tickSystems(dts: number): void {
     Health.tick(dts);
     Power.tick(dts);
     Supply.tick(dts);
+    Gateways.tick(dts);
   },
 
   refreshDerived(): void {
@@ -414,6 +417,7 @@ export const Game = {
       health: { w: Health.wave, wy: Health.waveYear },
       power: Power.serialize(),
       supply: Supply.serialize(),
+      gateways: Gateways.serialize(),
       meta: { name: World.name, day: Sim.day, pop: Sim.people.length, at: Date.now() },
     });
   },
@@ -454,6 +458,7 @@ export const Game = {
     if (extra.health) { Health.wave = extra.health.w || 0; Health.waveYear = extra.health.wy ?? -1; }
     Power.restoreState(extra.power || null);
     Supply.restoreState(extra.supply || null);
+    Gateways.restore(extra.gateways || null);
     this.lodgeId = extra.lodge || 0;
     this.ensureLodge();
     this.founderHooks?.set(extra._fromV1 ? null : extra.founder || null);

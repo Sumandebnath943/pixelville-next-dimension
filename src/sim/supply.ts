@@ -385,7 +385,7 @@ export const Supply = {
         const step = Traffic.advance(t, t, t.path, t.prog, 1, TRUCK_SPEED, dt, 0.9);
         t.prog += step;
         Life.followPath(t, t.path, Math.min(t.prog, t.path.length - 1), Traffic.lanePx(t));
-        if (nearlyThere(t, step, dt)) {
+        if (nearlyThere(t, t.path, step, dt)) {
           if (t.phase === 'back') t.done = true;
           else { t.phase = 'drop'; t.t = 5; }
         }

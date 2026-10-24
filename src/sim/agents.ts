@@ -18,6 +18,7 @@ import { Health } from './health';
 import { Edu, ESSENTIAL } from './education';
 import { Supply } from './supply';
 import { Power } from './power';
+import { Gateways } from './gateways';
 /* ============================================================
    PixelVille — citizens, jobs, daily schedules, movement.
    People live in residential buildings, get jobs at workplaces,
@@ -931,6 +932,7 @@ export const Sim: any = {
     Edu.daily();     // V2: the ambitious enrol, graduates find graduate posts
     Power.daily();   // V2: the grid's bill and its record
     Supply.daily();  // V2: the market report, import allowances
+    Gateways.daily(); // V2: visitors and newcomers counted afresh
     {
       Mind.tickCareers();                             // the ambitious hunt better jobs
       for (const b of World.buildings) if (b.residents?.length > 1) Rep.household(b); // V2: the day's news over dinner
@@ -1438,7 +1440,10 @@ export const Sim: any = {
       const fam = this.spawnFamily(home);
       home.funds = Math.max(home.funds, 40 + Math.random() * 60);
       if (CAT[home.type].cars && !home.cars.length) home.cars.push({ free: true, seed: (Math.random() * 8) | 0 });
-        Life.say(`🚚 The ${fam.surname} family moved to the village, drawn by the job market (${fam.n} newcomers)`);
+      // V2: newcomers arrive through a gateway (the intercity) and walk to their new door
+      const via = Gateways.welcome(home, fam.surname);
+      Life.say(via ? `🚉 The ${fam.surname} family ${via} to start a new life here (${fam.n} newcomers)`
+        : `🚚 The ${fam.surname} family moved to the village, drawn by the job market (${fam.n} newcomers)`);
     }
     if (this.day < this.nextGrowthDay) return;
     const underCon = World.buildings.filter(b => b.construction > 0 && CAT[b.type].res).length;

@@ -43,6 +43,12 @@ export interface PhoneApi {
   /** what the Founder is carrying; eat or drink item `i` */
   bag(): { name: string; from: string; day: number; food?: boolean; ticket?: boolean }[];
   eat(i: number): void;
+  /** Milestone 5: a cab, the timetables, and trips off the map (with the gateway to go to) */
+  ride: {
+    callCab(): void;
+    timetable(): { title: string; sub: string }[];
+    trips(): { title: string; sub: string; go?: () => void }[];
+  };
   /** the Founder's vehicles, for the Garage app */
   garage: {
     list(): Vehicle[];
@@ -55,9 +61,10 @@ export interface PhoneApi {
   };
 }
 
-type App = 'home' | 'map' | 'wallet' | 'pvtv' | 'tasks' | 'camera' | 'garage' | 'contacts';
+type App = 'home' | 'map' | 'wallet' | 'pvtv' | 'tasks' | 'camera' | 'garage' | 'contacts' | 'ride';
 const APPS: { id: App | 'planner' | 'settings'; name: string; icon: string; tint: string }[] = [
   { id: 'map', name: 'Map', icon: 'map', tint: '#3f8f86' },
+  { id: 'ride', name: 'Ride', icon: 'bus', tint: '#c8962e' },
   { id: 'contacts', name: 'Contacts', icon: 'people', tint: '#4a8a5a' },
   { id: 'wallet', name: 'Wallet', icon: 'wallet', tint: '#c08a3a' },
   { id: 'garage', name: 'Garage', icon: 'car', tint: '#3a6a9a' },
@@ -127,6 +134,12 @@ export class Phone {
       case 'camera': body.innerHTML = head('Camera') + `<div class="ph-scroll">${this.cameraHtml()}</div>`; break;
       case 'garage': body.innerHTML = head('Garage') + `<div class="ph-scroll">${this.garageHtml()}</div>`; break;
       case 'contacts': body.innerHTML = head('Contacts') + `<div class="ph-scroll">${this.contactsHtml()}</div>`; break;
+      case 'ride': body.innerHTML = head('Ride') + `<div class="ph-scroll">${this.rideHtml()}</div>`; break;
+    }
+    if (this.app === 'ride') {
+      body.querySelector('#ph-cab')?.addEventListener('click', () => { this.api.ride.callCab(); this.close(); });
+      const trips = this.api.ride.trips();
+      body.querySelectorAll<HTMLElement>('[data-trip]').forEach((el) => el.addEventListener('click', () => { trips[+el.dataset.trip!].go?.(); this.go('map'); }));
     }
     if (this.app === 'contacts') {
       const c = this.api.contacts;
@@ -160,6 +173,20 @@ export class Phone {
     if (id === 'planner') { this.close(); this.api.openPlanner(); return; }
     if (id === 'settings') { this.close(); this.api.openSettings(); return; }
     this.go(id as App);
+  }
+
+  /** Ride: a cab to the GPS destination, the timetables, and the trips off the map */
+  private rideHtml(): string {
+    const r = this.api.ride;
+    const g = this.api.gps;
+    let h = `<button class="ph-wide primary" id="ph-cab">${icon('car')}Call a cab${g.dest ? ` to ${esc(g.dest.label)}` : ''}</button>`;
+    if (!g.dest) h += '<p class="note">Pick a destination on the Map first, or tell the driver when the cab comes.</p>';
+    const tt = r.timetable();
+    h += `<h2>Timetables</h2>${tt.length ? tt.map((t) => `<div class="save-slot"><span class="slot-name">${esc(t.title)}<small>${esc(t.sub)}</small></span></div>`).join('') : '<p class="note">No buses, trains or ferries run yet.</p>'}`;
+    const trips = r.trips();
+    h += `<h2>Trips off the map</h2>${trips.map((t, i) => `<div class="save-slot"><span class="slot-name">${esc(t.title)}<small>${esc(t.sub)}</small></span>${t.go ? `<button data-trip="${i}">${icon('pin')}</button>` : ''}</div>`).join('')}`;
+    h += '<p class="note">At a stop, a station, a dock, a rank, the airport or a heliport, <b>F</b> shows what leaves from there.</p>';
+    return h;
   }
 
   private homeHtml(): string {

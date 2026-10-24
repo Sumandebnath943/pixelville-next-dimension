@@ -15,6 +15,7 @@ import { Life } from './life';
 import { Mind } from './mind';
 import { World } from './world';
 import { Settings } from './settings';
+import { Gateways } from './gateways';
 
 export const EDU_NONE = 0, EDU_SCHOOL = 1, EDU_DEGREE = 2;
 export const EDU_LABEL = ['No schooling', 'School leaver', 'College degree'];
@@ -190,7 +191,8 @@ export const Edu = {
       Sim.assignJobs();
     }
     const title = this.title(w.type);
-    Life.say(`🎓 The ${fam.surname} family moved in — ${adult ? adult.name : 'one of them'} is one of the ${title} the ${CAT[w.type].name} was short of`);
+    const via = Gateways.welcome(home, fam.surname, true); // V2 (Milestone 5): they fly in, or come by intercity
+    Life.say(`🎓 The ${fam.surname} family ${via ? `${via} and moved in` : 'moved in'} — ${adult ? adult.name : 'one of them'} is one of the ${title} the ${CAT[w.type].name} was short of`);
     return true;
   },
 };

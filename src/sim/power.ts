@@ -61,8 +61,8 @@ interface Fault { cause: string; since: number; crew: boolean; fixAt?: number }
 
 /** at the end of its run, or held up within a tile and a half of it for 3 s (something parked
     on the very spot): a van or truck stops where it is and gets on with the job */
-export function nearlyThere(v: any, step: number, dt: number): boolean {
-  const left = v.path.length - 1 - v.prog;
+export function nearlyThere(v: any, path: number[][], step: number, dt: number): boolean {
+  const left = path.length - 1 - v.prog;
   v.stuck = step < 1e-4 && left < 1.6 ? (v.stuck || 0) + dt : 0;
   if (left > 0.001 && v.stuck <= 3) return false;
   v.stuck = 0;
@@ -313,7 +313,7 @@ export const Power = {
         const step = Traffic.advance(c, c, c.path, c.prog, 1, CREW_SPEED, dt, 0.7);
         c.prog += step;
         Life.followPath(c, c.path, Math.min(c.prog, c.path.length - 1), Traffic.lanePx(c));
-        if (nearlyThere(c, step, dt)) {
+        if (nearlyThere(c, c.path, step, dt)) {
           if (c.phase === 'back') c.done = true;
           else if (!this.faults.has(c.d)) { c.phase = 'back'; c.prog = Math.max(0, c.path.length - 1 - c.prog); c.path = [...c.path].reverse(); }
           else { c.phase = 'fix'; c.t = 40 + Math.random() * 35; }
