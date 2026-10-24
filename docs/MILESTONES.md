@@ -111,7 +111,7 @@ The vertical slice is still at `slice.html` (the "look lab"):
 
 ---
 
-## Milestone 2 — Street life
+## Milestone 2 — Street life (in progress)
 
 - **Vehicle ownership:** buy at car/motorcycle showrooms, fuel at gas stations, damage & repair at the auto garage, parking, tickets, towing, Founder's Lodge garage.
 - **Traffic AI polish:** car-following, yielding, honking, swerving, player-caused crashes feeding V1 incidents.
@@ -122,6 +122,31 @@ The vertical slice is still at `slice.html` (the "look lab"):
 - **Wallet** with small rewards so money exists before jobs arrive.
 
 **Done when:** you can buy a car, drive across town obeying (or ignoring) the lights, get chased by the police for stealing one, and watch villagers react to you differently afterwards.
+
+**Order of work** (each step builds on the one before):
+
+### 2a · On the road with everyone (done 2026-10-24)
+- The village's traffic sees the Founder (`Traffic.guests`): drivers queue behind the Founder's car, stop for the Founder on foot in the road, and sound the horn (positional, with a 😤 over the driver) when held up for two seconds.
+- Overtaking: a driver stuck behind something stopped in its lane (the Founder's parked car, a bus at its stop, a squad car at a scene, a wreck) pulls out into the oncoming lane when the road ahead runs straight with no junction, lights or crossing and nothing is coming, passes, and pulls back in. Vehicles carry their lane offset, so the pass is drawn.
+- The Founder's car collides with the village's vehicles instead of driving through them. A hard hit on a villager's or visitor's car becomes V1's crash incident (one wreck where it happened, onlookers, police, a PVTV reporter); the driver heads home shaken and remembers who did it. A person in the way is knocked down, lies in the road for a while, gets up, and remembers it.
+- The Founder's road offences are recorded (`founder.offences`, `founderOffence` event): red lights, speeding over 60 km/h, the wrong side of a two-way street, bumps, crashes and people hit. The car keeps a damage value for the garage in 2c.
+- Fixed on the way: every tile of a two-tile avenue counted as a junction; two cars setting off from the same spot drove as one. Covered by `tests/traffic.test.ts` (overtaking, not overtaking into oncoming traffic, avenues, stopping and honking for the Founder, twins).
+
+### 2b · Wallet and phone
+- The wallet becomes a ledger (income, purchases, fines) with small rewards so money exists before jobs.
+- Phone v1 on <kbd>Tab</kbd>: Map with GPS route and on-road arrows, Wallet, PVTV, Tasks, Camera, Planner, Settings.
+
+### 2c · Vehicle ownership
+- Buy cars and motorcycles at the showrooms, keep them at the Lodge garage, refuel at gas stations (fuel gauge), damage and repairs at the auto garage, parking, tickets and towing. Owned vehicles persist in the save.
+
+### 2d · Crime and the wanted level
+- Steal any car; offences raise 1–5 stars; police come from real stations by road, roadblocks, spike strips, the helicopter from a heliport. Caught: fine, a night in the cells, impound. "Wasted": wake at the hospital with a bill. Planner locked while wanted.
+
+### 2e · Reputation
+- Witnesses remember what the Founder did; gossip spreads it; each villager's opinion drives greetings, street reactions (wave, avoid, call the police), shop discounts or refusals. A town-wide indicator in the HUD.
+
+### 2f · Photo mode
+- Pause the world, free camera, depth of field, filters, time-of-day and weather preview, hide the HUD, save a PNG.
 
 ---
 

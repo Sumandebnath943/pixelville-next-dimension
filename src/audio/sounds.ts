@@ -167,6 +167,12 @@ class Sound {
     }
   }
   launch(): void { this.noise(0.35, 0.03, 2200, 'highpass'); }
+  /** a car horn, `k` 0..1 for how near it is */
+  horn(k = 1): void {
+    const p = 0.045 * k;
+    this.tone(415, null, 0.34, p, 'square');
+    this.tone(523, null, 0.34, p * 0.8, 'square');
+  }
   baby(): void {
     this.tone(880, 1040, 0.28, 0.05, 'sine');
     this.tone(1040, 880, 0.3, 0.04, 'sine', 0.3);

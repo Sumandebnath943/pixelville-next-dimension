@@ -296,7 +296,9 @@ export class Actors {
       if (t.car || t.taxi) {
         const sm = smooth(p, x, z, hint);
         const col = t.taxi ? hex('#f2c230') : CAR_COLORS[(t.car.seed || 0) % CAR_COLORS.length];
-        this.vehicle(t.taxi ? 'taxi' : 'car', x, this.groundY(x, z, true), z, sm.yaw, col);
+        const gy = this.groundY(x, z, true);
+        this.vehicle(t.taxi ? 'taxi' : 'car', x, gy, z, sm.yaw, col);
+        if (p.bubble && p.bubbleUntil > now) this.wantBubble(x, gy + 2.3, z, p.bubble); // a driver's mood (the horn)
         continue;
       }
       if (t.moto) {
@@ -309,7 +311,8 @@ export class Actors {
       const sm = smooth(p, x, z, hint);
       const y = this.groundY(x, z, false);
       const frozen = p.freezeT > 0;
-      this.person({ x, y, z, yaw: sm.yaw, kind: p.kind, seed: p.seed, mode: frozen || !sm.moving ? 'stand' : 'walk', phase: sm.phase });
+      const down = frozen && p.knocked; // knocked down by the Founder's car
+      this.person({ x, y, z, yaw: sm.yaw, kind: p.kind, seed: p.seed, mode: down ? 'lie' : frozen || !sm.moving ? 'stand' : 'walk', phase: sm.phase });
       this.pickables.push({ x, y, z, ref: p });
       if (raining && p.kind !== 'kid') this.prop('handUmbrella', x, y, z, sm.yaw, p.kind === 'kid' ? 0.7 : 1, SHIRT[(p.seed >> 3) % SHIRT.length]);
       if (t.dog !== undefined) {
@@ -404,8 +407,12 @@ export class Actors {
     if (Life.crash) {
       const k = Life.crash;
       const x = k.x * PX, z = k.y * PX;
-      this.vehicle('car', x - 1.5, 0.03, z, k.a1, CAR_COLORS[k.s1 % 8], { roll: 0.08 });
-      this.vehicle('car', x + 1.5, 0.03, z + 0.6, k.a2, CAR_COLORS[k.s2 % 8], { pitch: -0.06 });
+      if (k.founder) { // the Founder's own car is the other one
+        this.vehicle(k.taxi ? 'taxi' : 'car', x, 0.03, z, k.a1, k.taxi ? hex('#f2c230') : CAR_COLORS[k.s1 % 8], { roll: 0.08 });
+      } else {
+        this.vehicle('car', x - 1.5, 0.03, z, k.a1, CAR_COLORS[k.s1 % 8], { roll: 0.08 });
+        this.vehicle('car', x + 1.5, 0.03, z + 0.6, k.a2, CAR_COLORS[k.s2 % 8], { pitch: -0.06 });
+      }
       this.prop('cone', x - 4, 0.03, z - 2.5);
       this.prop('cone', x + 4, 0.03, z + 2.5);
     }

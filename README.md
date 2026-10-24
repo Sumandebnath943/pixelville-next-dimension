@@ -4,7 +4,7 @@ The 3D sequel to [PixelVille](https://github.com/Sumandebnath943/pixelville): th
 
 Walk and drive through your village in first or third person, and rise into the sky to build, just like before. Villagers commute, gossip, fall in love, vote, open businesses and remember what happened to them.
 
-> **Status:** Milestones 1 (the living town) and 1.5 (the semi-realistic look, V2 interface, traffic that gives way) are done; Milestone 2 is next. See [the milestone plan](docs/MILESTONES.md). The look lab, a single street block for trying the graphics, is at `/slice.html`.
+> **Status:** Milestones 1 (the living town) and 1.5 (the semi-realistic look, V2 interface, traffic that gives way) are done; Milestone 2 (street life) is under way. See [the milestone plan](docs/MILESTONES.md). The look lab, a single street block for trying the graphics, is at `/slice.html`.
 
 ## Run it
 

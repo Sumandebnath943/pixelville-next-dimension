@@ -16,6 +16,9 @@ import { Person } from '../gfx/person';
 import { Car as CarModel } from '../gfx/car';
 import { surface } from '../gfx/surface';
 import { ENV } from '../gfx/env';
+import { Traffic } from '../sim/traffic';
+import { Life } from '../sim/life';
+import { Sim } from '../sim/agents';
 
 const TM = 8;
 const R_BODY = 0.38;
@@ -36,6 +39,9 @@ function slab(ox: number, oy: number, oz: number, ix: number, iy: number, iz: nu
 }
 
 export interface Car { x: number; z: number; yaw: number; speed: number; y: number; pitch: number }
+/** a road rule the Founder broke, or harm they caused (the wanted level and reputation read these) */
+export interface Offence { kind: 'red light' | 'speeding' | 'wrong side' | 'bump' | 'crash' | 'hit'; day: number; clock: number; x: number; z: number; at: number }
+const SPEED_LIMIT = 60 / 3.6; // town streets, with a little grace over 50 km/h
 
 export class Founder {
   pos = new THREE.Vector3();
@@ -56,6 +62,16 @@ export class Founder {
   private camInit = false;
   private camSets: Float32Array[] = [];
   speedKmh = 0;
+  /** what the Founder did on the road, newest last */
+  offences: Offence[] = [];
+  /** the car's dents, 0 (as new) … 100 */
+  damage = 0;
+  private stillT = 0;
+  private speedT = 0;
+  private wrongT = 0;
+  private lastTile = -1;
+  private ruleCd: Record<string, number> = {};
+  private bumpCd = 0;
 
   constructor(scene: THREE.Scene, private buildings: BuildingLayer) {
     this.buildBody();
@@ -246,6 +262,119 @@ export class Founder {
     if (this.driving) this.drive(dt);
     else this.walk(dt);
     this.pose(dt);
+    this.reportToTraffic(dt);
+  }
+
+  /** tell the village's traffic where the Founder and their car are */
+  private reportToTraffic(dt: number): void {
+    const c = this.car;
+    this.stillT = Math.abs(c.speed) < 0.5 ? this.stillT + dt : 0;
+    // the car counts as parked once it has stood still a while: drivers then pass it
+    const car = { x: c.x * 2, y: c.z * 2, dx: Math.sin(c.yaw), dy: Math.cos(c.yaw), car: true, still: !this.driving || this.stillT > 5 };
+    Traffic.guests = this.driving ? [car] : [car, { x: this.pos.x * 2, y: this.pos.z * 2, dx: Math.sin(this.yaw), dy: Math.cos(this.yaw), car: false, still: true }];
+  }
+
+  /* ---------- the Founder among the village's traffic ---------- */
+  private near: ReturnType<typeof Traffic.near> = [];
+  /** push the car off other vehicles; a hard hit is a crash, a person in the way is knocked down */
+  private bumpTraffic(c: Car, fx: number, fz: number, dt: number): void {
+    this.bumpCd = Math.max(0, this.bumpCd - dt);
+    const mine = [1.35, -1.35];
+    for (const ob of Traffic.near(c.x * 2, c.z * 2, 28, this.near)) {
+      const o = ob.o as any;
+      const ox = (o.x ?? ob.x * 16) * 0.5, oz = (o.y ?? ob.y * 16) * 0.5;
+      if (!ob.car) {
+        // someone on foot in the car's path
+        if (!o.trip || o.state !== 'walk' || o.knocked) continue;
+        for (const k of mine) {
+          const mx = c.x + fx * k, mz = c.z + fz * k;
+          if (Math.hypot(mx - ox, mz - oz) > 1.3) continue;
+          if (Math.abs(c.speed) > 1.5) {
+            Life.founderHitPerson(o, Math.abs(c.speed));
+            this.offence('hit');
+            c.speed *= 0.35;
+          } else c.speed = 0; // nudged up to them: stop
+          break;
+        }
+        continue;
+      }
+      // a vehicle: its body as a row of circles along its heading
+      let hx = o.dirx ?? ob.dx, hz = o.diry ?? ob.dy;
+      const hl = Math.hypot(hx, hz) || 1;
+      hx /= hl; hz /= hl;
+      const L = ob.len * 8, r = L > 6 ? 1.25 : L < 3 ? 0.6 : 0.95;
+      const span = Math.max(0, L / 2 - r), n = span > 0 ? Math.max(2, Math.ceil((2 * span) / (1.4 * r)) + 1) : 1;
+      const theirV = ((o.trip ? o.trip.v : o.v) || 0) * 8;
+      for (let i = 0; i < n; i++) {
+        const k = n === 1 ? 0 : -span + (2 * span * i) / (n - 1);
+        const cx = ox + hx * k, cz = oz + hz * k;
+        for (const m of mine) {
+          const mx = c.x + fx * m, mz = c.z + fz * m;
+          const dx = mx - cx, dz = mz - cz;
+          const d = Math.hypot(dx, dz);
+          const overlap = 1.0 + r - d;
+          if (overlap <= 0 || d < 1e-4) continue;
+          const nx = dx / d, nz = dz / d;
+          c.x += nx * overlap;
+          c.z += nz * overlap;
+          // how hard: closing speed along the contact normal
+          const impact = -((fx * c.speed - hx * theirV) * nx + (fz * c.speed - hz * theirV) * nz);
+          if (impact > 1) {
+            c.speed = impact > 3 ? -c.speed * 0.25 : c.speed * 0.3;
+            if (this.bumpCd <= 0) {
+              this.bumpCd = 1.5;
+              if (impact > 5 && Life.founderCrash(o, o.x, o.y)) {
+                c.speed = 0;
+                this.damage = Math.min(100, this.damage + impact * 2.5);
+                this.offence('crash');
+              } else if (impact > 2.5) {
+                emit('sound', { name: 'crunch' });
+                this.damage = Math.min(100, this.damage + impact);
+                this.offence('bump');
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /** red lights, speeding, the wrong side of the road (noted, for the police and gossip to come) */
+  private roadRules(c: Car, fx: number, fz: number, dt: number): void {
+    for (const k in this.ruleCd) this.ruleCd[k] = Math.max(0, this.ruleCd[k] - dt);
+    const sp = Math.abs(c.speed);
+    const tx = Math.floor(c.x / TM), tz = Math.floor(c.z / TM);
+    const key = World.inB(tx, tz) ? World.idx(tx, tz) : -1;
+    // through a red light: entering a signalled junction against the phase
+    if (key !== this.lastTile) {
+      if (key >= 0 && World.signals.has(key) && sp > 2) {
+        const movingNS = Math.abs(fz) > Math.abs(fx);
+        if (movingNS !== World.nsGreen()) this.offence('red light');
+      }
+      this.lastTile = key;
+    }
+    this.speedT = sp > SPEED_LIMIT && key >= 0 && World.isRoad(tx, tz) ? this.speedT + dt : 0;
+    if (this.speedT > 2 && !this.ruleCd.speeding) { this.offence('speeding'); this.ruleCd.speeding = 25; }
+    // the wrong side: on a straight stretch, left of the centreline while moving along it
+    let wrong = false;
+    if (sp > 4 && key >= 0 && World.isRoad(tx, tz)) {
+      const ew = World.isRoad(tx - 1, tz) && World.isRoad(tx + 1, tz) && !World.isRoad(tx, tz - 1) && !World.isRoad(tx, tz + 1);
+      const ns = World.isRoad(tx, tz - 1) && World.isRoad(tx, tz + 1) && !World.isRoad(tx - 1, tz) && !World.isRoad(tx + 1, tz);
+      const sx = Math.sign(c.speed) * fx, sz = Math.sign(c.speed) * fz;
+      if ((ew && Math.abs(sx) > 0.8) || (ns && Math.abs(sz) > 0.8)) {
+        const ox = c.x - (tx * TM + 4), oz = c.z - (tz * TM + 4);
+        wrong = ox * -sz + oz * sx < -0.7; // right-hand normal (z runs south): negative is the left
+      }
+    }
+    this.wrongT = wrong ? this.wrongT + dt : 0;
+    if (this.wrongT > 1.5 && !this.ruleCd.wrong) { this.offence('wrong side'); this.ruleCd.wrong = 25; }
+  }
+
+  private offence(kind: Offence['kind']): void {
+    const at = { kind, day: Sim.day, clock: Math.round(Sim.clock), x: Math.round(this.car.x), z: Math.round(this.car.z), at: Date.now() };
+    this.offences.push(at);
+    if (this.offences.length > 60) this.offences.shift();
+    emit('founderOffence', at);
   }
 
   private walk(dt: number): void {
@@ -306,12 +435,18 @@ export class Founder {
     if (hitF || hitR) {
       c.x = (front.x + rear.x) / 2;
       c.z = (front.z + rear.z) / 2;
-      if (Math.abs(c.speed) > 6) emit('sound', { name: 'crunch' });
+      if (Math.abs(c.speed) > 6) {
+        emit('sound', { name: 'crunch' });
+        this.damage = Math.min(100, this.damage + Math.abs(c.speed) * 0.8);
+      }
       c.speed *= -0.25;
     } else {
       c.x = nx;
       c.z = nz;
     }
+    // V2: the village's cars, buses and people are in the way too
+    this.bumpTraffic(c, fx, fz, dt);
+    this.roadRules(c, fx, fz, dt);
     const yf = this.groundAt(c.x + fx * 1.6, c.z + fz * 1.6), yr = this.groundAt(c.x - fx * 1.6, c.z - fz * 1.6);
     c.y = (yf + yr) / 2;
     c.pitch = Math.atan2(yr - yf, 3.2);

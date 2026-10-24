@@ -1432,7 +1432,11 @@ export const Sim: any = {
       return;
     }
     if (p.state === 'walk' && p.trip) {
-      if (p.freezeT > 0) { p.freezeT -= dt * MIN_PER_SEC; return; } // stopped mid-street (dispute)
+      if (p.freezeT > 0) { // stopped mid-street (a dispute, or V2: knocked down and getting up)
+        p.freezeT -= dt * MIN_PER_SEC;
+        if (p.freezeT <= 0) p.knocked = false;
+        return;
+      }
       // feelings show on faces in the street
       if (!p.trip.car && (!p.bubbleUntil || performance.now() > p.bubbleUntil) && Math.random() < dt * 0.05) {
         const m = p.mood === undefined ? 60 : p.mood;
@@ -1515,7 +1519,7 @@ export const Sim: any = {
       // down the middle of the avenue where the cars run
       let ox = 0, oy = 0;
       if (t.car || t.taxi || t.moto) {
-        const off = 3.5;
+        const off = Traffic.lanePx(t); // V2: its lane (the oncoming one while overtaking)
         ox = diry !== 0 ? (diry > 0 ? -off : off) : 0;
         oy = dirx !== 0 ? (dirx > 0 ? off : -off) : 0;
       } else {

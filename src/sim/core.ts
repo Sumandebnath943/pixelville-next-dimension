@@ -35,6 +35,8 @@ export interface SimEvents {
   seasonChange: { season: number };
   buildingDone: { id: number };
   mapEdited: Record<string, never>;
+  /** V2: a road rule the Founder broke or harm they caused (metres) */
+  founderOffence: { kind: string; day: number; clock: number; x: number; z: number; at: number };
 }
 type Handler<K extends keyof SimEvents> = (p: SimEvents[K]) => void;
 const handlers: { [K in keyof SimEvents]?: Handler<K>[] } = {};

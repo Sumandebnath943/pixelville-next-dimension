@@ -393,7 +393,7 @@ export const Life: any = {
         const stop = bus.stops[bus.stopIdx.indexOf(at)];
         if (stop) this.serveStop(bus, stop);
       }
-      this.followPath(bus, bus.route, bus.prog, 3.5, bus.dir);
+      this.followPath(bus, bus.route, bus.prog, Traffic.lanePx(bus), bus.dir);
     }
   },
 
@@ -461,7 +461,7 @@ export const Life: any = {
         const nr = this.pickTaxiRoute(cab.home, cab.standTile);
         if (nr) cab.route = nr;
       }
-      this.followPath(cab, cab.route, cab.prog, 3.5, cab.dir);
+      this.followPath(cab, cab.route, cab.prog, Traffic.lanePx(cab), cab.dir);
     }
   },
 
@@ -828,7 +828,7 @@ export const Life: any = {
     }
     for (const c of this.campaignCars) {
       c.prog += Traffic.advance(c, c, c.path, c.prog, 1, 1.2, dt); // V2: campaign cars crawl with the megaphone, in the traffic
-      this.followPath(c, c.path, c.prog, 3.5);
+      this.followPath(c, c.path, c.prog, Traffic.lanePx(c));
       if (c.prog >= c.path.length - 1) c.done = true;
     }
     this.campaignCars = this.campaignCars.filter(c => !c.done);
@@ -1310,6 +1310,53 @@ export const Life: any = {
     return u;
   },
 
+  /* ---------------- V2: the Founder on the road ----------------
+     The Founder's car hit another vehicle hard. A villager's or a visitor's car
+     is wrecked like a V1 crash (the Founder's own car is the other one): the
+     shaken driver heads home, onlookers gather, police come. Returns true if
+     it became an incident (one wreck at a time, like V1). */
+  founderCrash(o, x, y) {
+    if (this.crash) return false;
+    const p = o && o.trip ? o : null;
+    const visitor = !p && this.tourists.includes(o) ? o : null;
+    if (!p && !visitor) return false;
+    const seed = p ? (p.trip.car ? p.trip.car.seed : p.seed) : visitor.seed;
+    const yaw = Math.atan2(o.dirx || 0, o.diry || 1);
+    this.crash = {
+      x: o.x, y: o.y, t: 30, t0: 30, s1: seed || 0, s2: 0,
+      a1: yaw + (Math.random() - 0.5) * 0.9, a2: 0, founder: true, taxi: !!(p && p.trip.taxi),
+    };
+    if (p) {
+      if (p.trip.car) p.trip.car.free = true; // the car is towed home
+      p.state = 'in'; p.at = p.home; p.trip = null; p.dest = null; p.returnAt = undefined; p.backTo = null;
+      p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 12);
+      Mind.remember(p, 'founder', "had their car wrecked by the Founder's driving", -2);
+    } else {
+      visitor.phase = 'out'; visitor.done = true;
+    }
+    Snd.crunch();
+    this.crash.unit = this.dispatchTo(Math.round(this.crash.x / T), Math.round(this.crash.y / T), this.crash, 12);
+    const whose = p ? `${Sim.fullName(p)}'s ${p.trip === null && this.crash.taxi ? 'cab' : 'car'}` : "a visitor's car";
+    this.say(`💥 The Founder crashed into ${whose} — ${this.crash.unit ? 'police are on the way' : 'no squad car can respond'}`, { x: this.crash.x, y: this.crash.y });
+    this.spawnGawkers(this.crash.x, this.crash.y, 5, this.crash);
+    this.coverStory(this.crash.x, this.crash.y, this.crash, 'The Founder in a collision on a village street');
+    Sim.safety = Math.max(20, Sim.safety - 2);
+    this.incidentCd = Math.max(this.incidentCd, 200);
+    return true;
+  },
+  /* the Founder's car knocked a villager down: they lie stunned, get up shaken, and remember */
+  founderHitPerson(p, speed) {
+    if (p.knocked) return;
+    p.knocked = true;
+    p.freezeT = 18 + Math.min(20, speed * 2);
+    p.bubble = '🤕'; p.bubbleUntil = performance.now() + 7000;
+    p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 15);
+    Mind.remember(p, 'founder', "was knocked down by the Founder's car", -3);
+    Sim.safety = Math.max(20, Sim.safety - 1);
+    Snd.crunch();
+    this.say(`🤕 ${Sim.fullName(p)} was knocked down by the Founder's car`, { x: p.x, y: p.y });
+  },
+
   /* ---------------- sky events: balloons, UFO ---------------- */
   balloons: [], ufo: null, ufoCd: 0,
   tickSky(dtSim, dtReal) {
@@ -1401,7 +1448,7 @@ export const Life: any = {
     for (const t of this.tourists) {
       if (t.phase === 'visit') { t.stay -= dt * MIN_PER_SEC; if (t.stay <= 0) { t.phase = 'out'; t.path = [...t.path].reverse(); t.prog = 0; t.v = 0; } continue; }
       t.prog += Traffic.advance(t, t, t.path, t.prog, 1, 1.6, dt); // V2: tourist cars at town speed, in the traffic
-      this.followPath(t, t.path, t.prog, 3.5);
+      this.followPath(t, t.path, t.prog, Traffic.lanePx(t));
       if (t.prog >= t.path.length - 1) {
         if (t.phase === 'in') { t.phase = 'visit'; t.venue.visitors++; }
         else t.done = true;

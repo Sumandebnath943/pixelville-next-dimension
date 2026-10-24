@@ -23,6 +23,7 @@ import { initTouch } from './ui/touch';
 import { Snd } from './audio/sounds';
 import { get, AUTO } from './save/store';
 import { texturesReady } from './gfx/textures';
+import { Traffic } from './sim/traffic';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -42,6 +43,12 @@ const founder = new Founder(stage.scene, buildings);
 const planner = new Planner(stage.scene, canvas, stage.camera, buildings, actors);
 Game.founderHooks = { get: () => founder.save(), set: (s) => founder.spawn(Game.lodge(), s) };
 founder.spawn(Game.lodge(), null);
+// a driver held up by the Founder leans on the horn (louder the nearer it is)
+Traffic.onHonk = (who) => {
+  const d = Math.hypot(who.x * 0.5 - founder.pos.x, who.y * 0.5 - founder.pos.z);
+  if (d < 70) Snd.horn(Math.max(0.15, 1 - d / 70));
+  if (who.trip) { who.bubble = '😤'; who.bubbleUntil = performance.now() + 2500; }
+};
 
 /* ---------- UI ---------- */
 const togglePlanner = () => {
