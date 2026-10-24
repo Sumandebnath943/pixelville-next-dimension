@@ -21,7 +21,8 @@ import type { Interaction } from './errands';
 const TM = 8;
 const TICKET_AFTER = 45; // game minutes parked illegally before a warden writes a ticket
 const TOW_AFTER = 135; // … and before the tow truck comes
-const FINE = 15, IMPOUND_FEE = 40, TOW_FEE = 35;
+const FINE = 15, TOW_FEE = 35;
+export const IMPOUND_FEE = 40;
 type Toast = (msg: string, at?: { x: number; y: number }, news?: boolean) => void;
 
 export class Motoring {
@@ -67,9 +68,10 @@ export class Motoring {
       f.fleet.owed -= paid;
       this.toast(`🧾 Paid $${paid} of your outstanding fines${f.fleet.owed > 0 ? ` — $${Math.round(f.fleet.owed)} still owed` : ''}`);
     }
-    if (!v) { this.illegalT = 0; this.ticketed = false; return; }
-    this.warnings(v);
-    this.wardens(dt, v);
+    if (v) this.warnings(v);
+    const own = f.fleet.cur;
+    if (!own) { this.illegalT = 0; this.ticketed = false; return; }
+    this.wardens(dt, own);
   }
 
   private warnings(v: Vehicle): void {
@@ -91,22 +93,23 @@ export class Motoring {
     else if (v.damage < 100) w.wreck = false;
   }
 
-  /** wardens (only where there's a police station to send them) */
+  /** wardens (only where there's a police station to send them), on the owned vehicle wherever it stands */
   private wardens(dt: number, v: Vehicle): void {
     const f = this.f;
+    const at = f.ownedAt();
     const policed = World.buildings.some((b: any) => b.type === 'police' && b.connected && !b.ruined && !b.construction);
-    if (f.driving || !policed) { this.illegalT = 0; this.ticketed = false; return; }
+    if (!at || (f.driving && !f.hijacked) || !policed) { this.illegalT = 0; this.ticketed = false; return; }
     this.checkT -= dt;
-    if (this.checkT <= 0) { this.checkT = 1; this.reason = this.atLodge() ? null : parkingOffence(f.car.x, f.car.z); }
+    if (this.checkT <= 0) { this.checkT = 1; this.reason = this.atLodge(at) ? null : parkingOffence(at.x, at.z); }
     if (!this.reason) { this.illegalT = 0; this.ticketed = false; return; }
     this.illegalT += dt * (Game.speed() || 0); // game minutes (one a second at 1×)
     if (!this.ticketed && this.illegalT > TICKET_AFTER) {
       this.ticketed = true;
       const paid = this.fine(FINE, `Parking ticket · ${this.reason}`);
-      this.toast(`🎫 Parking ticket for the ${v.name}: $${FINE} — it's ${this.reason}${paid < FINE ? ' (owed until you can pay)' : ''}`, { x: f.car.x * 2, y: f.car.z * 2 });
+      this.toast(`🎫 Parking ticket for the ${v.name}: $${FINE} — it's ${this.reason}${paid < FINE ? ' (owed until you can pay)' : ''}`, { x: at.x * 2, y: at.z * 2 });
     }
     if (this.ticketed && this.illegalT > TOW_AFTER) {
-      const station = this.nearest('police', f.car.x, f.car.z);
+      const station = this.nearest('police', at.x, at.z);
       if (!station) return;
       f.stow('impound');
       v.impound = { station: station.id, fee: IMPOUND_FEE };
@@ -117,9 +120,9 @@ export class Motoring {
   }
 
   /** the Founder's own drive is always fine, wherever the road runs */
-  private atLodge(): boolean {
+  private atLodge(at: { x: number; z: number } = this.f.car): boolean {
     const lodge = World.buildings.find((b: any) => b.type === 'lodge');
-    return !!lodge && Math.hypot(this.f.car.x - (lodge.door.x * TM + 4), this.f.car.z - (lodge.door.y * TM + 4)) < 12;
+    return !!lodge && Math.hypot(at.x - (lodge.door.x * TM + 4), at.z - (lodge.door.y * TM + 4)) < 12;
   }
 
   /** a fine paid as far as the wallet allows; the rest is owed. Returns what was paid now */
@@ -143,9 +146,9 @@ export class Motoring {
       return { text: `<b>E</b> fill up · $${cost}`, act: () => this.fillUp(v, gas, cost) };
     }
     const shop = this.nearest('autoshop', f.car.x, f.car.z);
-    if (shop && v.damage > 2 && this.within(shop, 8)) {
+    if (shop && (v.damage > 2 || v.flat) && this.within(shop, 8)) {
       if (!this.isOpen(shop)) return { text: 'The auto garage is closed (8:00–18:00)', act: () => {} };
-      const cost = Math.max(1, Math.ceil(v.damage * sp.repair));
+      const cost = Math.max(1, Math.ceil(v.damage * sp.repair)) + (v.flat ? 20 : 0);
       return { text: `<b>E</b> repair the ${v.name} · $${cost}`, act: () => this.repair(v, shop, cost) };
     }
     return null;
@@ -169,6 +172,7 @@ export class Motoring {
     if (pay <= 0) { this.toast('👛 Not enough money for repairs'); return; }
     f.purse.spend(pay, `Repairs to the ${v.name}`, 'purchase', shop);
     v.damage = Math.max(0, v.damage - pay / sp.repair);
+    v.flat = false;
     this.toast(pay < cost ? `🔧 The mechanics did $${pay} of work — it's better, not perfect` : `🔧 The ${v.name} is as good as new — $${pay}`);
   }
 
@@ -285,14 +289,15 @@ export class Motoring {
     const f = this.f;
     if (v.where === 'lodge') return 'In the Lodge garage';
     if (v.where === 'impound') return `Impounded · $${v.impound?.fee ?? IMPOUND_FEE} to collect`;
-    if (f.driving) return 'You are driving it';
-    if (this.atLodge()) return 'In the Lodge drive';
-    const reason = parkingOffence(f.car.x, f.car.z);
-    return `Parked ${distLabel(Math.hypot(f.car.x - f.pos.x, f.car.z - f.pos.z))} away${reason ? ` · ${reason}!` : ''}`;
+    if (f.driving && !f.hijacked) return 'You are driving it';
+    const at = f.ownedAt()!;
+    if (this.atLodge(at)) return 'In the Lodge drive';
+    const reason = parkingOffence(at.x, at.z);
+    return `Parked ${distLabel(Math.hypot(at.x - f.pos.x, at.z - f.pos.z))} away${reason ? ` · ${reason}!` : ''}`;
   }
   find(v: Vehicle, lodge: any): void {
-    const f = this.f;
-    if (v.where === 'out') this.gps.set(f.car.x, f.car.z, `Your ${v.name}`);
+    const f = this.f, at = f.ownedAt();
+    if (v.where === 'out' && at) this.gps.set(at.x, at.z, `Your ${v.name}`);
     else if (v.where === 'impound') {
       const st = World.buildings.find((b: any) => b.id === v.impound?.station);
       if (st) this.gps.set(st.door.x * TM + 4, st.door.y * TM + 4, 'The impound lot');
@@ -301,8 +306,8 @@ export class Motoring {
   /** a tow truck takes the vehicle that's out home (or a wreck to the auto garage, where it can be mended) */
   tow(v: Vehicle): void {
     const f = this.f;
-    if (v.where !== 'out' || f.vehicle !== v) return;
-    const shop = v.damage >= 60 ? this.nearest('autoshop', f.car.x, f.car.z) : null;
+    if (v.where !== 'out' || f.fleet.cur !== v) return;
+    const shop = v.damage >= 60 && !f.hijacked ? this.nearest('autoshop', f.car.x, f.car.z) : null;
     const paid = this.fine(TOW_FEE, `Tow truck · the ${v.name}`);
     if (shop) {
       const s = this.frontage(shop);
@@ -312,6 +317,13 @@ export class Motoring {
       f.stow('lodge');
       this.toast(`🚚 Towed the ${v.name} home to the Lodge garage${paid < TOW_FEE ? ' ($' + (TOW_FEE - paid) + ' owed)' : ''}`);
     }
+  }
+
+  /** the police take the vehicle that's out to the impound lot at `station` (after an arrest) */
+  impound(v: Vehicle, station: any): void {
+    if (v.where !== 'out' || this.f.fleet.cur !== v) return;
+    this.f.stow('impound');
+    v.impound = { station: station.id, fee: IMPOUND_FEE };
   }
 
   /** the models a showroom sells */

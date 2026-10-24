@@ -48,6 +48,10 @@ export interface Vehicle {
   where: 'out' | 'lodge' | 'impound';
   /** impounded at this police station, for this fee */
   impound?: { station: number; fee: number };
+  /** tyres shredded by a police spike strip (a repair fixes them) */
+  flat?: boolean;
+  /** not the Founder's: taken from this home's drive (the car record goes back there) */
+  stolen?: { home: number; car: any; family: string };
 }
 
 export class Fleet {

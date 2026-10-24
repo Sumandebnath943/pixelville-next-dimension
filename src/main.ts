@@ -10,6 +10,7 @@ import { World } from './sim/world';
 import { Weather } from './sim/weather';
 import { Settings } from './sim/settings';
 import { CAT } from './sim/catalog';
+import { family } from './sim/core';
 import { Stage } from './render/stage';
 import { Terrain } from './render/terrain';
 import { BuildingLayer, yieldFrame } from './render/buildings';
@@ -24,12 +25,14 @@ import { Snd } from './audio/sounds';
 import { get, AUTO } from './save/store';
 import { texturesReady } from './gfx/textures';
 import { Traffic } from './sim/traffic';
+import { Life } from './sim/life';
 import { Gps, distLabel } from './player/gps';
 import { Errands } from './player/errands';
 import { Phone } from './ui/phone';
 import { GpsArrows } from './render/gpsarrows';
-import { Motoring } from './player/motoring';
+import { Motoring, IMPOUND_FEE } from './player/motoring';
 import { Showroom } from './ui/showroom';
+import { Wanted, FINES } from './player/wanted';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -47,7 +50,7 @@ const buildings = new BuildingLayer(stage.scene);
 const actors = new Actors(stage.scene, buildings);
 const founder = new Founder(stage.scene, buildings);
 const planner = new Planner(stage.scene, canvas, stage.camera, buildings, actors);
-Game.founderHooks = { get: () => founder.save(), set: (s) => founder.spawn(Game.lodge(), s) };
+Game.founderHooks = { get: () => founder.save(), set: (s) => { founder.spawn(Game.lodge(), s); wanted.reset(); } };
 founder.spawn(Game.lodge(), null);
 // a driver held up by the Founder leans on the horn (louder the nearer it is)
 Traffic.onHonk = (who) => {
@@ -62,6 +65,8 @@ const arrows = new GpsArrows(stage.scene);
 const inPlanner = (): boolean => planner.active && !planner.leaving;
 const togglePlanner = () => {
   if (inPlanner()) planner.exit();
+  else if (scene) return;
+  else if (wanted.stars > 0) hud.toast('🚨 The Planner is locked while the police are after you — lose them first', undefined, true);
   else {
     if (founder.driving) founder.car.speed = 0;
     planner.enter(founder.pos);
@@ -90,7 +95,7 @@ const panels = new Panels({
     ...(errands.canScratch(b) ? [{ label: 'Scratch card · $2', run: () => errands.scratch(b) }] : []),
     ...motoring.buildingActions(b),
   ],
-  afterLoad: () => { buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); },
+  afterLoad: () => { buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); wanted.reset(); },
   isPlanner: inPlanner,
 });
 // (hud.toast's third argument means "already logged": personal moments stay out of the village news)
@@ -98,6 +103,91 @@ const personalToast = (m: string, at?: { x: number; y: number }, news?: boolean)
 const errands = new Errands(founder, gps, personalToast);
 const motoring = new Motoring(founder, gps, personalToast, () => Sim.clock, (b) => showroom.open(b));
 const showroom = new Showroom(motoring, founder.purse, () => panels.show('showroomui'), () => panels.close('showroomui'));
+const wanted = new Wanted(founder, personalToast);
+
+/* ---------- busted, wasted: the hours that pass behind a curtain ---------- */
+let scene: { left: number; until: number; done: () => void } | null = null;
+const curtain = $('curtain');
+function blackout(kind: 'busted' | 'wasted', title: string, text: string, minutes: number, done: () => void): void {
+  if (scene) return;
+  Input.releaseLock();
+  phone.close();
+  panels.closeAll();
+  gps.clear();
+  $('curtain-title').textContent = title;
+  $('curtain-text').textContent = text;
+  curtain.className = `on ${kind}`;
+  requestAnimationFrame(() => curtain.classList.add('shown'));
+  Game.setSpeed(1);
+  scene = { left: minutes, until: performance.now() + 4200, done };
+}
+/** run the skipped hours a slice per frame, then lift the curtain */
+function playScene(now: number): void {
+  if (!scene) return;
+  if (scene.left > 0) {
+    const n = Math.min(scene.left, 45);
+    Game.catchUp(n);
+    scene.left -= n;
+  }
+  $('curtain-clock').textContent = `Day ${Sim.day} · ${Sim.timeStr()}`;
+  if (scene.left <= 0 && now > scene.until) {
+    const d = scene.done;
+    scene = null;
+    d();
+    curtain.classList.remove('shown');
+    setTimeout(() => { if (!scene) curtain.className = ''; }, 700);
+  }
+}
+const nearestOf = (type: string, x: number, z: number): any =>
+  World.buildings.filter((b: any) => b.type === type && b.connected && !b.ruined && !b.construction)
+    .sort((a: any, b: any) => Math.hypot(a.door.x * TM - x, a.door.y * TM - z) - Math.hypot(b.door.x * TM - x, b.door.y * TM - z))[0] || null;
+wanted.onBusted = (stars) => {
+  if (scene) return;
+  const x =founder.driving ? founder.car.x : founder.pos.x, z = founder.driving ? founder.car.z : founder.pos.z;
+  const station = nearestOf('police', x, z) || Game.lodge();
+  const why = wanted.why || 'resisting arrest', fine = FINES[stars];
+  let car = '';
+  if (founder.hijacked) car = ` The ${founder.hijacked.name} goes back to its owners.`;
+  else if (founder.driving && founder.fleet.cur && station?.type === 'police') {
+    const v = founder.fleet.cur;
+    motoring.impound(v, station);
+    car = ` The ${v.name} has been taken to the impound lot ($${IMPOUND_FEE} to collect).`;
+  }
+  wanted.returnAll();
+  wanted.reset();
+  const paid = motoring.fine(fine, `Fine · ${why}`);
+  // late at night it's the cells till morning; by day, a few hours and a caution
+  const night = Sim.clock >= 1200 || Sim.clock < 300;
+  const minutes = night ? (7 * 60 - Sim.clock + 1440) % 1440 : 300;
+  const owed = paid < fine ? ` ($${fine - paid} still owed)` : '';
+  blackout('busted', 'Busted', `Arrested for ${why}: a $${fine} fine${owed} and ${night ? 'a night' : 'five hours'} in the cells.${car}`, minutes, () => {
+    if (station) founder.stepOutOf(station);
+    hud.toast(`🚔 Released from the ${station?.type === 'police' ? 'police station' : 'Lodge'} — behave yourself`, undefined, true);
+  });
+};
+wanted.onWasted = () => {
+  if (scene) return;
+  const x =founder.driving ? founder.car.x : founder.pos.x, z = founder.driving ? founder.car.z : founder.pos.z;
+  const hospital = nearestOf('hospital', x, z);
+  const v = founder.vehicle;
+  let car = '';
+  if (founder.hijacked) car = ` The ${founder.hijacked.name} goes back to its owners.`;
+  else if (v && founder.driving) {
+    v.damage = Math.max(v.damage, 90);
+    car = ` The ${v.name} was towed away, badly damaged.`;
+    motoring.tow(v);
+  }
+  wanted.returnAll();
+  wanted.reset();
+  const bill = hospital ? Math.min(120, Math.max(0, Math.floor(founder.wallet))) : 0;
+  if (bill) founder.purse.spend(bill, 'Hospital bill', 'purchase', hospital);
+  const where = hospital ? `Patched up at the hospital${bill ? ` — the bill was $${bill}` : ''}.` : 'No hospital in the village: a neighbour patched you up at the Lodge.';
+  blackout('wasted', 'Wasted', `${where}${car}`, 240, () => {
+    const at = hospital || Game.lodge();
+    if (at) founder.stepOutOf(at);
+    hud.toast(hospital ? '🏥 Discharged from the hospital — take it easy on the roads' : '🩹 Back on your feet at the Lodge', undefined, true);
+  });
+};
 let photoWanted = false;
 const phone = new Phone({
   founder: () => ({ x: founder.driving ? founder.car.x : founder.pos.x, z: founder.driving ? founder.car.z : founder.pos.z, yaw: founder.driving ? founder.car.yaw : founder.yaw }),
@@ -132,7 +222,10 @@ founder.purse.onChange = (e) => {
   pill.classList.add(e.amount >= 0 ? 'flash-up' : 'flash-down');
   $('wallet').textContent = `$${Math.round(founder.wallet)}`;
 };
-actors.extra = (a) => errands.draw((k, x, y, z, yaw, s, col) => a.prop(k, x, y, z, yaw, s, new THREE.Color(col)), (x, z) => founder.groundAt(x, z));
+actors.extra = (a) => {
+  errands.draw((k, x, y, z, yaw, s, col) => a.prop(k, x, y, z, yaw, s, new THREE.Color(col)), (x, z) => founder.groundAt(x, z));
+  wanted.draw(a);
+};
 planner.onBuilding = (b) => panels.showInfo(b);
 planner.onPerson = (p) => panels.showPerson(p);
 planner.onToolChange = (k) => hud.markTool(k);
@@ -168,11 +261,17 @@ function interactions(): void {
     // the nearest door, villager or the Founder's car
     let near: { kind: string; ref: any; d: number } | null = null;
     if (founder.nearCar()) near = { kind: 'car', ref: null, d: 0 };
+    else if (founder.nearLeft()) near = { kind: 'left', ref: null, d: 0 };
+    else {
+      // a family's car in its drive: the Founder can take it (it's theft)
+      const p = wanted.parkedNear();
+      if (p) near = { kind: 'steal', ref: p, d: Math.hypot(p.x - founder.pos.x, p.z - founder.pos.z) };
+    }
     for (const p of actors.pickables) {
       const d = Math.hypot(p.x - founder.pos.x, p.z - founder.pos.z);
       if (d < 2.6 && (!near || d < near.d)) near = { kind: 'person', ref: p.ref, d };
     }
-    if (!near || near.kind !== 'car') {
+    if (!near || (near.kind !== 'car' && near.kind !== 'left')) {
       const t = founder.tile();
       for (let j = -1; j <= 1; j++)
         for (let i = -1; i <= 1; i++) {
@@ -187,6 +286,14 @@ function interactions(): void {
       const v = founder.vehicle!;
       text = v.damage >= 100 ? `The ${v.name} is wrecked — call a tow from the phone` : `<b>F</b> ${v.kind === 'moto' ? 'ride' : 'drive'} the ${v.name}`;
       if (Input.take('vehicle') && v.damage < 100) founder.enterCar();
+    } else if (near?.kind === 'left') {
+      // back to the Founder's own vehicle; the stolen one stays where it was left
+      const v = founder.fleet.cur!;
+      text = `<b>F</b> ${v.kind === 'moto' ? 'ride' : 'drive'} the ${v.name} (leave the stolen car)`;
+      if (Input.take('vehicle')) { founder.dropHijacked(); if (v.damage < 100) founder.enterCar(); }
+    } else if (near?.kind === 'steal') {
+      text = `<b>F</b> steal the ${family(near.ref.b.residents[0]?.surname || 'neighbour')}' car`;
+      if (Input.take('vehicle')) wanted.steal(near.ref);
     } else if (near?.kind === 'person') {
       text = `<b>E</b> meet ${near.ref.name} ${near.ref.surname}`;
       if (Input.take('interact')) panels.showPerson(near.ref);
@@ -204,6 +311,14 @@ function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000 || 0.016);
   last = now;
   Input.poll();
+
+  // behind the curtain (busted, wasted) the hours pass and nothing else happens
+  if (scene) {
+    playScene(now);
+    Input.endFrame();
+    requestAnimationFrame(frame);
+    return;
+  }
 
   // global actions
   if (Input.take('planner')) togglePlanner();
@@ -242,6 +357,7 @@ function frame(now: number): void {
   const fx = founder.driving ? founder.car.x : founder.pos.x, fz = founder.driving ? founder.car.z : founder.pos.z;
   errands.update(dt, street && !panels.anyModalOpen());
   motoring.update(dt);
+  if (street && !panels.anyModalOpen()) wanted.update(dt);
   gps.update(dt, fx, fz);
 
   // cameras: street, aerial, or a blend while rising/descending
@@ -304,6 +420,14 @@ function frame(now: number): void {
     if ($('modebadge').dataset.m !== mode) {
       $('modebadge').dataset.m = mode;
       $('modebadge').innerHTML = mode ? `<svg><use href="#i-${mode}"/></svg>${mode === 'car' ? 'Driving' : 'First person'}` : '';
+    }
+    // the wanted level: lit stars, flashing while a crew has eyes on the Founder, and how close they are to losing them
+    document.body.classList.toggle('wanted', wanted.stars > 0);
+    if (wanted.stars > 0) {
+      const stars = `<b>${'★'.repeat(wanted.stars)}</b>${'★'.repeat(5 - wanted.stars)}`;
+      if ($('stars').innerHTML !== stars) $('stars').innerHTML = stars;
+      $('wanted').classList.toggle('seen', wanted.seen);
+      $('escape').style.width = `${Math.round(wanted.escape() * 100)}%`;
     }
     if (planner.active) hud.markTool(planner.tool);
     else {
@@ -375,4 +499,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life };

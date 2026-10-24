@@ -321,6 +321,31 @@ em.up, em.down { font-style: normal; }
 .toast.out { opacity: 0; transform: translateY(-6px); }
 @keyframes tin { from { opacity: 0; transform: translateY(-8px); } }
 
+/* ---------- the wanted level ---------- */
+#wanted { position: absolute; left: 50%; top: calc(var(--tbh) + 16px); transform: translateX(-50%); display: none; align-items: center; gap: 10px; padding: 6px 14px; pointer-events: none; }
+body.wanted #wanted { display: flex; }
+body.wanted #toasts { top: calc(var(--tbh) + 60px); }
+body.planner #wanted { display: none; }
+#stars { font-size: 19px; letter-spacing: 3px; color: rgba(255, 255, 255, 0.18); line-height: 1; }
+#stars b { color: #ffd35a; font-weight: 400; text-shadow: 0 0 10px rgba(255, 196, 64, 0.65); }
+#wanted.seen #stars b { animation: blink 0.5s steps(1) infinite; }
+#wanted.seen { border-color: rgba(255, 110, 96, 0.55); }
+#wanted .gauge { width: 54px; }
+#wanted.seen .gauge { opacity: 0.35; }
+
+/* busted / wasted: the hours that pass behind a curtain */
+#curtain {
+  position: fixed; inset: 0; z-index: 45; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: radial-gradient(ellipse at 50% 45%, rgba(20, 26, 36, 0.9) 0%, rgba(6, 8, 12, 0.97) 70%); opacity: 0; transition: opacity 0.7s ease;
+}
+#curtain.on { display: flex; }
+#curtain.shown { opacity: 1; }
+#curtain-title { font-size: 52px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+#curtain.busted #curtain-title { color: #9cc0ff; }
+#curtain.wasted #curtain-title { color: var(--bad); }
+#curtain-text { margin: 0; max-width: min(520px, 88vw); text-align: center; color: var(--ink-2); line-height: 1.55; font-size: 14px; }
+#curtain-clock { font-style: normal; font-size: 22px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+
 /* ---------- PVTV and the map ---------- */
 #sc-panel { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 8px; align-items: flex-end; }
 #tv { width: 252px; overflow: hidden; }

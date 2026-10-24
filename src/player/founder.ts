@@ -42,7 +42,7 @@ function slab(ox: number, oy: number, oz: number, ix: number, iy: number, iz: nu
 
 export interface Car { x: number; z: number; yaw: number; speed: number; y: number; pitch: number }
 /** a road rule the Founder broke, or harm they caused (the wanted level and reputation read these) */
-export interface Offence { kind: 'red light' | 'speeding' | 'wrong side' | 'bump' | 'crash' | 'hit'; day: number; clock: number; x: number; z: number; at: number }
+export interface Offence { kind: 'red light' | 'speeding' | 'wrong side' | 'bump' | 'crash' | 'hit' | 'ram' | 'theft'; day: number; clock: number; x: number; z: number; at: number }
 const SPEED_LIMIT = 60 / 3.6; // town streets, with a little grace over 50 km/h
 
 export class Founder {
@@ -68,12 +68,28 @@ export class Founder {
   speedKmh = 0;
   /** what the Founder did on the road, newest last */
   offences: Offence[] = [];
-  /** everything the Founder owns on wheels; `car` above is the physics of the one that's out */
+  /** everything the Founder owns on wheels; `car` above is the physics of the one in hand */
   fleet = new Fleet();
-  get vehicle(): Vehicle | null { return this.fleet.cur; }
-  /** the dents in the vehicle that's out, 0 (as new) … 100 (wrecked) */
-  get damage(): number { return this.fleet.cur?.damage ?? 0; }
-  set damage(d: number) { const v = this.fleet.cur; if (v) v.damage = Math.max(0, Math.min(100, d)); }
+  /** a car taken from a family's drive: in hand while it's driven; it goes back to them when left */
+  hijacked: Vehicle | null = null;
+  /** where the owned vehicle that's out stands while the Founder drives a stolen one */
+  leftAt: { x: number; z: number; yaw: number } | null = null;
+  /** told when the stolen car is left behind (it stands at x, z until it's returned) */
+  onAbandon: ((v: Vehicle, x: number, z: number, yaw: number) => void) | null = null;
+  /** told of a crash so violent the Founder is hurt (impact speed, m/s) */
+  onWreck: ((impact: number) => void) | null = null;
+  /** the vehicle in hand: a stolen one, or the owned one that's out */
+  get vehicle(): Vehicle | null { return this.hijacked ?? this.fleet.cur; }
+  /** the dents in the vehicle in hand, 0 (as new) … 100 (wrecked) */
+  get damage(): number { return this.vehicle?.damage ?? 0; }
+  set damage(d: number) { const v = this.vehicle; if (v) v.damage = Math.max(0, Math.min(100, d)); }
+  /** where the owned vehicle that's out stands (null when none is out) */
+  ownedAt(): { x: number; z: number } | null {
+    if (!this.fleet.cur) return null;
+    return this.hijacked ? this.leftAt : { x: this.car.x, z: this.car.z };
+  }
+  private parkedMesh = new THREE.Group();
+  private parkedRide: Ride | null = null;
   private stillT = 0;
   private speedT = 0;
   private wrongT = 0;
@@ -84,7 +100,7 @@ export class Founder {
   constructor(scene: THREE.Scene, private buildings: BuildingLayer) {
     this.buildBody();
     this.buildCar();
-    scene.add(this.mesh, this.carMesh);
+    scene.add(this.mesh, this.carMesh, this.parkedMesh);
   }
 
   /* the Founder: a deep-violet coat, a gold scarf, a wide-brimmed hat */
@@ -142,11 +158,63 @@ export class Founder {
     this.carMesh.add(this.ride.root);
   }
 
+  /** draw (or stop drawing) the owned vehicle left standing while a stolen one is in hand */
+  private showParked(v: Vehicle | null): void {
+    if (this.parkedRide) this.parkedMesh.remove(this.parkedRide.root);
+    this.parkedRide = null;
+    if (!v || !this.leftAt) return;
+    this.parkedRide = v.kind === 'moto' ? new Moto(new THREE.Color(v.color)) : new CarModel(v.style as CarStyle, new THREE.Color(v.color), true);
+    this.parkedMesh.add(this.parkedRide.root);
+    this.parkedRide.drive(0.016, this.leftAt.x, this.leftAt.z, this.leftAt.yaw, 0, 0, 0, this.groundAt(this.leftAt.x, this.leftAt.z));
+  }
+
+  /** take a stolen car in hand and get in; an owned vehicle that's out stays standing where it is */
+  hijack(v: Vehicle, x: number, z: number, yaw: number): void {
+    if (this.driving) this.exitCar();
+    if (this.hijacked) this.dropHijacked();
+    if (this.fleet.cur && !this.leftAt) {
+      this.leftAt = { x: this.car.x, z: this.car.z, yaw: this.car.yaw };
+      this.showParked(this.fleet.cur);
+    }
+    this.hijacked = v;
+    Object.assign(this.car, { x, z, yaw, speed: 0, y: this.groundAt(x, z), pitch: 0 });
+    this.setRide(v);
+    this.driving = true;
+    this.camYaw = yaw;
+  }
+  /** leave the stolen car where it stands; the owned vehicle (if one is out) is in hand again */
+  dropHijacked(): void {
+    const v = this.hijacked;
+    if (!v) return;
+    if (this.driving) this.exitCar();
+    const at = { x: this.car.x, z: this.car.z, yaw: this.car.yaw };
+    this.hijacked = null;
+    if (this.fleet.cur && this.leftAt) {
+      Object.assign(this.car, { ...this.leftAt, speed: 0, y: this.groundAt(this.leftAt.x, this.leftAt.z), pitch: 0 });
+      this.setRide(this.fleet.cur);
+    } else this.setRide(null);
+    this.leftAt = null;
+    this.showParked(null);
+    this.onAbandon?.(v, at.x, at.z, at.yaw);
+  }
+  /** on foot beside the owned vehicle left standing */
+  nearLeft(): boolean {
+    return !this.driving && !!this.leftAt && Math.hypot(this.pos.x - this.leftAt.x, this.pos.z - this.leftAt.z) < 3.4;
+  }
+
   /** start beside the Lodge (or wherever a save put us) */
   spawn(lodge: any, save?: FounderSave | null): void {
     if (!save) { // a new village: a fresh start
       this.purse.restore(undefined, []);
       this.offences = [];
+    }
+    // nothing stolen survives a load: the car goes home, the record back into its family's drive
+    this.hijacked = null;
+    this.leftAt = null;
+    this.showParked(null);
+    for (const r of (save?.returnCars || []) as { home: number; car: any }[]) {
+      const home = World.buildings.find((b: any) => b.id === r.home);
+      if (home && home.cars && !home.cars.includes(r.car)) home.cars.push({ ...r.car, free: true });
     }
     this.fleet.restore(save?.fleet as any);
     if (!this.fleet.list.length) {
@@ -193,6 +261,7 @@ export class Founder {
 
   /** bring `v` out at (x, z) facing `yaw`; whatever was out goes back to the Lodge garage */
   useVehicle(v: Vehicle, x: number, z: number, yaw: number): void {
+    if (this.hijacked) this.dropHijacked();
     if (this.driving) this.exitCar();
     const prev = this.fleet.cur;
     if (prev && prev !== v) prev.where = 'lodge';
@@ -206,6 +275,13 @@ export class Founder {
   stow(where: 'lodge' | 'impound'): Vehicle | null {
     const v = this.fleet.cur;
     if (!v) return null;
+    if (this.hijacked) { // the owned one is the vehicle left standing: it goes, the stolen one stays in hand
+      v.where = where;
+      this.fleet.current = 0;
+      this.leftAt = null;
+      this.showParked(null);
+      return v;
+    }
     if (this.driving) this.exitCar();
     v.where = where;
     this.fleet.current = 0;
@@ -213,11 +289,18 @@ export class Founder {
     return v;
   }
 
+  /** stolen cars still away from home (the one in hand, any left standing), for a save to send back */
+  pendingReturns: () => { home: number; car: any }[] = () => [];
+
   save(): FounderSave {
+    // a save keeps no stolen car: the owned vehicle's own spot is saved, and the stolen one goes home on load
+    const at = this.hijacked ? this.leftAt : { x: this.car.x, z: this.car.z, yaw: this.car.yaw };
+    const returnCars = [...this.pendingReturns()];
+    if (this.hijacked?.stolen) returnCars.push({ home: this.hijacked.stolen.home, car: this.hijacked.stolen.car });
     return {
-      x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: { x: this.car.x, z: this.car.z, yaw: this.car.yaw },
-      wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), damage: Math.round(this.damage),
-      fleet: this.fleet.serialize(),
+      x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: at ? { x: at.x, z: at.z, yaw: at.yaw } : null,
+      wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), damage: Math.round(this.fleet.cur?.damage ?? 0),
+      fleet: this.fleet.serialize(), returnCars,
     };
   }
 
@@ -287,13 +370,23 @@ export class Founder {
   }
 
   nearCar(): boolean {
-    return !this.driving && !!this.fleet.cur && Math.hypot(this.pos.x - this.car.x, this.pos.z - this.car.z) < 3.4;
+    return !this.driving && !!this.vehicle && Math.hypot(this.pos.x - this.car.x, this.pos.z - this.car.z) < 3.4;
   }
 
   enterCar(): void {
-    if (!this.fleet.cur) return;
+    if (!this.vehicle) return;
     this.driving = true;
     this.camYaw = this.car.yaw;
+  }
+  /** on foot at a doorstep, facing away from the building (out of the cells, out of hospital) */
+  stepOutOf(b: any): void {
+    if (this.driving) this.exitCar();
+    const dx = b.door.x * TM + 4, dz = b.door.y * TM + 4;
+    const cx = (b.x + b.w / 2) * TM, cz = (b.y + b.h / 2) * TM;
+    this.pos.set(dx + (dx - cx) * 0.05, 0, dz + (dz - cz) * 0.05);
+    this.pos.y = this.groundAt(this.pos.x, this.pos.z);
+    this.yaw = this.camYaw = Math.atan2(dx - cx, dz - cz);
+    this.camInit = false;
   }
   exitCar(): void {
     this.driving = false;
@@ -328,11 +421,14 @@ export class Founder {
   private reportToTraffic(dt: number): void {
     const c = this.car;
     this.stillT = Math.abs(c.speed) < 0.5 ? this.stillT + dt : 0;
-    const v = this.fleet.cur;
+    const v = this.vehicle;
     // the car counts as parked once it has stood still a while: drivers then pass it
     const car = v ? { x: c.x * 2, y: c.z * 2, dx: Math.sin(c.yaw), dy: Math.cos(c.yaw), car: true, still: !this.driving || this.stillT > 5, len: v.kind === 'moto' ? 0.3 : undefined } : null;
     const me = { x: this.pos.x * 2, y: this.pos.z * 2, dx: Math.sin(this.yaw), dy: Math.cos(this.yaw), car: false, still: true };
     Traffic.guests = this.driving && car ? [car] : car ? [car, me] : [me];
+    // the owned vehicle left standing while a stolen one is driven is in the road too
+    const l = this.leftAt;
+    if (l && this.fleet.cur) Traffic.guests.push({ x: l.x * 2, y: l.z * 2, dx: Math.sin(l.yaw), dy: Math.cos(l.yaw), car: true, still: true, len: this.fleet.cur.kind === 'moto' ? 0.3 : undefined });
   }
 
   /* ---------- the Founder among the village's traffic ---------- */
@@ -340,7 +436,7 @@ export class Founder {
   /** push the car off other vehicles; a hard hit is a crash, a person in the way is knocked down */
   private bumpTraffic(c: Car, fx: number, fz: number, dt: number): void {
     this.bumpCd = Math.max(0, this.bumpCd - dt);
-    const sp = SPEC[this.fleet.cur?.kind || 'car'];
+    const sp = SPEC[this.vehicle?.kind || 'car'];
     const mine = [sp.reach, -sp.reach], R = sp.radius;
     for (const ob of Traffic.near(c.x * 2, c.z * 2, 28, this.near)) {
       const o = ob.o as any;
@@ -385,7 +481,13 @@ export class Founder {
             c.speed = impact > 3 ? -c.speed * 0.25 : c.speed * 0.3;
             if (this.bumpCd <= 0) {
               this.bumpCd = 1.5;
-              if (impact > 5 && Life.founderCrash(o)) {
+              if (impact > 14) this.onWreck?.(impact);
+              if (Life.police.includes(o) && impact > 2) {
+                // ramming a squad car: the officers take it personally
+                emit('sound', { name: 'crunch' });
+                this.damage = this.damage + impact * 1.5;
+                this.offence('ram');
+              } else if (impact > 5 && Life.founderCrash(o)) {
                 c.speed = 0;
                 this.damage = Math.min(100, this.damage + impact * 2.5);
                 this.offence('crash');
@@ -432,7 +534,7 @@ export class Founder {
     if (this.wrongT > 1.5 && !this.ruleCd.wrong) { this.offence('wrong side'); this.ruleCd.wrong = 25; }
   }
 
-  private offence(kind: Offence['kind']): void {
+  offence(kind: Offence['kind']): void {
     const at = { kind, day: Sim.day, clock: Math.round(Sim.clock), x: Math.round(this.car.x), z: Math.round(this.car.z), at: Date.now() };
     this.offences.push(at);
     if (this.offences.length > 60) this.offences.shift();
@@ -476,14 +578,14 @@ export class Founder {
 
   private drive(dt: number): void {
     const c = this.car;
-    const v = this.fleet.cur;
+    const v = this.vehicle;
     if (!v) { this.driving = false; return; }
     const sp = SPEC[v.kind];
     const { gas, brake } = Input.pedals();
     const steer = Input.steer();
     const hb = Input.handbrake();
-    // a battered vehicle loses its top end; an empty tank crawls on fumes; a wreck won't go at all
-    let MAX = sp.max * (v.damage > 50 ? 1 - (v.damage - 50) / 100 : 1), REV = -8, power = sp.accel;
+    // a battered vehicle loses its top end, shredded tyres more; an empty tank crawls; a wreck won't go
+    let MAX = sp.max * (v.damage > 50 ? 1 - (v.damage - 50) / 100 : 1) * (v.flat ? 0.4 : 1), REV = -8, power = sp.accel;
     if (v.fuel <= 0) { MAX = Math.min(MAX, 2.2); REV = -2.2; }
     if (v.damage >= 100) { MAX = 0; REV = 0; power = 0; }
     if (gas > 0 && c.speed < MAX) c.speed = Math.min(MAX, c.speed + (c.speed < 0 ? 18 : power) * gas * dt);
@@ -509,6 +611,7 @@ export class Founder {
       if (Math.abs(c.speed) > 6) {
         emit('sound', { name: 'crunch' });
         this.damage = Math.min(100, this.damage + Math.abs(c.speed) * 0.8);
+        if (Math.abs(c.speed) > 16) this.onWreck?.(Math.abs(c.speed)); // into a wall at speed
       }
       c.speed *= -0.25;
     } else {

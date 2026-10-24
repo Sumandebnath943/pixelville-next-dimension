@@ -21,7 +21,8 @@ import { HAIR, PANTS, PERSON, PROPS, SHIRT, SKIN, VEHICLES } from './models';
 import { heightAt } from './terrain';
 import type { BuildingLayer } from './buildings';
 import { Person, Look, randomLook, Pose } from '../gfx/person';
-import { Car as CarModel, CarStyle } from '../gfx/car';
+import { Car as CarModel } from '../gfx/car';
+import { drivewayCars, DrivewayCar, CAR_COLORS as PARKED_COLORS, styleForPaint } from './parked';
 import { ENV } from '../gfx/env';
 import { FireFX } from '../gfx/fire';
 import { XmasPlaza } from '../gfx/festive';
@@ -31,14 +32,13 @@ import { interiorDay } from '../gfx/architecture';
    nearest cars are full models; everything farther stays light instanced figures */
 const NEAR_PEOPLE = 32, NEAR_PEOPLE_R = 48;
 const NEAR_CARS = 22, NEAR_CARS_R = 80;
-const CAR_STYLES: CarStyle[] = ['hatch', 'sedan', 'estate', 'suv', 'hatch', 'sedan'];
 interface CarWant { type: string; x: number; y: number; z: number; yaw: number; paint: THREE.Color; siren: boolean; pitch: number; roll: number }
 interface CarSlot { car: CarModel; kind: string; x: number; z: number; yaw: number; v: number; a: number; used: boolean; seen: number }
 
 const PX = 0.5;
 const TM = 8;
 const PEOPLE_CAP = 900;
-const CAR_COLORS = ['#c0392b', '#2e86c1', '#f4f6f7', '#1c2833', '#27ae60', '#f39c12', '#8e44ad', '#7f8c8d'].map((h) => hex(h));
+const CAR_COLORS = PARKED_COLORS;
 
 export type Mode = 'walk' | 'run' | 'stand' | 'lie' | 'sit';
 interface PersonDraw {
@@ -237,6 +237,7 @@ export class Actors {
 
   /** the client adds its own figures each frame (the Founder's errands: a runaway dog) */
   extra: ((a: Actors) => void) | null = null;
+  private drive: DrivewayCar[] = [];
 
   /* ---------- per-frame update ---------- */
   update(dt: number, camX: number, camZ: number, range: number, now: number, night: number): void {
@@ -342,13 +343,8 @@ export class Actors {
       const yaw = (f * Math.PI) / 2;
       const W = (d.w || 1) * TM, D = (d.h || 1) * TM;
       if (d.res && b.cars) {
-        let k = 0;
-        for (const c of b.cars) {
-          if (!c.free) continue;
-          const [x, z] = toWorld(W / 2 - 1.5 - k * 2.4, D / 2 - 3.2);
-          this.vehicle('car', x, 0.13, z, yaw, CAR_COLORS[(c.seed || 0) % CAR_COLORS.length]);
-          if (++k >= 3) break;
-        }
+        for (const c of drivewayCars(b, this.drive)) this.vehicle('car', c.x, 0.13, c.z, c.yaw, c.color);
+        this.drive.length = 0;
         if (b.bikes) {
           const [x, z] = toWorld(-W / 2 + 1.5, D / 2 - 2);
           this.vehicle('moto', x, 0.1, z, yaw, CAR_COLORS[(b.id * 3) % CAR_COLORS.length]);
@@ -825,7 +821,7 @@ export class Actors {
     let shown = 0;
     for (const { w } of wants) {
       if (shown >= NEAR_CARS) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, pitch: w.pitch, roll: w.roll }); continue; }
-      const style = w.type === 'taxi' ? 'sedan' : w.type === 'police' ? 'estate' : CAR_STYLES[(Math.round(w.paint.r * 7) + Math.round(w.paint.g * 5) + Math.round(w.paint.b * 3)) % CAR_STYLES.length];
+      const style = w.type === 'taxi' ? 'sedan' : w.type === 'police' ? 'estate' : styleForPaint(w.paint);
       const kind = `${w.type}:${style}`;
       // the same car as last frame: the nearest slot of this kind within a few metres
       let best: CarSlot | null = null, bd = 36;

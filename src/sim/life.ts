@@ -1611,6 +1611,7 @@ export const Life: any = {
 
     // police movement
     for (const u of this.police) {
+      if (u.pursuit || u.block) continue; // V2: chasing the Founder, or manning a roadblock (src/player/wanted.ts)
       if (u.phase === 'scene') { // parked at the incident, lights flashing
         u.wait -= gm;
         if (u.wait <= 0) { u.phase = 'return'; u.path = [...u.path].reverse(); u.prog = 0; }

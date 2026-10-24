@@ -48,6 +48,8 @@ export interface FounderSave {
   damage?: number;
   /** V2: the Founder's vehicles (src/player/fleet.ts) */
   fleet?: { list: unknown[]; current: number; owed: number };
+  /** V2: stolen cars to put back in their families' drives on load (a save keeps none) */
+  returnCars?: { home: number; car: unknown }[];
 }
 
 export const Game = {
