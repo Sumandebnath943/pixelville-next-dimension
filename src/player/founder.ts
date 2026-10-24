@@ -13,7 +13,8 @@ import type { BuildingLayer } from '../render/buildings';
 import { emit } from '../sim/core';
 import type { FounderSave } from '../sim/game';
 import { Person } from '../gfx/person';
-import { Car as CarModel } from '../gfx/car';
+import { Car as CarModel, Moto, Ride, CarStyle } from '../gfx/car';
+import { Fleet, Vehicle, SPEC } from './fleet';
 import { surface } from '../gfx/surface';
 import { ENV } from '../gfx/env';
 import { Traffic } from '../sim/traffic';
@@ -67,8 +68,12 @@ export class Founder {
   speedKmh = 0;
   /** what the Founder did on the road, newest last */
   offences: Offence[] = [];
-  /** the car's dents, 0 (as new) … 100 */
-  damage = 0;
+  /** everything the Founder owns on wheels; `car` above is the physics of the one that's out */
+  fleet = new Fleet();
+  get vehicle(): Vehicle | null { return this.fleet.cur; }
+  /** the dents in the vehicle that's out, 0 (as new) … 100 (wrecked) */
+  get damage(): number { return this.fleet.cur?.damage ?? 0; }
+  set damage(d: number) { const v = this.fleet.cur; if (v) v.damage = Math.max(0, Math.min(100, d)); }
   private stillT = 0;
   private speedT = 0;
   private wrongT = 0;
@@ -84,7 +89,7 @@ export class Founder {
 
   /* the Founder: a deep-violet coat, a gold scarf, a wide-brimmed hat */
   private person!: Person;
-  private carModel!: CarModel;
+  private ride: Ride | null = null;
   private lastCar = { speed: 0, yaw: 0 };
   private buildBody(): void {
     const c = (h: string): THREE.Color => new THREE.Color(h);
@@ -120,27 +125,41 @@ export class Founder {
   }
 
   private buildCar(): void {
-    this.carModel = new CarModel('sedan', new THREE.Color('#3e1a5e'), true);
-    this.carMesh.add(this.carModel.root);
     const head = new THREE.SpotLight(0xfff2d0, 0, 60, 0.5, 0.5, 1.2);
     head.position.set(0, 0.8, 2.2);
     head.target.position.set(0, 0, 14);
     this.carMesh.add(head, head.target);
     this.carMesh.userData.head = head;
   }
+  /** draw the vehicle that's out (or none) */
+  private setRide(v: Vehicle | null): void {
+    if (this.ride) this.carMesh.remove(this.ride.root);
+    this.ride = null;
+    this.carMesh.visible = !!v;
+    if (!v) return;
+    const col = new THREE.Color(v.color);
+    this.ride = v.kind === 'moto' ? new Moto(col) : new CarModel(v.style as CarStyle, col, true);
+    this.carMesh.add(this.ride.root);
+  }
 
   /** start beside the Lodge (or wherever a save put us) */
   spawn(lodge: any, save?: FounderSave | null): void {
     if (!save) { // a new village: a fresh start
       this.purse.restore(undefined, []);
-      this.damage = 0;
       this.offences = [];
+    }
+    this.fleet.restore(save?.fleet as any);
+    if (!this.fleet.list.length) {
+      // the Founder's own saloon (also for saves from before vehicles could be owned)
+      const v = this.fleet.add({ model: 'founder', name: "Founder's saloon", kind: 'car', style: 'sedan', color: '#3e1a5e', price: 340 });
+      v.where = 'out';
+      v.damage = save?.damage ?? 0;
+      this.fleet.current = v.id;
     }
     if (save) {
       this.pos.set(save.x, save.y, save.z);
       this.yaw = this.camYaw = save.yaw;
       this.purse.restore(save.wallet, save.ledger as Entry[] | undefined);
-      this.damage = save.damage ?? 0;
       if (save.car) Object.assign(this.car, { x: save.car.x, z: save.car.z, yaw: save.car.yaw, speed: 0 });
       else this.parkCarAtLodge(lodge);
     } else if (lodge) {
@@ -154,24 +173,51 @@ export class Founder {
     }
     this.driving = false;
     this.pos.y = this.groundAt(this.pos.x, this.pos.z);
+    this.car.y = this.groundAt(this.car.x, this.car.z);
     this.camInit = false;
+    this.setRide(this.fleet.cur);
   }
-  private parkCarAtLodge(lodge: any): void {
-    if (!lodge) return;
+  /** the spot in the Lodge's drive where a vehicle is brought out */
+  lodgeSpot(lodge: any): { x: number; z: number; yaw: number } {
     const dx = lodge.door.x * TM + 4, dz = lodge.door.y * TM + 4;
     const cx = (lodge.x + lodge.w / 2) * TM, cz = (lodge.y + lodge.h / 2) * TM;
     const out = Math.atan2(dx - cx, dz - cz);
     // to the side of the door, nose toward the street
-    this.car.x = dx + Math.cos(out) * 5.5;
-    this.car.z = dz - Math.sin(out) * 5.5;
-    this.car.yaw = out;
-    this.car.speed = 0;
+    return { x: dx + Math.cos(out) * 5.5, z: dz - Math.sin(out) * 5.5, yaw: out };
+  }
+  private parkCarAtLodge(lodge: any): void {
+    if (!lodge) return;
+    const s = this.lodgeSpot(lodge);
+    Object.assign(this.car, { x: s.x, z: s.z, yaw: s.yaw, speed: 0 });
+  }
+
+  /** bring `v` out at (x, z) facing `yaw`; whatever was out goes back to the Lodge garage */
+  useVehicle(v: Vehicle, x: number, z: number, yaw: number): void {
+    if (this.driving) this.exitCar();
+    const prev = this.fleet.cur;
+    if (prev && prev !== v) prev.where = 'lodge';
+    v.where = 'out';
+    delete v.impound;
+    this.fleet.current = v.id;
+    Object.assign(this.car, { x, z, yaw, speed: 0, y: this.groundAt(x, z), pitch: 0 });
+    this.setRide(v);
+  }
+  /** put the vehicle that's out away (into the garage, or the impound lot); none is out afterwards */
+  stow(where: 'lodge' | 'impound'): Vehicle | null {
+    const v = this.fleet.cur;
+    if (!v) return null;
+    if (this.driving) this.exitCar();
+    v.where = where;
+    this.fleet.current = 0;
+    this.setRide(null);
+    return v;
   }
 
   save(): FounderSave {
     return {
       x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: { x: this.car.x, z: this.car.z, yaw: this.car.yaw },
       wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), damage: Math.round(this.damage),
+      fleet: this.fleet.serialize(),
     };
   }
 
@@ -241,10 +287,11 @@ export class Founder {
   }
 
   nearCar(): boolean {
-    return !this.driving && Math.hypot(this.pos.x - this.car.x, this.pos.z - this.car.z) < 3.4;
+    return !this.driving && !!this.fleet.cur && Math.hypot(this.pos.x - this.car.x, this.pos.z - this.car.z) < 3.4;
   }
 
   enterCar(): void {
+    if (!this.fleet.cur) return;
     this.driving = true;
     this.camYaw = this.car.yaw;
   }
@@ -281,9 +328,11 @@ export class Founder {
   private reportToTraffic(dt: number): void {
     const c = this.car;
     this.stillT = Math.abs(c.speed) < 0.5 ? this.stillT + dt : 0;
+    const v = this.fleet.cur;
     // the car counts as parked once it has stood still a while: drivers then pass it
-    const car = { x: c.x * 2, y: c.z * 2, dx: Math.sin(c.yaw), dy: Math.cos(c.yaw), car: true, still: !this.driving || this.stillT > 5 };
-    Traffic.guests = this.driving ? [car] : [car, { x: this.pos.x * 2, y: this.pos.z * 2, dx: Math.sin(this.yaw), dy: Math.cos(this.yaw), car: false, still: true }];
+    const car = v ? { x: c.x * 2, y: c.z * 2, dx: Math.sin(c.yaw), dy: Math.cos(c.yaw), car: true, still: !this.driving || this.stillT > 5, len: v.kind === 'moto' ? 0.3 : undefined } : null;
+    const me = { x: this.pos.x * 2, y: this.pos.z * 2, dx: Math.sin(this.yaw), dy: Math.cos(this.yaw), car: false, still: true };
+    Traffic.guests = this.driving && car ? [car] : car ? [car, me] : [me];
   }
 
   /* ---------- the Founder among the village's traffic ---------- */
@@ -291,7 +340,8 @@ export class Founder {
   /** push the car off other vehicles; a hard hit is a crash, a person in the way is knocked down */
   private bumpTraffic(c: Car, fx: number, fz: number, dt: number): void {
     this.bumpCd = Math.max(0, this.bumpCd - dt);
-    const mine = [1.35, -1.35];
+    const sp = SPEC[this.fleet.cur?.kind || 'car'];
+    const mine = [sp.reach, -sp.reach], R = sp.radius;
     for (const ob of Traffic.near(c.x * 2, c.z * 2, 28, this.near)) {
       const o = ob.o as any;
       const ox = (o.x ?? ob.x * 16) * 0.5, oz = (o.y ?? ob.y * 16) * 0.5;
@@ -300,7 +350,7 @@ export class Founder {
         if (!o.trip || o.state !== 'walk' || o.knocked) continue;
         for (const k of mine) {
           const mx = c.x + fx * k, mz = c.z + fz * k;
-          if (Math.hypot(mx - ox, mz - oz) > 1.3) continue;
+          if (Math.hypot(mx - ox, mz - oz) > R + 0.3) continue;
           if (Math.abs(c.speed) > 1.5) {
             Life.founderHitPerson(o, Math.abs(c.speed));
             this.offence('hit');
@@ -324,7 +374,7 @@ export class Founder {
           const mx = c.x + fx * m, mz = c.z + fz * m;
           const dx = mx - cx, dz = mz - cz;
           const d = Math.hypot(dx, dz);
-          const overlap = 1.0 + r - d;
+          const overlap = R + r - d;
           if (overlap <= 0 || d < 1e-4) continue;
           const nx = dx / d, nz = dz / d;
           c.x += nx * overlap;
@@ -426,24 +476,33 @@ export class Founder {
 
   private drive(dt: number): void {
     const c = this.car;
+    const v = this.fleet.cur;
+    if (!v) { this.driving = false; return; }
+    const sp = SPEC[v.kind];
     const { gas, brake } = Input.pedals();
     const steer = Input.steer();
     const hb = Input.handbrake();
-    const MAX = 30, REV = -8;
-    if (gas > 0) c.speed += (c.speed < 0 ? 18 : 9) * gas * dt;
+    // a battered vehicle loses its top end; an empty tank crawls on fumes; a wreck won't go at all
+    let MAX = sp.max * (v.damage > 50 ? 1 - (v.damage - 50) / 100 : 1), REV = -8, power = sp.accel;
+    if (v.fuel <= 0) { MAX = Math.min(MAX, 2.2); REV = -2.2; }
+    if (v.damage >= 100) { MAX = 0; REV = 0; power = 0; }
+    if (gas > 0 && c.speed < MAX) c.speed = Math.min(MAX, c.speed + (c.speed < 0 ? 18 : power) * gas * dt);
     if (brake > 0) c.speed -= (c.speed > 0 ? 22 : 6) * brake * dt;
     if (!gas && !brake) c.speed *= 1 - Math.min(1, dt * 0.6);
     if (hb) c.speed *= 1 - Math.min(1, dt * 3);
-    c.speed = Math.max(REV, Math.min(MAX, c.speed));
-    const turn = steer * 1.9 * (c.speed / (Math.abs(c.speed) + 5)) * (hb ? 1.6 : 1);
+    if (c.speed > MAX) c.speed = Math.max(MAX, c.speed - 6 * dt); // the limit just dropped (a knock, an empty tank)
+    c.speed = Math.max(REV, c.speed);
+    const turn = steer * (v.kind === 'moto' ? 2.3 : 1.9) * (c.speed / (Math.abs(c.speed) + 5)) * (hb ? 1.6 : 1);
     c.yaw -= turn * dt;
+    // fuel goes with distance driven
+    v.fuel = Math.max(0, v.fuel - (Math.abs(c.speed) * dt) / (sp.range * 1000));
     const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
     const nx = c.x + fx * c.speed * dt, nz = c.z + fz * c.speed * dt;
     // front and rear contact circles
-    const front = { x: nx + fx * 1.35, z: nz + fz * 1.35 };
-    const rear = { x: nx - fx * 1.35, z: nz - fz * 1.35 };
-    const hitF = this.collide(front, 1.0);
-    const hitR = this.collide(rear, 1.0);
+    const front = { x: nx + fx * sp.reach, z: nz + fz * sp.reach };
+    const rear = { x: nx - fx * sp.reach, z: nz - fz * sp.reach };
+    const hitF = this.collide(front, sp.radius);
+    const hitR = this.collide(rear, sp.radius);
     if (hitF || hitR) {
       c.x = (front.x + rear.x) / 2;
       c.z = (front.z + rear.z) / 2;
@@ -476,24 +535,34 @@ export class Founder {
 
   /** animate the body, place the car, and set the camera */
   private pose(dt: number): void {
-    this.mesh.visible = !this.driving && !this.firstPerson;
-    this.mesh.position.copy(this.pos);
-    this.mesh.rotation.y = this.yaw;
+    const riding = this.driving && this.ride instanceof Moto;
+    this.mesh.visible = (!this.driving || riding) && !this.firstPerson;
     const moving = !!this.mesh.userData.moving;
     const speed = moving ? Math.max(0.6, this.speedKmh / 3.6) : 0;
-    if (this.mesh.visible) this.person.animate(dt, moving ? 'walk' : 'idle', speed, ENV.rain.value);
     const c = this.car;
+    if (riding) {
+      // astride the motorcycle, leaning with it
+      const m = this.ride as Moto;
+      this.mesh.position.set(c.x - Math.sin(c.yaw) * 0.22, c.y + 0.42, c.z - Math.cos(c.yaw) * 0.22);
+      this.mesh.rotation.set(0, c.yaw, m.lean, 'YXZ');
+      if (this.mesh.visible) this.person.animate(dt, 'sit', 0, ENV.rain.value);
+    } else {
+      this.mesh.position.copy(this.pos);
+      this.mesh.rotation.set(0, this.yaw, 0, 'YXZ');
+      if (this.mesh.visible) this.person.animate(dt, moving ? 'walk' : 'idle', speed, ENV.rain.value);
+    }
+    if (!this.ride) return;
     this.carMesh.position.set(c.x, c.y, c.z);
     this.carMesh.rotation.set(c.pitch, c.yaw, 0, 'YXZ');
-    // the car's own suspension, wheels and lights
+    // the vehicle's own suspension, wheels and lights
     const accel = (c.speed - this.lastCar.speed) / Math.max(dt, 1e-3);
     let dy = c.yaw - this.lastCar.yaw;
     while (dy > Math.PI) dy -= Math.PI * 2;
     while (dy < -Math.PI) dy += Math.PI * 2;
     this.lastCar.speed = c.speed;
     this.lastCar.yaw = c.yaw;
-    this.carModel.drive(dt, 0, 0, 0, c.speed, accel, dy / Math.max(dt, 1e-3), 0);
-    this.carModel.lights(this.driving && ENV.night.value > 0.2, ENV.night.value);
+    this.ride.drive(dt, 0, 0, 0, c.speed, accel, dy / Math.max(dt, 1e-3), 0);
+    this.ride.lights(this.driving && ENV.night.value > 0.2, ENV.night.value);
   }
 
   /** place the street camera: third-person orbit with collision, or eyes */
@@ -508,7 +577,7 @@ export class Founder {
       return;
     }
     const target = new THREE.Vector3(this.pos.x, this.pos.y + (this.driving ? 1.6 : 1.55), this.pos.z);
-    const dist = this.driving ? (this.firstPerson ? 0.01 : 8.5) : this.camDist;
+    const dist = this.driving ? (this.firstPerson ? 0.01 : this.ride instanceof Moto ? 6 : 8.5) : this.camDist;
     if (this.driving && this.firstPerson) {
       const c = this.car;
       cam.position.set(c.x + Math.sin(c.yaw) * 0.3 - Math.cos(c.yaw) * 0.35, c.y + 1.3, c.z + Math.cos(c.yaw) * 0.3 + Math.sin(c.yaw) * 0.35);

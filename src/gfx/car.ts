@@ -379,3 +379,125 @@ export class Car {
     this.pool.visible = on && night > 0.12;
   }
 }
+
+/* ---------- a motorcycle ----------
+   Built from the car's own materials and wheels (so it compiles no new
+   shaders): a raked chrome fork, a teardrop tank, a long seat, an engine
+   block with an exhaust, round head and tail lamps. It leans into turns;
+   `lean` lets a rider lean with it. */
+export class Moto {
+  root = new THREE.Group();
+  body = new THREE.Group();
+  paint: THREE.MeshPhysicalMaterial;
+  head: THREE.MeshStandardMaterial;
+  tail: THREE.MeshStandardMaterial;
+  dims = { L: 2.1, WB: 1.42, W: 0.78, H: 1.15, wheelR: 0.31 };
+  lean = 0;
+  braking = false;
+  private front = new THREE.Group();
+  private spinF = new THREE.Group();
+  private spinR = new THREE.Group();
+  private spin = 0;
+  private pool: THREE.Mesh;
+
+  constructor(color: THREE.Color) {
+    const s = shared(), w = wheelGeo(), d = this.dims;
+    this.paint = surface(new THREE.MeshPhysicalMaterial({ color, metalness: 0.6, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.035 }), { snow: 0.9, wet: 0.15 }, 'carPaint') as THREE.MeshPhysicalMaterial;
+    this.head = new THREE.MeshStandardMaterial({ color: 0x7c848c, roughness: 0.25, metalness: 0.2, emissive: 0xfff4dc, emissiveIntensity: 0 });
+    this.tail = new THREE.MeshStandardMaterial({ color: 0x5a0808, roughness: 0.2, emissive: 0xff1a0a, emissiveIntensity: 0 });
+    const V = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
+    const put = (g: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D = this.body): void => {
+      const m = new THREE.Mesh(g, mat);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      parent.add(m);
+    };
+    const rod = (a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material, parent?: THREE.Object3D): void => {
+      const g = new THREE.CylinderGeometry(r, r, a.distanceTo(b), 10);
+      g.applyMatrix4(new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5), new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize()), V(1, 1, 1)));
+      put(g, mat, parent);
+    };
+    const r = d.wheelR, zf = d.WB / 2, zr = -d.WB / 2;
+    // wheels: the car's tyre and rim, narrower
+    for (const [spin, z] of [[this.spinF, zf], [this.spinR, zr]] as [THREE.Group, number][]) {
+      const tyre = new THREE.Mesh(w.tyre, s.tyre), rim = new THREE.Mesh(w.rim, s.rim);
+      tyre.castShadow = true;
+      spin.add(tyre, rim);
+      spin.scale.set(r * 0.5, r, r);
+      if (z > 0) { this.front.add(spin); this.front.position.set(0, r, z); }
+      else { spin.position.set(0, r, z); this.body.add(spin); }
+    }
+    // the steering: fork legs, handlebar and headlamp turn together about the raked head
+    rod(V(-0.085, 0, 0), V(-0.085, 0.62, -0.2), 0.024, s.chrome, this.front);
+    rod(V(0.085, 0, 0), V(0.085, 0.62, -0.2), 0.024, s.chrome, this.front);
+    rod(V(-0.36, 0.72, -0.26), V(0.36, 0.72, -0.26), 0.016, s.trim, this.front);
+    const lamp = new THREE.SphereGeometry(0.085, 16, 12);
+    lamp.scale(1, 1, 0.7);
+    lamp.translate(0, 0.55, -0.1);
+    put(lamp, this.head, this.front);
+    const fender = new THREE.CylinderGeometry(r * 1.08, r * 1.08, 0.12, 16, 1, true, Math.PI * 0.7, Math.PI * 0.75);
+    fender.rotateZ(Math.PI / 2);
+    put(fender, this.paint, this.front);
+    this.body.add(this.front);
+    // frame, tank, seat, engine, exhaust, tail
+    rod(V(0, 0.92, 0.5), V(0, 0.42, 0.05), 0.03, this.paint);
+    rod(V(0, 0.9, 0.48), V(0, 0.8, -0.38), 0.026, this.paint);
+    for (const sx of [-0.1, 0.1]) rod(V(sx, r, zr), V(sx, 0.44, -0.08), 0.03, s.trim);
+    const tank = new THREE.SphereGeometry(1, 20, 14);
+    tank.scale(0.2, 0.14, 0.32);
+    tank.translate(0, 0.9, 0.2);
+    put(tank, this.paint);
+    const seat = new THREE.BoxGeometry(0.26, 0.08, 0.62);
+    seat.translate(0, 0.86, -0.24);
+    put(seat, s.trim);
+    const engine = new THREE.BoxGeometry(0.3, 0.3, 0.38);
+    engine.translate(0, 0.46, 0.08);
+    put(engine, s.trim);
+    const heads = new THREE.CylinderGeometry(0.07, 0.08, 0.36, 12);
+    heads.rotateZ(Math.PI / 2);
+    heads.translate(0, 0.64, 0.16);
+    put(heads, s.chrome);
+    rod(V(0.14, 0.36, 0.2), V(0.19, 0.44, -0.78), 0.038, s.chrome);
+    const rear = new THREE.BoxGeometry(0.2, 0.05, 0.38);
+    rear.translate(0, 0.86, -0.66);
+    put(rear, this.paint);
+    const tl = new THREE.BoxGeometry(0.14, 0.06, 0.04);
+    tl.translate(0, 0.84, -0.86);
+    put(tl, this.tail);
+    const plate = new THREE.BoxGeometry(0.18, 0.12, 0.01);
+    plate.translate(0, 0.74, -0.88);
+    put(plate, s.plate);
+    this.root.add(this.body);
+    const pl = pool();
+    this.pool = new THREE.Mesh(pl.geo, pl.mat);
+    this.pool.scale.set(0.7, 1, 0.8);
+    this.pool.position.set(0, 0.06, 5);
+    this.pool.renderOrder = 3;
+    this.pool.visible = false;
+    this.root.add(this.pool);
+  }
+
+  drive(dt: number, x: number, z: number, yaw: number, speed: number, accel: number, turn: number, y = 0): void {
+    this.root.position.set(x, y, z);
+    this.root.rotation.y = yaw;
+    this.spin += (speed * dt) / this.dims.wheelR;
+    this.spinF.rotation.x = this.spinR.rotation.x = this.spin;
+    this.front.rotation.y = THREE.MathUtils.clamp((turn * this.dims.WB) / Math.max(speed, 0.6), -0.5, 0.5);
+    // lean into the turn the way a rider would (none when standing)
+    const want = speed > 1 ? THREE.MathUtils.clamp(-turn * speed * 0.055, -0.55, 0.55) : 0.12;
+    this.lean += (want - this.lean) * Math.min(1, dt * 4);
+    this.body.rotation.z = this.lean;
+    this.braking = accel < -0.6 || speed < 0.05;
+  }
+  setPaint(c: THREE.Color): void {
+    this.paint.color.copy(c);
+  }
+  lights(on: boolean, night: number): void {
+    this.head.emissiveIntensity = on ? 14 : 0;
+    this.tail.emissiveIntensity = (on ? 2.5 : 0) + (this.braking ? 9 : 0);
+    this.pool.visible = on && night > 0.12;
+  }
+}
+
+/** anything the Founder can ride */
+export type Ride = Car | Moto;

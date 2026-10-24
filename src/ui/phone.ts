@@ -13,6 +13,7 @@ import { Game } from '../sim/game';
 import type { Gps } from '../player/gps';
 import { distLabel } from '../player/gps';
 import type { Wallet } from '../player/wallet';
+import type { Vehicle } from '../player/fleet';
 import { icon, splitLead } from './hud';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -29,12 +30,23 @@ export interface PhoneApi {
   openSettings(): void;
   /** take a photo on the next frame; the phone gets it back through addPhoto */
   photo(): void;
+  /** the Founder's vehicles, for the Garage app */
+  garage: {
+    list(): Vehicle[];
+    where(v: Vehicle): string;
+    find(v: Vehicle): void;
+    tow(v: Vehicle): void;
+    out(): Vehicle | null;
+    driving(): boolean;
+    owed(): number;
+  };
 }
 
-type App = 'home' | 'map' | 'wallet' | 'pvtv' | 'tasks' | 'camera';
+type App = 'home' | 'map' | 'wallet' | 'pvtv' | 'tasks' | 'camera' | 'garage';
 const APPS: { id: App | 'planner' | 'settings'; name: string; icon: string; tint: string }[] = [
   { id: 'map', name: 'Map', icon: 'map', tint: '#3f8f86' },
   { id: 'wallet', name: 'Wallet', icon: 'wallet', tint: '#c08a3a' },
+  { id: 'garage', name: 'Garage', icon: 'car', tint: '#3a6a9a' },
   { id: 'pvtv', name: 'PVTV', icon: 'tv', tint: '#b8473f' },
   { id: 'tasks', name: 'Tasks', icon: 'book', tint: '#6a55a8' },
   { id: 'camera', name: 'Camera', icon: 'camera', tint: '#4a5568' },
@@ -99,6 +111,18 @@ export class Phone {
       case 'pvtv': body.innerHTML = head('PVTV') + `<div class="ph-scroll">${this.pvtvHtml()}</div>`; break;
       case 'tasks': body.innerHTML = head('Tasks') + `<div class="ph-scroll">${this.tasksHtml()}</div>`; break;
       case 'camera': body.innerHTML = head('Camera') + `<div class="ph-scroll">${this.cameraHtml()}</div>`; break;
+      case 'garage': body.innerHTML = head('Garage') + `<div class="ph-scroll">${this.garageHtml()}</div>`; break;
+    }
+    if (this.app === 'garage') {
+      const g = this.api.garage;
+      body.querySelectorAll<HTMLElement>('[data-find]').forEach((el) => el.addEventListener('click', () => {
+        const v = g.list().find((q) => q.id === +el.dataset.find!);
+        if (v) { g.find(v); this.go('map'); }
+      }));
+      body.querySelectorAll<HTMLElement>('[data-tow]').forEach((el) => el.addEventListener('click', () => {
+        const v = g.list().find((q) => q.id === +el.dataset.tow!);
+        if (v) { g.tow(v); this.render(); }
+      }));
     }
     body.querySelectorAll<HTMLElement>('[data-go]').forEach((b) => b.addEventListener('click', () => this.go(b.dataset.go as App)));
     body.querySelectorAll<HTMLElement>('[data-app]').forEach((b) => b.addEventListener('click', () => this.launch(b.dataset.app!)));
@@ -172,6 +196,23 @@ export class Phone {
     if (done.length) h += '<div class="ph-sep">Completed</div>';
     for (const t of done) h += `<div class="ph-row done"><span class="ico ${t.ok ? 'up' : 'down'}">${t.ok ? '✓' : '✕'}</span><span class="grow">${esc(t.text)}<small>Day ${t.doneDay}</small></span></div>`;
     return h;
+  }
+
+  private garageHtml(): string {
+    const g = this.api.garage;
+    const list = g.list();
+    let h = '';
+    if (g.owed() > 0) h += `<div class="ph-route"><span class="grow">Unpaid fines<small>Taken from your wallet as money comes in</small></span><b class="down">$${Math.round(g.owed())}</b></div>`;
+    if (!list.length) return h + '<p class="ph-empty">You own nothing on wheels. The showrooms sell cars and motorcycles.</p>';
+    for (const v of list) {
+      const out = g.out() === v;
+      h += `<div class="ph-veh">
+        <div class="ph-row"><span class="ico"><i class="dot" style="background:${v.color}"></i></span><span class="grow"><b>${esc(v.name)}</b><small>${esc(g.where(v))}</small></span></div>
+        <div class="ph-meters"><span>Fuel</span><i class="gauge${v.fuel < 0.15 ? ' low' : ''}"><b style="width:${Math.round(v.fuel * 100)}%"></b></i><span>Condition</span><i class="gauge${v.damage >= 50 ? ' low' : ''}"><b style="width:${Math.round(100 - v.damage)}%"></b></i></div>
+        <div class="ph-acts"><button data-find="${v.id}">${icon('pin')}Find</button>${out && !g.driving() ? `<button data-tow="${v.id}">Call a tow · $35</button>` : ''}</div>
+      </div>`;
+    }
+    return h + '<p class="ph-empty">Only one vehicle is out at a time; the rest wait in the Lodge garage. Park at the kerb, away from junctions and bus stops: where there\'s a police station, there are wardens.</p>';
   }
 
   private cameraHtml(): string {

@@ -139,8 +139,15 @@ The vertical slice is still at `slice.html` (the "look lab"):
 - **Phone** (`src/ui/phone.ts`) on <kbd>Tab</kbd> or the top-bar button: home screen with the clock, the wallet and the current route; Map (tap any place or building, or search the village's places by name, sorted by distance), Wallet (balance, today in and out, history), PVTV (markets and headlines), Tasks, Camera (a clean photo of the view, kept for the session, saved as a JPEG), Planner and Settings. The mouse stays free while it's out; <kbd>Esc</kbd> puts it away. Personal moments (a scratch card, a route) stay out of the village news.
 - Covered by `tests/founder.test.ts` (wallet and GPS).
 
-### 2c · Vehicle ownership
-- Buy cars and motorcycles at the showrooms, keep them at the Lodge garage, refuel at gas stations (fuel gauge), damage and repairs at the auto garage, parking, tickets and towing. Owned vehicles persist in the save.
+### 2c · Vehicle ownership (done 2026-10-24)
+- **The fleet** (`src/player/fleet.ts`): the Founder starts with their own saloon; everything bought is kept with the village save (paint, fuel, dents, where it is). One vehicle is out at a time, the one you drive; the rest wait in the **Lodge garage** (at the Lodge door: take one out, put the one that's home away).
+- **Showrooms** (`src/ui/showroom.ts`): the Car Showroom sells the Pixel Hatch, Ville Saloon, Meadow Estate and Ridge 4×4 ($280–520), the Motorcycle Showroom the Sprite 125 and Ridge 650 ($160–260), each in ten paints. The new one is parked at the kerb outside; whatever you were driving goes home to the garage. Part exchange buys back anything in the garage or parked outside, at 55% of the price less wear, paid from the showroom's own till.
+- **Motorcycles**: a new model built from the car's materials (no new shaders), quicker off the mark and sharper to turn; the Founder rides it in plain sight and leans with it.
+- **Fuel** drains with distance (about 26 km a tank for a car, 20 for a motorcycle); a dry tank only crawls. Pull onto a gas station's forecourt and stop: <kbd>E</kbd> fills up, paid to the station (or as much as the wallet allows). A warning with a pin to the nearest pumps comes at 15%.
+- **Damage** from knocks and crashes costs top speed past 50% and leaves a wreck at 100%. Stop at an open auto garage (8:00–18:00) and <kbd>E</kbd> repairs it, paid to the garage; a wreck can be towed there from the phone.
+- **Parking, tickets, towing**: where there's a police station there are wardens. Park at the kerb; in or next to a junction, lights or level crossing, in a bus stop or taxi rank, on the railway or out in the carriageway earns a $15 ticket after 45 game minutes and a tow to the impound lot at the station after two more hours; collect it there for $40. Fines go to the village fund; what the wallet can't cover is owed and taken as money comes in. The Lodge's own drive is always fine.
+- **HUD and phone**: a fuel gauge and a condition warning next to the speedometer; a **Garage** app lists every vehicle with its fuel, condition and whereabouts, finds it (GPS), and calls a tow ($35: home to the Lodge, or a wreck to the auto garage).
+- Covered by `tests/founder.test.ts` (fleet values and saves, the parking rules).
 
 ### 2d · Crime and the wanted level
 - Steal any car; offences raise 1–5 stars; police come from real stations by road, roadblocks, spike strips, the helicopter from a heliport. Caught: fine, a night in the cells, impound. "Wasted": wake at the hospital with a bill. Planner locked while wanted.

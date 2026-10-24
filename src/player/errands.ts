@@ -176,7 +176,10 @@ export class Errands {
   /** a shop that's open, and the Founder at its door */
   canScratch(b: any): boolean {
     const d = CAT[b.type];
-    if (!d || d.cat !== 'shop' || d.visit !== 'shop' || b.ruined || b.construction) return false;
+    if (!d || d.cat !== 'shop' || b.ruined || b.construction) return false;
+    // the corner shops and the gas station sell them; showrooms and the auto garage don't
+    if (d.visit !== 'shop' && b.type !== 'gas') return false;
+    if (b.type === 'carshowroom' || b.type === 'motoshowroom' || b.type === 'autoshop') return false;
     if (d.hours && (Sim.clock < d.hours.s || Sim.clock >= d.hours.e)) return false;
     const f = this.founder;
     return !f.driving && Math.hypot(b.door.x * TM + 4 - f.pos.x, b.door.y * TM + 4 - f.pos.z) < 14;

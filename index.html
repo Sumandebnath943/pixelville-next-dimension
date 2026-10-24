@@ -53,6 +53,8 @@
       <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
       <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="1.5" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" /></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6" /><path d="M15 15l5 5" /></symbol>
+      <symbol id="i-fuel" viewBox="0 0 24 24"><path d="M5 20V5.5C5 4.7 5.7 4 6.5 4h6c.8 0 1.5.7 1.5 1.5V20M4 20h11M5 10h9M14 9.5l3 1.5v6.5c0 .8.6 1.5 1.5 1.5s1.5-.7 1.5-1.5V8l-2.5-2.5" /></symbol>
+      <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 4.5a4.5 4.5 0 0 0-4.3 5.8L4.5 16a2.1 2.1 0 0 0 3 3l5.7-5.7a4.5 4.5 0 0 0 5.8-4.3l-2.7 2.7-2.6-.7-.7-2.6z" /></symbol>
     </svg>
 
     <canvas id="game"></canvas>
@@ -111,6 +113,7 @@
       <div id="streethud">
         <span id="wallet-pill" class="glass" title="The Founder's wallet"><svg><use href="#i-wallet" /></svg><b id="wallet">$120</b></span>
         <span id="speedo" class="glass"></span>
+        <span id="fuel-pill" class="glass" title="Fuel and condition"><svg><use href="#i-fuel" /></svg><i class="gauge"><b id="fuel-bar"></b></i><span id="cond"></span></span>
         <span id="modebadge" class="glass"></span>
         <span id="gps-pill" class="glass"><svg><use href="#i-pin" /></svg><span id="gps-text"></span><button id="gps-stop" class="ib" title="Stop the route"><svg><use href="#i-close" /></svg></button></span>
       </div>
@@ -201,6 +204,14 @@
           <option value="festive">A Year Without Loss — 28 days, no building lost</option></select></div>
         <p class="note">The current village is left as it is in your save slots; autosave moves on to the new one.</p>
         <div class="row-end"><button data-close="newmap">Cancel</button><button class="primary" id="nm-start">Found the village</button></div>
+      </div></div>
+
+      <div id="showroomui" class="modal"><div class="modal-card glass wide">
+        <header class="m-head"><h1 id="sr-title">Showroom</h1><button class="ib" data-close="showroomui" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <p class="note" id="sr-sub"></p>
+        <div id="sr-models" class="sr-grid"></div>
+        <h2>Part exchange</h2>
+        <div id="sr-trade"></div>
       </div></div>
 
       <div id="statsui" class="modal"><div class="modal-card glass wide">

@@ -46,6 +46,8 @@ export interface FounderSave {
   /** V2: the wallet's ledger (newest last) and the car's dents */
   ledger?: { day: number; time: string; amount: number; label: string; kind: string }[];
   damage?: number;
+  /** V2: the Founder's vehicles (src/player/fleet.ts) */
+  fleet?: { list: unknown[]; current: number; owed: number };
 }
 
 export const Game = {

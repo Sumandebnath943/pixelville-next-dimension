@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { World } from '../src/sim/world';
 import { Wallet } from '../src/player/wallet';
 import { Gps, distLabel } from '../src/player/gps';
+import { Fleet, parkingOffence } from '../src/player/fleet';
 
 describe('wallet', () => {
   it('pays out of a household and into a shop, and keeps the ledger', () => {
@@ -33,6 +34,28 @@ describe('wallet', () => {
   });
 });
 
+describe('fleet', () => {
+  it('values vehicles for part exchange and survives a save', () => {
+    const f = new Fleet();
+    const a = f.add({ model: 'hatch', name: 'Pixel Hatch', kind: 'car', style: 'hatch', color: '#b0201c', price: 280 });
+    const b = f.add({ model: 'moto', name: 'Sprite 125', kind: 'moto', style: 'moto', color: '#1f3a6a', price: 160 });
+    a.where = 'out';
+    f.current = a.id;
+    expect(f.cur).toBe(a);
+    expect(f.value(a)).toBe(Math.round(280 * 0.55));
+    a.damage = 100;
+    expect(f.value(a)).toBe(Math.round(280 * 0.55 * 0.4));
+    const g = new Fleet();
+    g.restore(JSON.parse(JSON.stringify(f.serialize())));
+    expect(g.list.map((v) => v.name)).toEqual(['Pixel Hatch', 'Sprite 125']);
+    expect(g.cur?.id).toBe(a.id);
+    // new ids carry on after the restored ones
+    expect(g.add({ model: 'suv', name: 'Ridge 4×4', kind: 'car', style: 'suv', color: '#151618', price: 520 }).id).toBe(b.id + 1);
+    g.remove(g.cur!);
+    expect(g.cur).toBeNull();
+  });
+});
+
 describe('gps', () => {
   beforeEach(() => {
     World.roadMap.fill(0);
@@ -58,6 +81,24 @@ describe('gps', () => {
     g.update(0.1, 30 * 8 + 4, 40 * 8 + 1);
     expect(arrived).toBe('The corner shop');
     expect(g.dest).toBeNull();
+  });
+
+  it('knows a legal kerb from a junction, the carriageway and a bus stop', () => {
+    // the L of road above: (30, 20) is its corner
+    const at = (tx: number, tz: number, dx = 4, dz = 4): string | null => parkingOffence(tx * 8 + dx, tz * 8 + dz);
+    expect(at(15, 20, 4, 1.8)).toBeNull(); // at the north kerb of the east-west stretch
+    expect(at(15, 20, 4, 6.2)).toBeNull(); // the south kerb
+    expect(at(15, 20, 4, 4)).toBe('out in the road');
+    expect(at(30, 30, 1.8, 4)).toBeNull(); // the west kerb of the north-south stretch
+    // a side road south from (20, 20) makes a T-junction there
+    for (let y = 21; y <= 25; y++) World.roadMap[World.idx(20, y)] = 1;
+    expect(at(20, 20, 4, 1.8)).toBe('in the middle of a junction');
+    expect(at(19, 20, 4, 1.8)).toBe('too close to a junction');
+    expect(at(17, 20, 4, 1.8)).toBeNull();
+    expect(at(5, 5)).toBeNull(); // off the road altogether
+    World.buildings.push({ type: 'busstop', door: { x: 15, y: 21 } } as any);
+    expect(at(15, 20, 4, 6.2)).toBe('in the bus stop');
+    World.buildings.pop();
   });
 
   it('labels distances the way a phone would', () => {

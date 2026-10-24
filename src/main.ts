@@ -28,6 +28,8 @@ import { Gps, distLabel } from './player/gps';
 import { Errands } from './player/errands';
 import { Phone } from './ui/phone';
 import { GpsArrows } from './render/gpsarrows';
+import { Motoring } from './player/motoring';
+import { Showroom } from './ui/showroom';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -84,12 +86,18 @@ const hud = new Hud({
 const panels = new Panels({
   toast: (m) => hud.toast(m),
   focus: goTo,
-  extraActions: (b) => (errands.canScratch(b) ? [{ label: 'Scratch card · $2', run: () => errands.scratch(b) }] : []),
+  extraActions: (b) => [
+    ...(errands.canScratch(b) ? [{ label: 'Scratch card · $2', run: () => errands.scratch(b) }] : []),
+    ...motoring.buildingActions(b),
+  ],
   afterLoad: () => { buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); },
   isPlanner: inPlanner,
 });
 // (hud.toast's third argument means "already logged": personal moments stay out of the village news)
-const errands = new Errands(founder, gps, (m, at, news) => hud.toast(m, at, !news));
+const personalToast = (m: string, at?: { x: number; y: number }, news?: boolean): void => hud.toast(m, at, !news);
+const errands = new Errands(founder, gps, personalToast);
+const motoring = new Motoring(founder, gps, personalToast, () => Sim.clock, (b) => showroom.open(b));
+const showroom = new Showroom(motoring, founder.purse, () => panels.show('showroomui'), () => panels.close('showroomui'));
 let photoWanted = false;
 const phone = new Phone({
   founder: () => ({ x: founder.driving ? founder.car.x : founder.pos.x, z: founder.driving ? founder.car.z : founder.pos.z, yaw: founder.driving ? founder.car.yaw : founder.yaw }),
@@ -99,6 +107,15 @@ const phone = new Phone({
   openPlanner: () => { if (!inPlanner()) togglePlanner(); },
   openSettings: () => panels.openSettings(),
   photo: () => { photoWanted = true; },
+  garage: {
+    list: () => founder.fleet.list,
+    where: (v) => motoring.where(v),
+    find: (v) => motoring.find(v, Game.lodge()),
+    tow: (v) => motoring.tow(v),
+    out: () => founder.vehicle,
+    driving: () => founder.driving,
+    owed: () => founder.fleet.owed,
+  },
 });
 const togglePhone = (): void => {
   phone.toggle();
@@ -142,7 +159,10 @@ function interactions(): void {
     text = errand.text;
     if (Input.take('interact')) errand.act();
   } else if (founder.driving) {
-    text = '<b>F</b> get out';
+    // at the pumps or the garage: fill up, get it mended
+    const service = motoring.interaction();
+    text = (service ? `${service.text} &nbsp; ` : '') + `<b>F</b> get ${founder.vehicle?.kind === 'moto' ? 'off' : 'out'}`;
+    if (service && Input.take('interact')) service.act();
     if (Input.take('vehicle')) founder.exitCar();
   } else {
     // the nearest door, villager or the Founder's car
@@ -164,8 +184,9 @@ function interactions(): void {
         }
     }
     if (near?.kind === 'car') {
-      text = '<b>F</b> drive your car';
-      if (Input.take('vehicle')) founder.enterCar();
+      const v = founder.vehicle!;
+      text = v.damage >= 100 ? `The ${v.name} is wrecked — call a tow from the phone` : `<b>F</b> ${v.kind === 'moto' ? 'ride' : 'drive'} the ${v.name}`;
+      if (Input.take('vehicle') && v.damage < 100) founder.enterCar();
     } else if (near?.kind === 'person') {
       text = `<b>E</b> meet ${near.ref.name} ${near.ref.surname}`;
       if (Input.take('interact')) panels.showPerson(near.ref);
@@ -220,6 +241,7 @@ function frame(now: number): void {
   // errands and directions follow the Founder (in the car, from the car)
   const fx = founder.driving ? founder.car.x : founder.pos.x, fz = founder.driving ? founder.car.z : founder.pos.z;
   errands.update(dt, street && !panels.anyModalOpen());
+  motoring.update(dt);
   gps.update(dt, fx, fz);
 
   // cameras: street, aerial, or a blend while rising/descending
@@ -269,6 +291,15 @@ function frame(now: number): void {
     if (gps.dest) $('gps-text').textContent = `${gps.dest.label} · ${distLabel(gps.left)}`;
     const speedo = founder.driving ? `${Math.round(founder.speedKmh)} km/h` : '';
     if ($('speedo').textContent !== speedo) $('speedo').textContent = speedo;
+    document.body.classList.toggle('driving', founder.driving);
+    const veh = founder.vehicle;
+    if (veh && founder.driving) {
+      $('fuel-bar').style.width = `${Math.round(veh.fuel * 100)}%`;
+      $('fuel-bar').parentElement!.classList.toggle('low', veh.fuel < 0.15);
+      const cond = veh.damage >= 25 ? `<svg><use href="#i-wrench"/></svg>${Math.round(100 - veh.damage)}%` : '';
+      if ($('cond').innerHTML !== cond) $('cond').innerHTML = cond;
+      $('cond').classList.toggle('bad', veh.damage >= 50);
+    }
     const mode = founder.driving ? 'car' : founder.firstPerson ? 'eye' : '';
     if ($('modebadge').dataset.m !== mode) {
       $('modebadge').dataset.m = mode;
@@ -344,4 +375,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom };

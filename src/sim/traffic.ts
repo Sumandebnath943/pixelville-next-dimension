@@ -41,7 +41,7 @@ export interface Ob { o: unknown; x: number; y: number; dx: number; dy: number; 
 /** per-vehicle state kept on its trip object: speed, time stuck, the ways out of a jam, its lane */
 export interface Drive { v?: number; wait?: number; bold?: number; pass?: number; honk?: number; lat?: number; over?: { o: unknown; t: number } | null }
 /** the Founder as the sim sees them: V1 pixels, a heading, at the wheel or on foot */
-export interface Guest { x: number; y: number; dx: number; dy: number; car: boolean; still: boolean }
+export interface Guest { x: number; y: number; dx: number; dy: number; car: boolean; still: boolean; len?: number }
 
 /** stand for the Founder, and the Founder's car, in the index */
 export const FOUNDER = { founder: true };
@@ -81,7 +81,7 @@ function put(o: unknown, x: number, y: number, dx: number, dy: number, car: bool
  * row alongside isn't a side street: a neighbour only counts as an arm unless
  * it and this tile both carry on in the same direction.
  */
-function isJunction(x: number, y: number): boolean {
+export function isJunction(x: number, y: number): boolean {
   if (World.signals.has(World.idx(x, y))) return false;
   const ew = (yy: number): boolean => World.isRoad(x - 1, yy) && World.isRoad(x + 1, yy);
   const ns = (xx: number): boolean => World.isRoad(xx, y - 1) && World.isRoad(xx, y + 1);
@@ -142,7 +142,7 @@ export const Traffic = {
     for (const u of life.fireTrucks || []) put(u, u.x, u.y, u.dirx, u.diry, true, 1.1, u.phase === 'douse');
     if (life.crash) put(life.crash, life.crash.x, life.crash.y, 1, 0, true, 1.2, true);
     // the Founder's car sits anywhere across the road, so it blocks a wider strip than a lane
-    for (const g of this.guests) put(g.car ? FOUNDER_CAR : FOUNDER, g.x, g.y, g.dx, g.dy, g.car, g.car ? CAR_LEN : 0, g.still, g.car ? 0.14 : 0);
+    for (const g of this.guests) put(g.car ? FOUNDER_CAR : FOUNDER, g.x, g.y, g.dx, g.dy, g.car, g.car ? g.len ?? CAR_LEN : 0, g.still, g.car ? 0.14 : 0);
     // claims nobody has refreshed lately lapse
     for (const [k, c] of claims) if (c.tick < tick - 2) claims.delete(k);
   },
