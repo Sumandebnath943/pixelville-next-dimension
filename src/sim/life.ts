@@ -12,6 +12,7 @@ import { Calamity } from './calamity';
 import { Gov } from './gov';
 import { Festivals } from './festivals';
 import { Traffic } from './traffic';
+import { Rep } from './reputation';
 /* ============================================================
    PixelVille — ambient life & the crime and justice system.
    Hikers trek up mountains (torches at night), birds cross the
@@ -1330,7 +1331,7 @@ export const Life: any = {
       if (p.trip.car) p.trip.car.free = true; // the car is towed home
       p.state = 'in'; p.at = p.home; p.trip = null; p.dest = null; p.returnAt = undefined; p.backTo = null;
       p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 12);
-      Mind.remember(p, 'founder', "had their car wrecked by the Founder's driving", -2);
+      Rep.feel(p, -4, "had their car wrecked by the Founder's driving", `crashed into ${p.name}'s car`);
     } else {
       visitor.phase = 'out'; visitor.done = true;
     }
@@ -1340,6 +1341,7 @@ export const Life: any = {
     this.say(`💥 The Founder crashed into ${whose} — ${this.crash.unit ? 'police are on the way' : 'no squad car can respond'}`, { x: this.crash.x, y: this.crash.y });
     this.spawnGawkers(this.crash.x, this.crash.y, 5, this.crash);
     this.coverStory(this.crash.x, this.crash.y, this.crash, 'The Founder in a collision on a village street');
+    Rep.broadcast(-0.3); // on the evening news, if there is a station
     Sim.safety = Math.max(20, Sim.safety - 2);
     this.incidentCd = Math.max(this.incidentCd, 200);
     return true;
@@ -1351,7 +1353,8 @@ export const Life: any = {
     p.freezeT = 18 + Math.min(20, speed * 2);
     p.bubble = '🤕'; p.bubbleUntil = performance.now() + 7000;
     p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 15);
-    Mind.remember(p, 'founder', "was knocked down by the Founder's car", -3);
+    Rep.feel(p, -6, "was knocked down by the Founder's car", `knocked ${p.name} down with their car`);
+    Rep.broadcast(-0.4);
     Sim.safety = Math.max(20, Sim.safety - 1);
     Snd.crunch();
     this.say(`🤕 ${Sim.fullName(p)} was knocked down by the Founder's car`, { x: p.x, y: p.y });

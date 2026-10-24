@@ -7,6 +7,7 @@ import { World } from '../src/sim/world';
 import { Life } from '../src/sim/life';
 import { Sim } from '../src/sim/agents';
 import { emit } from '../src/sim/core';
+import { Mind } from '../src/sim/mind';
 import { Wanted } from '../src/player/wanted';
 
 const TM = 8;
@@ -20,9 +21,12 @@ function founder(x = 100, z = 100): any {
     dropHijacked() { const v = this.hijacked; this.hijacked = null; this.onAbandon?.(v, this.car.x, this.car.z, this.car.yaw); },
   };
 }
+let current: Wanted | null = null;
 function setup(): { f: any; w: Wanted; toasts: string[] } {
   const f = founder(), toasts: string[] = [];
-  return { f, w: new Wanted(f, (m) => toasts.push(m)), toasts };
+  current?.dispose(); // one listening at a time
+  current = new Wanted(f, (m) => toasts.push(m));
+  return { f, w: current, toasts };
 }
 /** a building standing on one tile */
 function building(b: any, tx: number, tz: number): any {
@@ -79,6 +83,33 @@ describe('the wanted level', () => {
     expect(w.stars).toBe(2);
     expect(toasts.join(' ')).toContain('a witness called it in');
     expect(p.mind.memories.at(-1).text).toContain('knock someone down');
+  });
+
+  it("a villager who can't stand the Founder reports their driving; loyal fans look the other way", () => {
+    const { f, w, toasts } = setup();
+    const p: any = { state: 'walk', trip: {}, x: 110 * 2, y: 100 * 2, seed: 3, home: { x: 0, y: 0 }, name: 'Ada', surname: 'Berg' };
+    Sim.people.push(p);
+    Mind.ensure(p).fo = 8;
+    f.hijacked = { stolen: { home: 1, family: 'Bergs' } };
+    f.offence('theft'); // a fan saw it: not reported
+    expect(w.stars).toBe(0);
+    p.mind.fo = -6;
+    f.offence('red light');
+    expect(w.stars).toBe(1);
+    expect(toasts.join(' ')).toContain("a villager who can't stand you called it in");
+  });
+
+  it('while the Founder hides, someone who dislikes them tells the police where they are', () => {
+    const { w } = setup();
+    const p: any = { state: 'walk', trip: {}, x: 0, y: 0, seed: 3, home: { x: 0, y: 0 }, name: 'Ada', surname: 'Berg' };
+    Mind.ensure(p).fo = 1;
+    w.raise(2, 'a test', true);
+    for (let s = 0; s < 10; s++) w.update(1);
+    expect(w.tipOff(p)).toBe(false); // she doesn't mind the Founder
+    p.mind.fo = -4;
+    expect(w.tipOff(p)).toBe(true);
+    expect(w.unseen).toBeLessThan(3);
+    expect(w.tipOff(p)).toBe(false); // once in a while, not every step
   });
 
   it('out of sight long enough, a star drops, then the chase is over', () => {

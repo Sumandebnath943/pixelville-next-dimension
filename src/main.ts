@@ -33,6 +33,8 @@ import { GpsArrows } from './render/gpsarrows';
 import { Motoring, IMPOUND_FEE } from './player/motoring';
 import { Showroom } from './ui/showroom';
 import { Wanted, FINES } from './player/wanted';
+import { Street } from './player/street';
+import { Rep } from './sim/reputation';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -104,6 +106,7 @@ const errands = new Errands(founder, gps, personalToast);
 const motoring = new Motoring(founder, gps, personalToast, () => Sim.clock, (b) => showroom.open(b));
 const showroom = new Showroom(motoring, founder.purse, () => panels.show('showroomui'), () => panels.close('showroomui'));
 const wanted = new Wanted(founder, personalToast);
+const streetLife = new Street(founder, wanted, personalToast);
 
 /* ---------- busted, wasted: the hours that pass behind a curtain ---------- */
 let scene: { left: number; until: number; done: () => void } | null = null;
@@ -357,7 +360,10 @@ function frame(now: number): void {
   const fx = founder.driving ? founder.car.x : founder.pos.x, fz = founder.driving ? founder.car.z : founder.pos.z;
   errands.update(dt, street && !panels.anyModalOpen());
   motoring.update(dt);
-  if (street && !panels.anyModalOpen()) wanted.update(dt);
+  if (street && !panels.anyModalOpen()) {
+    wanted.update(dt);
+    streetLife.update(dt);
+  }
   gps.update(dt, fx, fz);
 
   // cameras: street, aerial, or a blend while rising/descending
@@ -421,6 +427,16 @@ function frame(now: number): void {
       $('modebadge').dataset.m = mode;
       $('modebadge').innerHTML = mode ? `<svg><use href="#i-${mode}"/></svg>${mode === 'car' ? 'Driving' : 'First person'}` : '';
     }
+    // what the village thinks of the Founder: a word, and a meter either side of indifference
+    const town = Rep.town(), repPill = $('rep-pill'), repBar = $('rep-bar');
+    if ($('rep-label').textContent !== town.label) $('rep-label').textContent = town.label;
+    const rw = Math.min(50, Math.abs(town.score) * 5);
+    repBar.style.left = `${town.score >= 0 ? 50 : 50 - rw}%`;
+    repBar.style.width = `${rw}%`;
+    repBar.classList.toggle('neg', town.score < 0);
+    repPill.classList.toggle('good', town.score >= 1);
+    repPill.classList.toggle('bad', town.score <= -1);
+    repPill.title = `What the village thinks of you: ${town.label.toLowerCase()} · ${Math.round(town.known * 100)}% of villagers have an opinion of you`;
     // the wanted level: lit stars, flashing while a crew has eyes on the Founder, and how close they are to losing them
     document.body.classList.toggle('wanted', wanted.stars > 0);
     if (wanted.stars > 0) {
@@ -499,4 +515,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels };

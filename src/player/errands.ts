@@ -10,7 +10,7 @@
 import { Sim } from '../sim/agents';
 import { World } from '../sim/world';
 import { Life } from '../sim/life';
-import { Mind } from '../sim/mind';
+import { Rep } from '../sim/reputation';
 import { Tasks } from '../sim/tasks';
 import { Gov } from '../sim/gov';
 import { CAT } from '../sim/catalog';
@@ -166,7 +166,14 @@ export class Errands {
     const got = Math.min(pay, Math.max(0, Math.floor(Gov.treasury)));
     Gov.treasury -= got;
     if (got) f.purse.earn(got, label === 'fire' ? 'Helped the bucket line' : 'Helped at a crash', 'reward');
-    if (fireB) for (const r of fireB.residents) Mind.remember(r, 'founder', 'the Founder joined the bucket line at our fire', 2);
+    if (fireB) {
+      const fam = fireB.residents[0] ? `the ${family(fireB.residents[0].surname)}'` : 'a';
+      for (const r of fireB.residents) Rep.feel(r, 3, 'the Founder joined the bucket line at our fire', `helped put out the fire at ${fam} place`);
+      Rep.broadcast(0.3);
+    } else {
+      // the people standing around the crash saw who stopped to help
+      for (const q of Sim.people) if (q.state === 'walk' && q.trip && Math.hypot(q.x * 0.5 - f.pos.x, q.y * 0.5 - f.pos.z) < 30) Rep.feel(q, 1, 'saw the Founder help out at a crash', 'helped out at a crash');
+    }
     this.toast(label === 'fire'
       ? `🧯 You joined the bucket line — the village thanks you${got ? ` with $${got} from the fund` : ''}`
       : `🙏 You helped wave traffic around the crash — the village thanks you${got ? ` with $${got} from the fund` : ''}`);
@@ -187,6 +194,7 @@ export class Errands {
   scratch(b: any): void {
     const f = this.founder;
     const name = CAT[b.type].name;
+    if (Rep.price(b, 2).refused) { this.toast(`🙅 The staff at the ${name} won't serve you`); return; }
     if (!f.purse.spend(2, `Scratch card · ${name}`, 'purchase', b)) { this.toast('👛 Not enough money for a scratch card'); return; }
     const r = Math.random();
     const win = r < 1 / 250 ? 200 : r < 1 / 250 + 1 / 40 ? 20 : r < 1 / 250 + 1 / 40 + 1 / 8 ? 3 : 0;
@@ -225,7 +233,7 @@ export class Errands {
     const want = Math.max(15, Math.min(60, Math.round(15 + (home.funds || 0) * 0.04)));
     const got = this.founder.purse.earn(want, `Brought ${d.name} home to the ${d.fam}`, 'reward', home);
     for (const r of home.residents) {
-      Mind.remember(r, 'founder', `the Founder brought ${d.name} home`, 2);
+      Rep.feel(r, 4, `the Founder brought ${d.name} home`, `found the ${d.fam}' dog ${d.name} and brought it home`);
       r.mood = Math.min(98, (r.mood ?? 60) + 6);
     }
     Tasks.done(d.task, true, `Brought ${d.name} home to the ${d.fam}`);

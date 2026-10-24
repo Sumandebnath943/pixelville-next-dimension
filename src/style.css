@@ -169,6 +169,15 @@ body.planner #palette { display: flex; }
 #streethud b { font-weight: 600; }
 #speedo:empty, #modebadge:empty { display: none; }
 body.planner #streethud, body.planner #crosshair { display: none; }
+/* the village's opinion of the Founder: a word, and a meter either side of indifference */
+#rep-pill { font-size: 12.5px; }
+#rep-pill.good #rep-label { color: var(--ok); }
+#rep-pill.bad #rep-label { color: var(--bad); }
+#rep-pill .meter { position: relative; display: block; width: 44px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+#rep-pill .meter::after { content: ''; position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px; background: rgba(255, 255, 255, 0.45); }
+#rep-pill .meter b { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-radius: 3px; background: var(--ok); transition: left 0.6s, width 0.6s; }
+#rep-pill .meter b.neg { background: var(--bad); }
+.sr-name s { color: var(--ink-3); font-weight: 400; margin-right: 2px; }
 #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: rgba(255, 255, 255, 0.8); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3); display: none; pointer-events: none; }
 body.fp #crosshair { display: block; }
 

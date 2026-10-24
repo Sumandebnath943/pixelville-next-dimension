@@ -10,6 +10,7 @@ import { CAT } from '../sim/catalog';
 import { Gov } from '../sim/gov';
 import { Life } from '../sim/life';
 import { Mind } from '../sim/mind';
+import { Rep } from '../sim/reputation';
 import { Settings } from '../sim/settings';
 import { Game } from '../sim/game';
 import { SLOTS, AUTO, get, put, metaOf } from '../save/store';
@@ -171,6 +172,11 @@ export class Panels {
       facts.push(['Treasury', money(Gov.treasury)]);
     }
     if (d.jobs) facts.push(['Jobs filled', `${b.workers.length} of ${d.jobs}`]);
+    const staff = d.jobs ? Rep.staff(b) : null;
+    if (staff !== null && Math.abs(staff) >= 0.5) {
+      const deal = Rep.price(b, 100);
+      facts.push(['The staff', `${Rep.label(staff).toLowerCase()}${deal.note ? ` · ${deal.note.split(':')[0]}` : ''}`]);
+    }
     if (d.visit) facts.push(['Visitors today', `${b.visitors} · ${b.inside} inside`]);
     if (b.type === 'police') facts.push(['Arrests, town-wide', String(Life.arrests)]);
     if (b.cars && b.cars.length) facts.push(['Cars at home', `${b.cars.filter((c: any) => c.free).length} of ${b.cars.length}`]);
@@ -227,7 +233,12 @@ export class Panels {
     if (p.heldUntil > Sim.day) pills.push([`In custody until day ${p.heldUntil}`, 'bad']);
     if (p.lifestyle) pills.push([p.lifestyle, '']);
     if (p.ownsBusiness) pills.push(['Owns a business', '']);
+    // what they make of the Founder, and the last thing they saw or heard
+    const op = Rep.of(p);
+    const heard = p.mind?.memories.filter((mm: any) => mm.kind === 'founder').at(-1);
+    if (Math.abs(op) >= 0.5 || heard) pills.push([Rep.label(op), op >= 1 ? 'ok' : op <= -1 ? 'bad' : '']);
     const facts: [string, string][] = [];
+    if (heard) facts.push(['About you', `${esc(heard.text)} <span class="day">day ${heard.day}</span>`]);
     facts.push(['Home', `The ${esc(p.surname)} household${p.home && p.home.ownerId ? ' (renting)' : ''}`]);
     if (p.work) facts.push(['Work', `${CAT[p.work.type].name} · $${Math.round(((WAGES as Record<string, number>)[p.work.type] || 15) * (p.wageMult || 1))} a day${(p.wageMult || 1) > 1.5 ? ' · senior' : ''}`]);
     else if (p.kind === 'kid') facts.push(['School', p.school ? 'Goes to school' : 'Too young yet']);

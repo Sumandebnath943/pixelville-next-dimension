@@ -8,6 +8,7 @@ import { CAT } from '../sim/catalog';
 import { Model, PAINTS, PAINT_NAMES, SPEC } from '../player/fleet';
 import type { Motoring } from '../player/motoring';
 import type { Wallet } from '../player/wallet';
+import { Rep } from '../sim/reputation';
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: unknown) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -45,19 +46,24 @@ export class Showroom {
     if (!b) return;
     const name = CAT[b.type].name;
     $('sr-title').textContent = name;
-    $('sr-sub').textContent = `You have $${Math.floor(this.purse.balance)}. New ones are parked outside, fuelled up; whatever you were driving goes home to the Lodge garage.`;
+    // what the sales staff think of the Founder sets the price (or whether they'll deal at all)
+    const deal = Rep.price(b, 100);
+    $('sr-sub').textContent = deal.refused ? "The sales staff won't deal with you: they've heard about you."
+      : `You have $${Math.floor(this.purse.balance)}.${deal.note ? ` ${deal.note[0].toUpperCase()}${deal.note.slice(1)}.` : ''} New ones are parked outside, fuelled up; whatever you were driving goes home to the Lodge garage.`;
     let h = '';
     for (const m of this.moto.stock(b)) {
       const pi = this.paint[m.id] ?? 0;
       const sp = SPEC[m.kind];
-      const short = m.price - this.purse.balance;
+      const price = Rep.price(b, m.price).cost;
+      const short = deal.refused ? 0 : price - this.purse.balance;
       h += `<div class="sr-card">
         <div class="sr-art">${art(m.kind, PAINTS[pi])}</div>
-        <div class="sr-name"><b>${esc(m.name)}</b><span>$${m.price}</span></div>
+        <div class="sr-name"><b>${esc(m.name)}</b><span>${price < m.price ? `<s>$${m.price}</s> ` : ''}$${price}</span></div>
         <p>${esc(m.blurb)}</p>
         <div class="sr-spec"><span>${Math.round(sp.max * 3.6)} km/h</span><span>${sp.range} km a tank</span></div>
         <div class="sr-paints">${PAINTS.map((p, i) => `<button class="sw${i === pi ? ' on' : ''}" style="--c:${p}" data-m="${m.id}" data-p="${i}" title="${PAINT_NAMES[i]}"></button>`).join('')}</div>
-        <button class="${short > 0 ? '' : 'primary '}sr-buy" data-buy="${m.id}">${short > 0 ? `Need $${Math.ceil(short)} more` : `Buy in ${PAINT_NAMES[pi].toLowerCase()}`}</button>
+        ${deal.refused ? '<button class="sr-buy" disabled>Not for sale to you</button>'
+          : `<button class="${short > 0 ? '' : 'primary '}sr-buy" data-buy="${m.id}">${short > 0 ? `Need $${Math.ceil(short)} more` : `Buy in ${PAINT_NAMES[pi].toLowerCase()}`}</button>`}
       </div>`;
     }
     $('sr-models').innerHTML = h;

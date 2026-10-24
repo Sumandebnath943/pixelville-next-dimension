@@ -12,6 +12,7 @@ import { World } from '../sim/world';
 import { CAT } from '../sim/catalog';
 import { Gov } from '../sim/gov';
 import { Game } from '../sim/game';
+import { Rep } from '../sim/reputation';
 import type { Founder } from './founder';
 import type { Gps } from './gps';
 import { distLabel } from './gps';
@@ -142,36 +143,42 @@ export class Motoring {
     const sp = SPEC[v.kind];
     const gas = this.nearest('gas', f.car.x, f.car.z);
     if (gas && v.fuel < 0.97 && this.within(gas, 7)) {
-      const cost = Math.max(1, Math.ceil((1 - v.fuel) * sp.tank));
-      return { text: `<b>E</b> fill up · $${cost}`, act: () => this.fillUp(v, gas, cost) };
+      const p = Rep.price(gas, Math.max(1, Math.ceil((1 - v.fuel) * sp.tank)));
+      if (p.refused) return { text: "The staff at the gas station won't serve you", act: () => {} };
+      return { text: `<b>E</b> fill up · $${p.cost}${p.note ? ` (${p.note})` : ''}`, act: () => this.fillUp(v, gas, p.cost, p.rate) };
     }
     const shop = this.nearest('autoshop', f.car.x, f.car.z);
     if (shop && (v.damage > 2 || v.flat) && this.within(shop, 8)) {
       if (!this.isOpen(shop)) return { text: 'The auto garage is closed (8:00–18:00)', act: () => {} };
-      const cost = Math.max(1, Math.ceil(v.damage * sp.repair)) + (v.flat ? 20 : 0);
-      return { text: `<b>E</b> repair the ${v.name} · $${cost}`, act: () => this.repair(v, shop, cost) };
+      const p = Rep.price(shop, this.repairCost(v));
+      if (p.refused) return { text: "The mechanics won't touch your car", act: () => {} };
+      return { text: `<b>E</b> repair the ${v.name} · $${p.cost}${p.note ? ` (${p.note})` : ''}`, act: () => this.repair(v, shop, p.cost, p.rate) };
     }
     return null;
+  }
+  private repairCost(v: Vehicle): number {
+    return Math.max(1, Math.ceil(v.damage * SPEC[v.kind].repair)) + (v.flat ? 20 : 0);
   }
   /** the car is on the building's plot or the road in front of it */
   private within(b: any, pad: number): boolean {
     const c = this.f.car;
     return c.x > b.x * TM - pad && c.x < (b.x + b.w) * TM + pad && c.z > b.y * TM - pad && c.z < (b.y + b.h) * TM + pad;
   }
-  private fillUp(v: Vehicle, gas: any, cost: number): void {
+  /** `rate` is what the staff charge the Founder against the list price (a discount for a favourite customer) */
+  private fillUp(v: Vehicle, gas: any, cost: number, rate = 1): void {
     const f = this.f, sp = SPEC[v.kind];
     const pay = Math.min(cost, Math.floor(f.wallet));
     if (pay <= 0) { this.toast('👛 Not enough money for fuel'); return; }
     f.purse.spend(pay, `Fuel for the ${v.name}`, 'purchase', gas);
-    v.fuel = Math.min(1, v.fuel + pay / sp.tank);
+    v.fuel = pay >= cost ? 1 : Math.min(1, v.fuel + pay / (sp.tank * rate));
     this.toast(pay < cost ? `⛽ $${pay} of fuel — all the wallet would stretch to` : `⛽ Filled up the ${v.name} — $${pay}`);
   }
-  private repair(v: Vehicle, shop: any, cost: number): void {
+  private repair(v: Vehicle, shop: any, cost: number, rate = 1): void {
     const f = this.f, sp = SPEC[v.kind];
     const pay = Math.min(cost, Math.floor(f.wallet));
     if (pay <= 0) { this.toast('👛 Not enough money for repairs'); return; }
     f.purse.spend(pay, `Repairs to the ${v.name}`, 'purchase', shop);
-    v.damage = Math.max(0, v.damage - pay / sp.repair);
+    v.damage = pay >= cost ? 0 : Math.max(0, v.damage - pay / (sp.repair * rate));
     v.flat = false;
     this.toast(pay < cost ? `🔧 The mechanics did $${pay} of work — it's better, not perfect` : `🔧 The ${v.name} is as good as new — $${pay}`);
   }
@@ -206,10 +213,8 @@ export class Motoring {
       }
     }
     if (b.type === 'autoshop' && cur && cur.damage > 2 && Math.hypot(f.car.x - (b.door.x * TM + 4), f.car.z - (b.door.y * TM + 4)) < 30) {
-      if (this.isOpen(b)) {
-        const cost = Math.max(1, Math.ceil(cur.damage * SPEC[cur.kind].repair));
-        out.push({ label: `Repair the ${cur.name} · $${cost}`, run: () => this.repair(cur, b, cost) });
-      }
+      const p = Rep.price(b, this.repairCost(cur));
+      if (this.isOpen(b) && !p.refused) out.push({ label: `Repair the ${cur.name} · $${p.cost}`, run: () => this.repair(cur, b, p.cost, p.rate) });
     }
     return out;
   }
@@ -254,9 +259,10 @@ export class Motoring {
 
   /* ---------- the showroom ---------- */
   buy(m: Model, color: string, showroom: any): boolean {
-    const f = this.f;
-    if (!f.purse.spend(m.price, `Bought a ${m.name}`, 'purchase', showroom)) {
-      this.toast(`👛 The ${m.name} is $${m.price} — you have $${Math.floor(f.wallet)}`);
+    const f = this.f, p = Rep.price(showroom, m.price);
+    if (p.refused) { this.toast("🙅 The sales staff won't deal with you"); return false; }
+    if (!f.purse.spend(p.cost, `Bought a ${m.name}`, 'purchase', showroom)) {
+      this.toast(`👛 The ${m.name} is $${p.cost} — you have $${Math.floor(f.wallet)}`);
       return false;
     }
     const prev = f.vehicle;

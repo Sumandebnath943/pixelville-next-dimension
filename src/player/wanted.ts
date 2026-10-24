@@ -16,6 +16,7 @@ import { World } from '../sim/world';
 import { Life } from '../sim/life';
 import { Sim } from '../sim/agents';
 import { Mind } from '../sim/mind';
+import { Rep } from '../sim/reputation';
 import { family, on, emit } from '../sim/core';
 import { isJunction } from '../sim/traffic';
 import { drivewayCars, DrivewayCar, styleForPaint } from '../render/parked';
@@ -33,16 +34,22 @@ const SIGHT = 70; // metres a crew can see
 const WASTED = 22; // m/s (~80 km/h): a crash that hard puts the Founder in hospital
 /** buildings you can see across */
 const OPEN = new Set(['park', 'grandpark', 'plaza', 'playground', 'pool', 'busstop', 'taxistand', 'heliport', 'dock', 'farm', 'lake', 'mountain']);
-const CRIME: Record<string, { stars: number; label: string; memory: string; policeOnly: boolean }> = {
-  'red light': { stars: 1, label: 'running a red light', memory: 'saw the Founder run a red light', policeOnly: true },
-  speeding: { stars: 1, label: 'speeding', memory: 'saw the Founder tear through town', policeOnly: true },
-  'wrong side': { stars: 1, label: 'driving on the wrong side', memory: 'saw the Founder drive on the wrong side', policeOnly: true },
-  bump: { stars: 1, label: 'a collision', memory: 'saw the Founder bump into a car', policeOnly: true },
-  crash: { stars: 1, label: 'causing a crash', memory: 'saw the Founder cause a crash', policeOnly: false },
-  hit: { stars: 2, label: 'a hit-and-run', memory: "saw the Founder's car knock someone down", policeOnly: false },
-  theft: { stars: 2, label: 'car theft', memory: 'saw the Founder steal a car', policeOnly: false },
-  ram: { stars: 3, label: 'ramming the police', memory: 'saw the Founder ram a police car', policeOnly: false },
+/** each crime: the stars, what an onlooker remembers and passes on (`gist`, after "the Founder …"), and how much it costs
+    the Founder in their eyes. `policeOnly`: villagers don't report it (unless they can't stand the Founder) */
+const CRIME: Record<string, { stars: number; label: string; memory: string; gist: string; opinion: number; policeOnly: boolean }> = {
+  'red light': { stars: 1, label: 'running a red light', memory: 'saw the Founder run a red light', gist: 'ran a red light', opinion: -0.5, policeOnly: true },
+  speeding: { stars: 1, label: 'speeding', memory: 'saw the Founder tear through town', gist: 'tore through town far too fast', opinion: -0.5, policeOnly: true },
+  'wrong side': { stars: 1, label: 'driving on the wrong side', memory: 'saw the Founder drive on the wrong side', gist: 'drove on the wrong side of the road', opinion: -0.5, policeOnly: true },
+  bump: { stars: 1, label: 'a collision', memory: 'saw the Founder bump into a car', gist: 'bumped into a car', opinion: -0.7, policeOnly: true },
+  crash: { stars: 1, label: 'causing a crash', memory: 'saw the Founder cause a crash', gist: 'caused a crash', opinion: -2, policeOnly: false },
+  hit: { stars: 2, label: 'a hit-and-run', memory: "saw the Founder's car knock someone down", gist: 'knocked someone down', opinion: -3, policeOnly: false },
+  theft: { stars: 2, label: 'car theft', memory: 'saw the Founder steal a car', gist: 'stole a car', opinion: -2, policeOnly: false },
+  ram: { stars: 3, label: 'ramming the police', memory: 'saw the Founder ram a police car', gist: 'rammed a police car', opinion: -2, policeOnly: false },
 };
+/** villagers this hostile report even the Founder's driving, and tell the police where they're hiding */
+const INFORMER = -5, TELLTALE = -3;
+/** villagers this fond of the Founder look the other way (except at a hit-and-run or an attack on the police) */
+const LOYAL = 6;
 
 type Toast = (msg: string, at?: { x: number; y: number }, news?: boolean) => void;
 /** a roadblock: squad cars across the road at (x, z), a barrier at (bx, bz), maybe spikes; `w` is how many road rows wide */
@@ -71,13 +78,18 @@ export class Wanted {
   private closeT = 0;
   private sightT = 0;
   private turn = 0;
+  private tipCd = 0;
   private report: { v: Vehicle; due: number } | null = null;
   private stolenReported = new WeakSet<Vehicle>();
+  /** stolen cars whose family knows the Founder took them */
+  private blamed = new WeakSet<Vehicle>();
   onBusted: ((stars: number) => void) | null = null;
   onWasted: (() => void) | null = null;
 
+  private off: () => void;
+
   constructor(private f: Founder, private toast: Toast) {
-    on('founderOffence', (o) => this.offence(o.kind));
+    this.off = on('founderOffence', (o) => this.offence(o.kind));
     f.onAbandon = (v, x, z, yaw) => this.abandoned.push({ v, x, z, yaw, t: 0, reported: this.stolenReported.has(v) });
     f.onWreck = (impact) => { if (impact >= WASTED) this.onWasted?.(); };
     f.pendingReturns = () => this.abandoned.filter((a) => a.v.stolen).map((a) => ({ home: a.v.stolen!.home, car: a.v.stolen!.car }));
@@ -155,27 +167,50 @@ export class Wanted {
     const c = CRIME[kind];
     if (!c) return;
     const police = this.policeSee();
-    const people = this.onlookers();
-    for (const q of people.slice(0, 8)) Mind.remember(q, 'founder', c.memory, kind === 'hit' || kind === 'theft' || kind === 'ram' ? -2 : -1);
+    const people = this.onlookers().slice(0, 8);
+    // who picks up the phone (by how they felt about the Founder until now): anyone at a hit-and-run or an
+    // attack on the police; for the rest, not the Founder's loyal fans; for driving, only those who can't stand them
+    const callers = people.filter((q) => (kind === 'hit' || kind === 'ram' ? true : c.policeOnly ? Rep.of(q) <= INFORMER : Rep.of(q) < LOYAL));
+    // everyone who saw it thinks less of the Founder, and will tell their friends
+    for (const q of people) Rep.feel(q, c.opinion, c.memory, c.gist);
     const v = this.f.hijacked;
-    if (c.policeOnly ? !police : !police && !people.length) {
-      // nobody saw the theft: the family will notice in a while and report it
+    if (!police && !callers.length) {
+      // nobody reported the theft: the family will notice in a while and report it
       if (kind === 'theft' && v) this.report = { v, due: Sim.day * 1440 + Sim.clock + 20 + Math.random() * 25 };
       return;
     }
-    if (kind === 'theft' && v) this.noticed(v);
+    if (kind === 'theft' && v) { this.noticed(v); this.blame(v); }
     // in the middle of a chase, running a light or speeding is the least of it
     if (c.policeOnly && this.stars > 0) return;
-    this.raise(c.stars, c.label, police);
+    this.raise(c.stars, c.label, police, c.policeOnly);
   }
   /** the family knows their car is gone, and the police have its plate */
   private noticed(v: Vehicle): void {
     this.stolenReported.add(v);
     const home = World.buildings.find((b: any) => b.id === v.stolen?.home);
-    for (const q of home?.residents || []) Mind.remember(q, 'founder', 'had their car stolen', -1);
+    for (const q of home?.residents || []) Mind.remember(q, 'crime', 'had their car stolen', -1);
+  }
+  /** …and that it was the Founder who took it */
+  private blame(v: Vehicle): void {
+    if (this.blamed.has(v)) return;
+    this.blamed.add(v);
+    const home = World.buildings.find((b: any) => b.id === v.stolen?.home);
+    for (const q of home?.residents || []) Rep.feel(q, -4, 'had their car stolen by the Founder', `stole the ${v.stolen?.family}' car`);
   }
 
-  raise(level: number, why: string, byPolice: boolean): void {
+  /** a villager who dislikes the Founder spots them while the police are looking, and calls it in */
+  tipOff(q: any): boolean {
+    if (!this.stars || this.seen || this.tipCd > 0 || Rep.of(q) > TELLTALE) return false;
+    this.tipCd = 12;
+    this.last = this.here();
+    this.unseen = Math.max(0, this.unseen - 8);
+    q.bubble = '📞';
+    q.bubbleUntil = performance.now() + 4000;
+    this.toast(`📞 ${q.name} ${q.surname} spotted you and called the police`);
+    return true;
+  }
+
+  raise(level: number, why: string, byPolice: boolean, informer = false): void {
     const before = this.stars;
     // a fresh crime while already wanted adds a star (one at a time)
     this.stars = Math.min(5, before > 0 && this.raiseCd <= 0 ? Math.max(before + 1, level) : Math.max(before, level));
@@ -185,13 +220,17 @@ export class Wanted {
     this.unseen = 0;
     this.last = this.here();
     const p = this.here();
-    this.toast(`🚨 Wanted ${'★'.repeat(this.stars)} — ${why}${byPolice ? '' : ' (a witness called it in)'}`, { x: p.x * 2, y: p.z * 2 }, this.stars >= 3);
+    const who = byPolice ? '' : informer ? ' (a villager who can\'t stand you called it in)' : ' (a witness called it in)';
+    this.toast(`🚨 Wanted ${'★'.repeat(this.stars)} — ${why}${who}`, { x: p.x * 2, y: p.z * 2 }, this.stars >= 3);
+    // a big chase makes the news
+    if (this.stars >= 3 && before < 3) Rep.broadcast(-0.5);
     if (!World.buildings.some((b: any) => b.type === 'police' && b.connected && !b.ruined)) this.toast('🚨 …but the village has no police station: nobody is coming');
   }
 
   /* ---------- every frame ---------- */
   update(dt: number): void {
     this.raiseCd -= dt;
+    this.tipCd -= dt;
     this.returns(dt);
     this.reports();
     this.hot = !!this.f.hijacked && this.stolenReported.has(this.f.hijacked);
@@ -199,8 +238,11 @@ export class Wanted {
     this.sightT -= dt;
     if (this.sightT <= 0) { this.sightT = 0.25; this.seen = (this.stars > 0 || this.hot) && this.policeSee(); }
     if (this.stars === 0) {
-      // a stolen car the family reported: any crew that spots it gives chase
-      if (this.hot && this.seen && this.f.driving) this.raise(2, 'driving a stolen car', true);
+      // a stolen car the family reported: any crew that spots it gives chase (and now the family knows who took it)
+      if (this.hot && this.seen && this.f.driving) {
+        this.blame(this.f.hijacked!);
+        this.raise(2, 'driving a stolen car', true);
+      }
       if (this.stars === 0) return;
     }
     if (this.seen) { this.unseen = 0; this.last = this.here(); }
@@ -246,7 +288,7 @@ export class Wanted {
       if (home && home.cars) {
         home.cars.push({ ...s.car, free: true });
         if (a.reported) {
-          for (const q of home.residents) Mind.remember(q, 'founder', 'got their stolen car back', 1);
+          for (const q of home.residents) Mind.remember(q, 'crime', 'got their stolen car back', 1);
           this.toast(`🚗 The ${s.family}' stolen car was found and taken home`);
         }
       }
@@ -454,6 +496,9 @@ export class Wanted {
     this.closeT = close ? this.closeT + dt : Math.max(0, this.closeT - dt);
     if (this.closeT > 2) {
       this.closeT = 0;
+      // an arrest in the street: people talk
+      for (const q of this.onlookers().slice(0, 8)) Rep.feel(q, -1, 'saw the Founder arrested', 'got arrested in the street');
+      Rep.broadcast(-0.3);
       this.onBusted?.(this.stars);
     }
   }
@@ -477,6 +522,11 @@ export class Wanted {
     if (this.f.hijacked) this.f.dropHijacked();
     for (const a of this.abandoned) a.t = 1e6;
     this.returns(0);
+  }
+
+  /** stop listening for the Founder's offences (a test that's done with this one) */
+  dispose(): void {
+    this.off();
   }
 
   /** everything forgotten (a new map, a loaded save, a night in the cells) */

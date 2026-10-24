@@ -5,6 +5,7 @@ import { World } from './world';
 import { AGE_RETIRE, Sim, WAGES } from './agents';
 import { Life } from './life';
 import { CAT } from './catalog';
+import { Rep } from './reputation';
 /* ============================================================
    PixelVille — the villager mind: knowledge, memory, decisions.
 
@@ -31,6 +32,7 @@ export const Mind: any = {
       friends: new Map(),    // personId -> bond 0..1
       favorites: new Map(),  // buildingId -> affinity 0..6
       flags: {},             // one-time story flags
+      fo: 0,                 // V2: what they think of the Founder, -10..10 (src/sim/reputation.ts)
       traits: {
         social: 0.25 + R() * 0.7,     // seeks company, makes friends fast
         caution: 0.2 + R() * 0.7,     // remembers danger, avoids risk
@@ -73,6 +75,7 @@ export const Mind: any = {
       const nv = v - 0.008;
       if (nv <= 0) m.friends.delete(id); else m.friends.set(id, nv);
     }
+    Rep.cool(m); // V2: so does a view of the Founder
   },
 
   /* ---------- knowledge ---------- */
@@ -126,6 +129,8 @@ export const Mind: any = {
   /* two villagers meet in the street: bonds deepen, tips and news change hands */
   gossip(a, b) {
     this.bond(a, b, a.kind === 'kid' || b.kind === 'kid' ? 0.05 : 0.12);
+    // V2: "did you hear what the Founder did?"
+    Rep.hearsay(a, b); Rep.hearsay(b, a);
     if (a.kind === 'kid' || b.kind === 'kid') return;
     const share = (from, to) => {
       const mf = this.ensure(from), mt = this.ensure(to);
@@ -183,6 +188,7 @@ export const Mind: any = {
       v: [...m.favorites],
       m: m.memories,
       g: m.flags,
+      o: m.fo || 0,
     };
   },
   unpack(p, s) {
@@ -192,6 +198,7 @@ export const Mind: any = {
       friends: new Map(s.f || []),
       favorites: new Map(s.v || []),
       flags: s.g || {},
+      fo: s.o ?? Rep.fromMemories(s.m || []), // V2: saves from before 2e rebuild it from the stories they remember
       traits: s.t || { social: 0.5, caution: 0.5, ambition: 0.5, thrift: 0.5, curiosity: 0.5 },
     };
   },

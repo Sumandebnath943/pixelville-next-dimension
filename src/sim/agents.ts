@@ -13,6 +13,7 @@ import { Tasks } from './tasks';
 import { Calamity } from './calamity';
 import { Settings } from './settings';
 import { Traffic, CAR_LEN } from './traffic';
+import { Rep } from './reputation';
 /* ============================================================
    PixelVille — citizens, jobs, daily schedules, movement.
    People live in residential buildings, get jobs at workplaces,
@@ -912,6 +913,7 @@ export const Sim: any = {
     this.tickPioneers();
     {
       Mind.tickCareers();                             // the ambitious hunt better jobs
+      for (const b of World.buildings) if (b.residents?.length > 1) Rep.household(b); // V2: the day's news over dinner
       for (const p of this.people) Mind.reflect(p);   // and everyone sleeps on the day
     }
   },
@@ -1453,7 +1455,10 @@ export const Sim: any = {
       // V2: drivers keep their distance, give way at junctions, stop for people
       // crossing, and brake for red lights and lowered gates (src/sim/traffic.ts)
       if (t.car || t.taxi || t.moto) t.prog += Traffic.advance(p, t, t.path, t.prog, 1, t.moto ? 1.4 : CAR_SPEED, dt, t.moto ? 0.3 : CAR_LEN);
-      else t.prog += WALK_SPEED * dt;
+      else if (t.hurryT > 0) { // V2: hurrying past someone they'd rather avoid (the Founder, usually)
+        t.hurryT -= dt;
+        t.prog += WALK_SPEED * 1.7 * dt;
+      } else t.prog += WALK_SPEED * dt;
       if (t.prog >= t.path.length - 1) { // arrived
         const dest = p.dest;
         p.state = 'in'; p.at = dest; p.trip = null; p.dest = null;

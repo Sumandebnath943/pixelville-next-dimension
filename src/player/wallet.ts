@@ -5,6 +5,7 @@
    for it, and a household's thank-you comes out of its savings.
    ============================================================ */
 import { Sim } from '../sim/agents';
+import { Rep } from '../sim/reputation';
 
 export type EntryKind = 'reward' | 'win' | 'income' | 'purchase' | 'fine';
 export interface Entry { day: number; time: string; amount: number; label: string; kind: EntryKind }
@@ -33,6 +34,7 @@ export class Wallet {
     if (to) {
       to.funds = (to.funds || 0) + a;
       to.visitors = (to.visitors || 0) + 1;
+      if (kind === 'purchase') Rep.patron(to, a); // a good customer is remembered
     }
     this.record(-a, label, kind);
     return true;
