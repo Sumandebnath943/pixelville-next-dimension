@@ -30,6 +30,8 @@ export interface PhoneApi {
   openSettings(): void;
   /** take a photo on the next frame; the phone gets it back through addPhoto */
   photo(): void;
+  /** put the phone away and open photo mode */
+  photoMode(): void;
   /** the Founder's vehicles, for the Garage app */
   garage: {
     list(): Vehicle[];
@@ -127,7 +129,10 @@ export class Phone {
     body.querySelectorAll<HTMLElement>('[data-go]').forEach((b) => b.addEventListener('click', () => this.go(b.dataset.go as App)));
     body.querySelectorAll<HTMLElement>('[data-app]').forEach((b) => b.addEventListener('click', () => this.launch(b.dataset.app!)));
     if (this.app === 'map') this.wireMap();
-    if (this.app === 'camera') body.querySelector('#ph-shoot')?.addEventListener('click', () => this.api.photo());
+    if (this.app === 'camera') {
+      body.querySelector('#ph-shoot')?.addEventListener('click', () => this.api.photo());
+      body.querySelector('#ph-photomode')?.addEventListener('click', () => this.api.photoMode());
+    }
   }
   private launch(id: string): void {
     if (id === 'planner') { this.close(); this.api.openPlanner(); return; }
@@ -217,7 +222,8 @@ export class Phone {
 
   private cameraHtml(): string {
     let h = `<button class="primary ph-wide" id="ph-shoot">${icon('camera')}Take a photo</button>
-      <p class="ph-empty">The photo is the view behind the phone, without the interface. Photo mode with a free camera arrives later in this milestone.</p>`;
+      <button class="ph-wide" id="ph-photomode">${icon('eye')}Photo mode <kbd>F2</kbd></button>
+      <p class="ph-empty">A photo is the view behind the phone, without the interface. Photo mode pauses the world and frees the camera: lens, focus, a look, another hour or weather, and a full-size PNG.</p>`;
     if (this.photos.length) {
       h += '<div class="ph-sep">This session</div><div class="ph-photos">';
       this.photos.forEach((u, i) => { h += `<a href="${u}" download="pixelville-photo-${Sim.day}-${i + 1}.jpg" title="Save this photo"><img src="${u}" alt="Photo ${i + 1}" /></a>`; });

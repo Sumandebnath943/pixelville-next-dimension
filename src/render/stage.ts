@@ -147,37 +147,42 @@ export class Stage {
     this.renderer.setRenderTarget(null);
   }
 
+  /** photo mode: the moment is held (rain hangs in the air, water and leaves stop, the weather stops drifting) */
+  frozen = false;
+  /** photo mode: exposure compensation (1 = as metered) */
+  exposureBias = 1;
+
+  /** hold the moment; returns what lets it go again, with the weather and surfaces as they were */
+  hold(): () => void {
+    this.frozen = true;
+    const st = { ...this.st }, wet = ENV.wet.value, snow = ENV.snow.value;
+    return () => {
+      this.frozen = false;
+      this.exposureBias = 1;
+      Object.assign(this.st, st);
+      ENV.wet.value = wet;
+      ENV.snow.value = snowUniform.value = snow;
+    };
+  }
+  /** jump the sky straight to the sim's weather (photo mode's preview), and the streets with it */
+  snapWeather(wet: number, snow: number): void {
+    Object.assign(this.st, weatherTarget());
+    ENV.wet.value = wet;
+    ENV.snow.value = snowUniform.value = snow;
+  }
+
   /** per frame: sky, light and weather around the focus point */
   update(dt: number, focus: THREE.Vector3, lamps: { x: number; z: number }[]): void {
     this.frameNo++;
-    ENV.time.value += dt;
+    if (!this.frozen) ENV.time.value += dt;
     const P = this.profile;
 
     // weather drifts towards the sim's state; surfaces respond on their own time
-    const tg = weatherTarget();
-    const st = this.st, k = Math.min(1, dt * 0.35);
-    st.overcast += (tg.overcast - st.overcast) * k;
-    st.clouds += (tg.clouds - st.clouds) * k;
-    st.rain += (tg.rain - st.rain) * Math.min(1, dt * 0.5);
-    st.snowfall += (tg.snowfall - st.snowfall) * Math.min(1, dt * 0.5);
-    st.fog += (tg.fog - st.fog) * k;
-    st.wind += (tg.wind - st.wind) * Math.min(1, dt * 0.3);
+    const st = this.st;
+    if (!this.frozen) this.drift(dt);
     ENV.rain.value = st.rain;
     ENV.wind.value = st.wind;
     ENV.windDir.value.set(Math.cos(ENV.time.value * 0.013) * 0.8 + 0.2, Math.sin(ENV.time.value * 0.011) * 0.6 + 0.5).normalize();
-    const sunny = this.sky.sunAbove ? Math.max(0, ENV.sunDir.value.y) * (1 - st.overcast) : 0;
-    if (st.rain > 0.15) ENV.wet.value = Math.min(1, ENV.wet.value + dt * 0.08 * st.rain);
-    else ENV.wet.value = Math.max(ENV.snow.value > 0.3 ? 0.12 : 0, ENV.wet.value - dt * (0.004 + sunny * 0.02));
-    // winter keeps its snow; it settles while it falls and melts once the season turns
-    const winter = Weather.season === 3;
-    if (st.snowfall > 0.15) ENV.snow.value = Math.min(1, ENV.snow.value + dt * 0.02 * st.snowfall);
-    else if (!winter) ENV.snow.value = Math.max(0, ENV.snow.value - dt * (0.006 + sunny * 0.01));
-    else ENV.snow.value = Math.max(0.35, ENV.snow.value - dt * sunny * 0.002);
-    snowUniform.value = ENV.snow.value;
-    // leaves colour through autumn and are gone by winter; spring brings them back
-    const within = ((Sim.day - 1) % 7) / 7;
-    const fallTarget = Weather.season === 2 ? 0.15 + within * 0.75 : winter ? 1 : 0;
-    leafFall.value += (fallTarget - leafFall.value) * Math.min(1, dt * 0.1);
 
     // sky, sun and exposure (shadows refresh on alternate frames on the lighter presets)
     const doShadow = (this.frameNo + 1) % P.shadowEvery === 0;
@@ -232,6 +237,31 @@ export class Stage {
     g.contrast.value = 1.05 - st.overcast * 0.06;
   }
 
+  /** the weather drifts towards the sim's; wet streets, settled snow and autumn leaves follow at their own pace */
+  private drift(dt: number): void {
+    const tg = weatherTarget();
+    const st = this.st, k = Math.min(1, dt * 0.35);
+    st.overcast += (tg.overcast - st.overcast) * k;
+    st.clouds += (tg.clouds - st.clouds) * k;
+    st.rain += (tg.rain - st.rain) * Math.min(1, dt * 0.5);
+    st.snowfall += (tg.snowfall - st.snowfall) * Math.min(1, dt * 0.5);
+    st.fog += (tg.fog - st.fog) * k;
+    st.wind += (tg.wind - st.wind) * Math.min(1, dt * 0.3);
+    const sunny = this.sky.sunAbove ? Math.max(0, ENV.sunDir.value.y) * (1 - st.overcast) : 0;
+    if (st.rain > 0.15) ENV.wet.value = Math.min(1, ENV.wet.value + dt * 0.08 * st.rain);
+    else ENV.wet.value = Math.max(ENV.snow.value > 0.3 ? 0.12 : 0, ENV.wet.value - dt * (0.004 + sunny * 0.02));
+    // winter keeps its snow; it settles while it falls and melts once the season turns
+    const winter = Weather.season === 3;
+    if (st.snowfall > 0.15) ENV.snow.value = Math.min(1, ENV.snow.value + dt * 0.02 * st.snowfall);
+    else if (!winter) ENV.snow.value = Math.max(0, ENV.snow.value - dt * (0.006 + sunny * 0.01));
+    else ENV.snow.value = Math.max(0.35, ENV.snow.value - dt * sunny * 0.002);
+    snowUniform.value = ENV.snow.value;
+    // leaves colour through autumn and are gone by winter; spring brings them back
+    const within = ((Sim.day - 1) % 7) / 7;
+    const fallTarget = Weather.season === 2 ? 0.15 + within * 0.75 : winter ? 1 : 0;
+    leafFall.value += (fallTarget - leafFall.value) * Math.min(1, dt * 0.1);
+  }
+
   private updateLamps(focus: THREE.Vector3, lamps: { x: number; z: number }[], lampK: number): void {
     if (lampK < 0.01 || !this.lampLights.length) {
       for (const l of this.lampLights) l.intensity = 0;
@@ -275,7 +305,7 @@ export class Stage {
       ENV.reflTex.value = this.groundRefl.rt.texture;
       ENV.reflOn.value = 1;
     } else this.groundReady = false;
-    this.pipe.render(this.sky.exposure, 1 / 60, doShadow);
+    this.pipe.render(this.sky.exposure * this.exposureBias, this.frozen ? 0 : 1 / 60, doShadow);
   }
 
   /** map bounds in metres (for clamping cameras) */

@@ -34,6 +34,8 @@ import { Motoring, IMPOUND_FEE } from './player/motoring';
 import { Showroom } from './ui/showroom';
 import { Wanted, FINES } from './player/wanted';
 import { Street } from './player/street';
+import { PhotoMode } from './player/photo';
+import { PhotoPanel } from './ui/photopanel';
 import { Rep } from './sim/reputation';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -107,6 +109,79 @@ const motoring = new Motoring(founder, gps, personalToast, () => Sim.clock, (b) 
 const showroom = new Showroom(motoring, founder.purse, () => panels.show('showroomui'), () => panels.close('showroomui'));
 const wanted = new Wanted(founder, personalToast);
 const streetLife = new Street(founder, wanted, personalToast);
+
+/* ---------- photo mode: the world holds still and the camera comes free ---------- */
+const photo = new PhotoMode(stage);
+let shotWanted = false;
+const photoPanel = new PhotoPanel(photo, () => { shotWanted = true; }, () => leavePhoto());
+function enterPhoto(): void {
+  if (photo.active || inPlanner() || scene || panels.anyModalOpen()) return;
+  phone.close();
+  panels.hideInfo();
+  Input.releaseLock();
+  founder.showBody();
+  const subject = founder.driving ? new THREE.Vector3(founder.car.x, founder.car.y + 1, founder.car.z) : founder.pos.clone().setY(founder.pos.y + 1.2);
+  photo.enter(stage.camera, subject, (x, z) => founder.groundAt(x, z));
+  $('pm-saved').textContent = '';
+  photoPanel.show();
+}
+function leavePhoto(): void {
+  photo.exit();
+  photoPanel.hide();
+}
+/** the frame just drawn, as a PNG to keep (and a copy in the phone's camera roll) */
+function savePhoto(): void {
+  const name = photo.fileName(World.name);
+  try {
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }, 'image/png');
+    phone.addPhoto(canvas.toDataURL('image/jpeg', 0.9));
+    $('pm-saved').textContent = `Saved ${name} — and a copy is in the phone's camera roll.`;
+    const fl = $('flash');
+    fl.classList.remove('go');
+    void fl.offsetWidth;
+    fl.classList.add('go');
+    Snd.tone(1800, 900, 0.08, 0.05, 'square');
+  } catch {
+    $('pm-saved').textContent = 'The photo could not be saved here.';
+  }
+}
+let lastPhotoSync = 0;
+/** one paused frame: fly the camera, dress the shot, draw it */
+function photoFrame(now: number, dt: number): void {
+  if (Input.take('cancel') || Input.take('photo')) { leavePhoto(); return; }
+  if (Input.take('hide')) photoPanel.toggle();
+  if (Input.take('shoot')) shotWanted = true;
+  Input.dragLook = true;
+  const k = Input.keys;
+  const rise = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
+  photo.fly(dt, Input.move(), rise, Input.look(Settings.get('mouseSens') || 1, !!Settings.get('invertY')), Input.running(), Input.wheel);
+  photo.pose(stage.camera);
+  stage.update(dt, photo.focusPoint(focus), terrain.lampSpots);
+  photo.dress(stage.camera);
+  terrain.frame(stage.night, stage.camera.position);
+  actors.update(0, photo.pos.x, photo.pos.z, 240, now, stage.night);
+  stage.render();
+  if (shotWanted) { shotWanted = false; savePhoto(); }
+  if (now - lastPhotoSync > 150) { lastPhotoSync = now; photoPanel.sync(); }
+  Snd.tick(dt, { dark: stage.night, rainI: 0, snowI: 0, day: Sim.clock > 350 && Sim.clock < 1150, engine: -1 });
+}
+// in photo mode a click (not a drag) on the picture focuses there
+let downAt: { x: number; y: number; t: number } | null = null;
+canvas.addEventListener('mousedown', (e) => { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+canvas.addEventListener('mouseup', (e) => {
+  const d = downAt;
+  downAt = null;
+  if (!photo.active || !d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4 || performance.now() - d.t > 400) return;
+  const r = canvas.getBoundingClientRect();
+  if (photo.focusAt(stage.camera, e.clientX - r.left, e.clientY - r.top) !== null) photoPanel.sync();
+});
 
 /* ---------- busted, wasted: the hours that pass behind a curtain ---------- */
 let scene: { left: number; until: number; done: () => void } | null = null;
@@ -200,6 +275,7 @@ const phone = new Phone({
   openPlanner: () => { if (!inPlanner()) togglePlanner(); },
   openSettings: () => panels.openSettings(),
   photo: () => { photoWanted = true; },
+  photoMode: () => enterPhoto(),
   garage: {
     list: () => founder.fleet.list,
     where: (v) => motoring.where(v),
@@ -237,7 +313,7 @@ Input.attach(canvas);
 initTouch();
 canvas.addEventListener('click', () => {
   // with the phone out, the mouse stays free for it
-  if (!planner.active && !panels.anyModalOpen() && !phone.open) Input.requestLock(canvas);
+  if (!planner.active && !panels.anyModalOpen() && !phone.open && !photo.active) Input.requestLock(canvas);
 });
 
 /* ---------- the frame loop ---------- */
@@ -323,7 +399,16 @@ function frame(now: number): void {
     return;
   }
 
+  // photo mode: the world is paused
+  if (photo.active) {
+    photoFrame(now, dt);
+    Input.endFrame();
+    requestAnimationFrame(frame);
+    return;
+  }
+
   // global actions
+  if (Input.take('photo') && !planner.active) { enterPhoto(); Input.endFrame(); requestAnimationFrame(frame); return; }
   if (Input.take('planner')) togglePlanner();
   if (Input.take('journal')) hud.toggleJournal();
   if (Input.take('help')) panels.show('help');
@@ -448,8 +533,8 @@ function frame(now: number): void {
     if (planner.active) hud.markTool(planner.tool);
     else {
       const hint = Input.usingTouch ? 'Left thumb moves · right thumb looks'
-        : Input.locked ? `${WASD} move · <kbd>Shift</kbd> run · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>P</kbd> Planner · <kbd>Esc</kbd> frees the mouse`
-          : `Drag to look · ${WASD} move · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>P</kbd> Planner`;
+        : Input.locked ? `${WASD} move · <kbd>Shift</kbd> run · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>F2</kbd> photo · <kbd>P</kbd> Planner · <kbd>Esc</kbd> frees the mouse`
+          : `Drag to look · ${WASD} move · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>F2</kbd> photo · <kbd>P</kbd> Planner`;
       if ($('hint').innerHTML !== hint) $('hint').innerHTML = hint;
     }
   }
@@ -472,7 +557,7 @@ setInterval(() => {
   const now = performance.now();
   const elapsed = (now - lastHidden) / 1000;
   lastHidden = now;
-  if (document.hidden) Game.catchUp(elapsed);
+  if (document.hidden && !photo.active) Game.catchUp(elapsed); // (photo mode holds the world still)
 }, 1000);
 
 /* boot: continue the last village if there is one, build it a slice at a time
@@ -515,4 +600,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto };

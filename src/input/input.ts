@@ -6,11 +6,11 @@
 
 export type Action =
   | 'jump' | 'interact' | 'vehicle' | 'camera' | 'planner' | 'phone' | 'run'
-  | 'rotate' | 'cancel' | 'undo' | 'pause' | 'journal' | 'help';
+  | 'rotate' | 'cancel' | 'undo' | 'pause' | 'journal' | 'help' | 'photo' | 'hide' | 'shoot';
 
 const KEYMAP: Record<string, Action> = {
   Space: 'jump', KeyE: 'interact', KeyF: 'vehicle', KeyV: 'camera', KeyP: 'planner', Tab: 'phone',
-  KeyR: 'rotate', Escape: 'cancel', KeyJ: 'journal', F1: 'help',
+  KeyR: 'rotate', Escape: 'cancel', KeyJ: 'journal', F1: 'help', F2: 'photo', KeyH: 'hide', Enter: 'shoot', NumpadEnter: 'shoot',
 };
 // standard gamepad layout
 const PADMAP: Record<number, Action> = { 0: 'jump', 2: 'interact', 3: 'vehicle', 11: 'camera', 9: 'planner', 8: 'phone', 1: 'cancel', 5: 'rotate' };
@@ -37,7 +37,7 @@ class InputState {
   attach(canvas: HTMLCanvasElement): void {
     window.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement)?.closest?.('input, textarea, select')) return;
-      if (e.code === 'Tab' || e.code === 'Space' || e.code === 'F1') e.preventDefault();
+      if (e.code === 'Tab' || e.code === 'Space' || e.code === 'F1' || e.code === 'F2') e.preventDefault();
       if (!this.keys.has(e.code)) {
         const a = KEYMAP[e.code];
         if (a) this.edge.add(a);

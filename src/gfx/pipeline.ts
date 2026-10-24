@@ -14,6 +14,23 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+export type { BokehPass };
+
+/* distance from the camera, for the focus probe (instanced and batched meshes included) */
+const DIST_VERT = /* glsl */ `
+  #include <common>
+  #include <batching_pars_vertex>
+  varying float vDist;
+  void main() {
+    #include <batching_vertex>
+    #include <begin_vertex>
+    #include <project_vertex>
+    vDist = -mvPosition.z;
+  }`;
+const DIST_FRAG = /* glsl */ `
+  varying float vDist;
+  void main() { gl_FragColor = vec4(vDist, 0.0, 0.0, 1.0); }`;
 
 export type Quality = 'high' | 'medium' | 'low';
 
@@ -55,6 +72,8 @@ const GradeShader = {
     tint: { value: new THREE.Vector3(1, 1, 1) },
     vignette: { value: 0.22 },
     grain: { value: 0.018 },
+    /** raised blacks, for a faded print (photo mode's filters) */
+    lift: { value: 0 },
     time: { value: 0 },
   },
   vertexShader: /* glsl */ `
@@ -62,7 +81,7 @@ const GradeShader = {
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float saturation, contrast, vignette, grain, time;
+    uniform float saturation, contrast, vignette, grain, lift, time;
     uniform vec3 tint;
     varying vec2 vUv;
     float h(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -72,6 +91,7 @@ const GradeShader = {
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(l), col, saturation);
       col = (col - 0.5) * contrast + 0.5;
+      col = col * (1.0 - lift) + lift;
       col *= tint;
       vec2 d = vUv - 0.5;
       col *= 1.0 - vignette * smoothstep(0.25, 0.85, dot(d, d) * 2.2);
@@ -142,6 +162,54 @@ export class Pipeline {
     this.onResize?.(w, h);
   }
   onResize?: (w: number, h: number) => void;
+
+  /** depth of field for photo mode, made the first time it's asked for (it costs a second render of the scene) */
+  private bokeh: BokehPass | null = null;
+  dofPass(): BokehPass | null {
+    return this.bokeh;
+  }
+  dof(scene: THREE.Scene, camera: THREE.PerspectiveCamera): BokehPass {
+    if (!this.bokeh) {
+      this.bokeh = new BokehPass(scene, camera, { focus: 10, aperture: 0.002, maxblur: 0.012 });
+      // in HDR, before tone mapping, so bright lamps bloom into proper discs
+      this.composer.insertPass(this.bokeh, this.composer.passes.indexOf(this.bloom) + 1);
+      const c = this.renderer.domElement;
+      this.bokeh.setSize(c.width, c.height);
+    }
+    return this.bokeh;
+  }
+
+  /** how far away the surface under a pixel is (metres from the camera; `far` for open sky). One 1×1 render */
+  distanceAt(scene: THREE.Scene, camera: THREE.PerspectiveCamera, x: number, y: number): number | null {
+    const c = this.renderer.domElement;
+    const w = c.clientWidth || window.innerWidth, h = c.clientHeight || window.innerHeight;
+    try {
+      this.probeRT ??= new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType });
+      this.probeMat ??= new THREE.ShaderMaterial({ vertexShader: DIST_VERT, fragmentShader: DIST_FRAG });
+      const cam = camera.clone();
+      cam.setViewOffset(w, h, Math.round(x), Math.round(y), 1, 1);
+      cam.updateProjectionMatrix();
+      const clear = this.renderer.getClearColor(new THREE.Color()), alpha = this.renderer.getClearAlpha();
+      scene.overrideMaterial = this.probeMat;
+      this.renderer.setRenderTarget(this.probeRT);
+      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.clear();
+      this.renderer.render(scene, cam);
+      const px = new Float32Array(4);
+      this.renderer.readRenderTargetPixels(this.probeRT, 0, 0, 1, 1, px);
+      scene.overrideMaterial = null;
+      this.renderer.setRenderTarget(null);
+      this.renderer.setClearColor(clear, alpha);
+      // nothing drawn there: open sky
+      return px[0] > 0 ? px[0] : camera.far;
+    } catch {
+      scene.overrideMaterial = null;
+      this.renderer.setRenderTarget(null);
+      return null;
+    }
+  }
+  private probeRT: THREE.WebGLRenderTarget | null = null;
+  private probeMat: THREE.ShaderMaterial | null = null;
 
   render(exposure: number, dt: number, shadows = true): void {
     this.renderer.toneMappingExposure = exposure;

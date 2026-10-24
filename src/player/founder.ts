@@ -636,6 +636,11 @@ export class Founder {
     }
   }
 
+  /** photo mode: the Founder is in the picture, even when the camera was behind their eyes */
+  showBody(): void {
+    this.mesh.visible = !this.driving || this.ride instanceof Moto;
+  }
+
   /** animate the body, place the car, and set the camera */
   private pose(dt: number): void {
     const riding = this.driving && this.ride instanceof Moto;

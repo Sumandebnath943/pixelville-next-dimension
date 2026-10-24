@@ -230,7 +230,8 @@
             <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look (click the view first)<br />
             <kbd>V</kbd> first or third person · <kbd>E</kbd> a building or villager nearby<br />
             <kbd>F</kbd> into or out of your car (parked at the Lodge) · <kbd>W</kbd>/<kbd>S</kbd> gas and brake · <kbd>Space</kbd> handbrake<br />
-            <kbd>Tab</kbd> your phone: map and directions, wallet, news, tasks, camera</p></div>
+            <kbd>Tab</kbd> your phone: map and directions, wallet, news, tasks, camera<br />
+            <kbd>F2</kbd> photo mode: the world pauses, the camera flies free (lens, focus, looks, another hour or weather); <kbd>Enter</kbd> saves a PNG</p></div>
           <div><h3>The Planner</h3>
             <p><kbd>P</kbd> rise into the Planner and back down · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> glide · wheel zoom · <kbd>Q</kbd>/<kbd>E</kbd> or right-drag to rotate<br />
             Pick from the palette and click to place · <kbd>R</kbd> turns the door side · drag roads, rails, rivers and the bulldozer<br />
@@ -245,6 +246,25 @@
       </div></div>
     </div>
 
+    <div id="photo" class="glass">
+      <div class="pm-head"><b>Photo mode</b><span>The world is paused</span><button class="ib" id="pm-exit" title="Leave photo mode (Esc)"><svg><use href="#i-close" /></svg></button></div>
+      <label class="pm-row"><span>Lens</span><input type="range" id="pm-fov" min="12" max="100" step="1" /><output id="pm-fov-v"></output></label>
+      <label class="pm-row"><span>Exposure</span><input type="range" id="pm-ev" min="-2" max="2" step="0.1" /><output id="pm-ev-v"></output></label>
+      <div class="pm-sec">Depth of field <button id="pm-dof" class="pm-toggle">Off</button></div>
+      <label class="pm-row pm-dof"><span>Focus</span><input type="range" id="pm-focus" min="0" max="1" step="0.001" /><output id="pm-focus-v"></output></label>
+      <label class="pm-row pm-dof"><span>Blur</span><input type="range" id="pm-blur" min="0" max="1" step="0.01" /><output></output></label>
+      <p class="pm-note">Click the picture to focus on that spot.</p>
+      <div class="pm-sec">Look</div>
+      <div class="pm-chips" id="pm-looks"></div>
+      <div class="pm-sec">Time of day <button id="pm-hour-reset" class="pm-toggle">Back to now</button></div>
+      <label class="pm-row"><span>Hour</span><input type="range" id="pm-hour" min="0" max="23.75" step="0.25" /><output id="pm-hour-v"></output></label>
+      <div class="pm-sec">Weather</div>
+      <div class="pm-chips" id="pm-wx"></div>
+      <p class="pm-note" id="pm-saved"></p>
+      <div class="pm-actions"><button id="pm-hide">Hide <kbd>H</kbd></button><button class="primary" id="pm-shoot"><svg><use href="#i-camera" /></svg>Save photo <kbd>Enter</kbd></button></div>
+      <p class="pm-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>E</kbd>/<kbd>Q</kbd> up, down · <kbd>Shift</kbd> faster · drag to look · wheel zooms · <kbd>Esc</kbd> leaves</p>
+    </div>
+    <div id="flash"></div>
     <div id="curtain">
       <b id="curtain-title"></b>
       <p id="curtain-text"></p>

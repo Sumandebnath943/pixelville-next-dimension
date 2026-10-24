@@ -342,6 +342,35 @@ body.planner #wanted { display: none; }
 #wanted .gauge { width: 54px; }
 #wanted.seen .gauge { opacity: 0.35; }
 
+/* ---------- photo mode: the interface steps aside for a panel of camera controls ---------- */
+#photo { position: fixed; right: 12px; top: 12px; bottom: 12px; width: 284px; z-index: 30; display: none; flex-direction: column; gap: 7px; padding: 12px 14px; overflow-y: auto; font-size: 12.5px; }
+body.photo #photo { display: flex; }
+body.photo #hud { display: none; }
+body.photo.photo-clean #photo { display: none; }
+body.photo #game { cursor: crosshair; }
+.pm-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.pm-head b { font-size: 14px; }
+.pm-head span { flex: 1; color: var(--ink-3); font-size: 11.5px; }
+.pm-row { display: grid; grid-template-columns: 62px 1fr 58px; align-items: center; gap: 8px; color: var(--ink-2); }
+.pm-row output { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pm-row input[type='range'] { width: 100%; padding: 0; border: 0; background: transparent; accent-color: var(--accent); }
+.pm-sec { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 10.5px; font-weight: 650; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.pm-toggle { padding: 3px 10px; font-size: 11px; letter-spacing: 0; text-transform: none; }
+.pm-toggle.on { background: rgba(240, 194, 122, 0.18); border-color: rgba(240, 194, 122, 0.4); color: var(--accent); }
+.pm-toggle:disabled { opacity: 0.35; cursor: default; }
+#photo.dof-off .pm-dof { opacity: 0.45; }
+.pm-note { margin: 0; color: var(--ink-3); font-size: 11.5px; }
+.pm-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.pm-chips button { padding: 4px 10px; font-size: 11.5px; border-radius: 999px; }
+.pm-chips button.on { background: var(--accent); border-color: transparent; color: var(--accent-ink); font-weight: 600; }
+.pm-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 10px; }
+.pm-actions button { flex: 1; justify-content: center; white-space: nowrap; padding: 7px 8px; }
+.pm-actions kbd { font-size: 10px; padding: 0 4px; }
+.pm-keys { margin: 2px 0 0; color: var(--ink-3); font-size: 11px; line-height: 1.7; }
+#flash { position: fixed; inset: 0; z-index: 44; background: #fff; opacity: 0; pointer-events: none; }
+#flash.go { animation: shutter 0.45s ease-out; }
+@keyframes shutter { from { opacity: 0.8; } to { opacity: 0; } }
+
 /* busted / wasted: the hours that pass behind a curtain */
 #curtain {
   position: fixed; inset: 0; z-index: 45; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px;

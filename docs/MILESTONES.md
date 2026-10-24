@@ -111,7 +111,7 @@ The vertical slice is still at `slice.html` (the "look lab"):
 
 ---
 
-## Milestone 2 — Street life (in progress)
+## Milestone 2 — Street life (done 2026-10-24: 2a–2f below)
 
 - **Vehicle ownership:** buy at car/motorcycle showrooms, fuel at gas stations, damage & repair at the auto garage, parking, tickets, towing, Founder's Lodge garage.
 - **Traffic AI polish:** car-following, yielding, honking, swerving, player-caused crashes feeding V1 incidents.
@@ -167,8 +167,15 @@ The vertical slice is still at `slice.html` (the "look lab"):
 - **Where it shows**: a pill next to the wallet with the village's view in a word (A newcomer, Well liked, Beloved, Mixed feelings, Disliked, Notorious) and a meter either side of indifference; a villager's card shows what they think of you and the last thing they saw or heard; a business's card shows what its staff think, and any discount.
 - Covered by `tests/reputation.test.ts` (opinions, hearsay and its limits, families, cooling and saves, the town's label, prices, PVTV) and `tests/wanted.test.ts` (informers, loyal fans, tip-offs).
 
-### 2f · Photo mode
-- Pause the world, free camera, depth of field, filters, time-of-day and weather preview, hide the HUD, save a PNG.
+### 2f · Photo mode (done 2026-10-24)
+- **Opening it**: <kbd>F2</kbd> on the street, or the phone's Camera app. The world pauses: the clock, villagers and traffic stop, and the animation clock does too, so rain hangs in the air and the river stops. Even the idle catch-up while the tab is hidden waits. The interface steps aside for a panel (`src/ui/photopanel.ts`); <kbd>H</kbd> hides that too, and <kbd>Esc</kbd> or <kbd>F2</kbd> leaves.
+- **Free camera** (`src/player/photo.ts`): <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly along the view, <kbd>E</kbd>/<kbd>Q</kbd> up and down, <kbd>Shift</kbd> faster, drag to look, wheel to zoom. It stays within 60 m of the Founder and above the ground, and the Founder is in the picture even if you were in first person.
+- **Lens and exposure**: the zoom reads as a full-frame focal length (12 mm–114 mm); exposure compensation is ±2 stops on top of the auto-exposure.
+- **Depth of field**: a bokeh pass, created the first time it's switched on and inserted in HDR before tone mapping, so bright lamps blur into soft glows rather than grey smudges. Click the picture to focus there: a 1×1 render under the cursor measures the distance. A focus slider runs 0.5–500 m, plus a blur amount.
+- **Looks**: Natural, Vivid, Golden, Cool, Faded, Mono, Noir and Sepia, applied on top of the weather's own grade (saturation, contrast, tint, lifted blacks, vignette, grain).
+- **Preview**: any hour of the day, with the sky, sun, auto-exposure, lit windows and lamps following it, and any weather (clear, cloudy, rain, storm, snow), with wet or snow-covered streets to match. Everything returns to the real time and weather on the way out.
+- **Saving**: <kbd>Enter</kbd> or the button saves the frame as a PNG at the canvas's full resolution, named after the village, day and time (e.g. `Little-Brook-day12-0705.png`), with a shutter flash, and puts a copy in the phone's camera roll.
+- Covered by `tests/photo.test.ts` (the lens, the tether and floor, previews put back, looks over the weather, file names).
 
 ---
 
