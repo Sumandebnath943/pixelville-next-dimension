@@ -45,6 +45,14 @@
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></symbol>
       <symbol id="i-tv" viewBox="0 0 24 24"><rect x="3" y="6.5" width="18" height="12" rx="2" /><path d="M8.5 3l3.5 3.5L15.5 3" /></symbol>
       <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5l8-6.5 8 6.5V20H4z" /><path d="M10 20v-5.5h4V20" /></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" /><path d="M10.5 18.5h3" /></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5c0-1.1.9-2 2-2h2l1.5-2h5l1.5 2h2c1.1 0 2 .9 2 2V17c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2z" /><circle cx="12" cy="12.5" r="3.5" /></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11M4.5 6.5v.1M4.5 12v.1M4.5 17.5v.1" /></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
+      <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="1.5" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6" /><path d="M15 15l5 5" /></symbol>
     </svg>
 
     <canvas id="game"></canvas>
@@ -75,6 +83,7 @@
             <button data-s="0" title="Pause (Space in the Planner)"><svg><use href="#i-pause" /></svg></button><button data-s="1" title="Normal speed">1×</button><button data-s="2" title="2× (Planner)">2×</button><button data-s="3" title="4× (Planner)">4×</button><button data-s="4" title="8× (Planner)">8×</button>
           </span>
           <span id="filebtns">
+            <button class="ib" id="btn-phone" title="Phone — map, wallet, news (Tab)"><svg><use href="#i-phone" /></svg></button>
             <button class="ib" id="btn-planner" title="Planner — rise up and build (P)"><svg><use href="#i-crane" /></svg></button>
             <button class="ib" id="btn-journal" title="Task book & village news (J)"><svg><use href="#i-book" /></svg><span id="journal-badge"></span></button>
             <button class="ib" id="btn-stats" title="Village history"><svg><use href="#i-chart" /></svg></button>
@@ -103,6 +112,11 @@
         <span id="wallet-pill" class="glass" title="The Founder's wallet"><svg><use href="#i-wallet" /></svg><b id="wallet">$120</b></span>
         <span id="speedo" class="glass"></span>
         <span id="modebadge" class="glass"></span>
+        <span id="gps-pill" class="glass"><svg><use href="#i-pin" /></svg><span id="gps-text"></span><button id="gps-stop" class="ib" title="Stop the route"><svg><use href="#i-close" /></svg></button></span>
+      </div>
+      <div id="phone" class="glass">
+        <div class="ph-bar"><span id="ph-clock">07:00</span><span class="ph-net">PVTel</span><span class="ph-sig"><i></i><i></i><i></i><i></i></span></div>
+        <div id="ph-body"></div>
       </div>
       <div id="crosshair"></div>
       <div id="info" class="glass"></div>
@@ -115,7 +129,7 @@
           <div id="tv-ticker"><span id="tv-ticker-text">PVTV · village news &amp; markets</span></div>
         </div>
         <div id="mapwrap" class="glass">
-          <canvas id="minimap" width="256" height="256" title="Click to fly there (Planner)"></canvas>
+          <canvas id="minimap" width="256" height="256" title="Click for directions there (in the Planner: fly there)"></canvas>
           <div id="rci" title="Demand: Residential · Commercial · Industrial (jobs)">
             <div class="rci-col"><div class="rci-track"><i id="rci-r"></i></div><b>R</b></div>
             <div class="rci-col"><div class="rci-track"><i id="rci-c"></i></div><b>C</b></div>
@@ -201,7 +215,8 @@
           <div><h3>On the street</h3>
             <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look (click the view first)<br />
             <kbd>V</kbd> first or third person · <kbd>E</kbd> a building or villager nearby<br />
-            <kbd>F</kbd> into or out of your car (parked at the Lodge) · <kbd>W</kbd>/<kbd>S</kbd> gas and brake · <kbd>Space</kbd> handbrake</p></div>
+            <kbd>F</kbd> into or out of your car (parked at the Lodge) · <kbd>W</kbd>/<kbd>S</kbd> gas and brake · <kbd>Space</kbd> handbrake<br />
+            <kbd>Tab</kbd> your phone: map and directions, wallet, news, tasks, camera</p></div>
           <div><h3>The Planner</h3>
             <p><kbd>P</kbd> rise into the Planner and back down · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> glide · wheel zoom · <kbd>Q</kbd>/<kbd>E</kbd> or right-drag to rotate<br />
             Pick from the palette and click to place · <kbd>R</kbd> turns the door side · drag roads, rails, rivers and the bulldozer<br />

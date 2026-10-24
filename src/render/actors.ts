@@ -235,6 +235,9 @@ export class Actors {
     this.props[k]?.add(x, y, z, yaw, scale, color || null, 0, 0, sy);
   }
 
+  /** the client adds its own figures each frame (the Founder's errands: a runaway dog) */
+  extra: ((a: Actors) => void) | null = null;
+
   /* ---------- per-frame update ---------- */
   update(dt: number, camX: number, camZ: number, range: number, now: number, night: number): void {
     this.t += dt;
@@ -264,6 +267,7 @@ export class Actors {
     this.collectFestive(night);
     this.collectFires(night);
     this.collectSky();
+    this.extra?.(this);
     this.drawPeople();
     this.drawCars();
     this.drawBubbles(now);

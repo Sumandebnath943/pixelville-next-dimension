@@ -132,9 +132,12 @@ The vertical slice is still at `slice.html` (the "look lab"):
 - The Founder's road offences are recorded (`founder.offences`, `founderOffence` event): red lights, speeding over 60 km/h, the wrong side of a two-way street, bumps, crashes and people hit. The car keeps a damage value for the garage in 2c.
 - Fixed on the way: every tile of a two-tile avenue counted as a junction; two cars setting off from the same spot drove as one. Covered by `tests/traffic.test.ts` (overtaking, not overtaking into oncoming traffic, avenues, stopping and honking for the Founder, twins).
 
-### 2b · Wallet and phone
-- The wallet becomes a ledger (income, purchases, fines) with small rewards so money exists before jobs.
-- Phone v1 on <kbd>Tab</kbd>: Map with GPS route and on-road arrows, Wallet, PVTV, Tasks, Camera, Planner, Settings.
+### 2b · Wallet and phone (done 2026-10-24)
+- **Wallet** (`src/player/wallet.ts`): a balance and a ledger of every reward, win, purchase and (later) fine, saved with the village. Money is never conjured: what the Founder spends in a business is its income, and a household's thank-you comes out of its savings. The wallet pill flashes green or red with each change.
+- **Small rewards** (`src/player/errands.ts`): now and then a villager's dog slips out of the yard. A toast with a pin and a task-book entry go out; find the dog, call it over (<kbd>E</kbd>), and it follows you while the GPS routes you to the family, who pay what they can and remember who brought it back (left alone, it finds its own way home in two days). Standing by to help at a fire or a crash earns a thank-you from the village fund. Open shops sell scratch cards at the door ($2 to the shop; prizes from the village fund).
+- **GPS** (`src/player/gps.ts`, `src/render/gpsarrows.ts`): routes follow the roads, re-plan when you stray, and drop the stretch behind you; amber chevrons drift along the road ahead (they hold their colour in sunshine and at night), the route shows on the minimap, and a pill shows where you're going and how far. On the street, "Go there", "Find home", the minimap and pinned toasts set a route; in the Planner they still fly the camera.
+- **Phone** (`src/ui/phone.ts`) on <kbd>Tab</kbd> or the top-bar button: home screen with the clock, the wallet and the current route; Map (tap any place or building, or search the village's places by name, sorted by distance), Wallet (balance, today in and out, history), PVTV (markets and headlines), Tasks, Camera (a clean photo of the view, kept for the session, saved as a JPEG), Planner and Settings. The mouse stays free while it's out; <kbd>Esc</kbd> puts it away. Personal moments (a scratch card, a route) stay out of the village news.
+- Covered by `tests/founder.test.ts` (wallet and GPS).
 
 ### 2c · Vehicle ownership
 - Buy cars and motorcycles at the showrooms, keep them at the Lodge garage, refuel at gas stations (fuel gauge), damage and repairs at the auto garage, parking, tickets and towing. Owned vehicles persist in the save.

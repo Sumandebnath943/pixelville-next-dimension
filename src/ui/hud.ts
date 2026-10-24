@@ -23,10 +23,12 @@ const $ = (id: string) => document.getElementById(id)!;
 export interface HudApi {
   togglePlanner(): void;
   isPlanner(): boolean;
-  focus(px: { x: number; y: number }): void;
+  /** fly the Planner there, or (on the street) set the GPS; `label` names the place */
+  focus(px: { x: number; y: number }, label?: string): void;
   founder(): { x: number; z: number; yaw: number };
   setTool(k: string | null): void;
   openMayor(): void;
+  togglePhone(): void;
 }
 
 /** palette categories: key, tab label, heading, icon */
@@ -90,6 +92,7 @@ export class Hud {
     $('stat-leader').addEventListener('click', () => api.openMayor());
     $('btn-planner').addEventListener('click', () => api.togglePlanner());
     $('btn-journal').addEventListener('click', () => this.toggleJournal());
+    $('btn-phone').addEventListener('click', () => api.togglePhone());
     // the menu: save, load, new map, settings, sound, help
     const menu = $('menu');
     $('btn-menu').addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('open'); });
@@ -145,7 +148,10 @@ export class Hud {
     t.className = 'toast' + (at ? ' jump' : '');
     const { ico, text } = splitLead(msg);
     t.innerHTML = (ico ? `<span class="t-ico">${ico}</span>` : '') + `<span>${escHtml(text)}</span>` + (at ? icon('pin') : '');
-    if (at) { t.title = 'Show me'; t.addEventListener('click', () => this.api.focus(at)); }
+    if (at) {
+      t.title = this.api.isPlanner() ? 'Fly there' : 'Get directions';
+      t.addEventListener('click', () => this.api.focus(at, text.split(' — ')[0].replace(/[.!]$/, '').slice(0, 48)));
+    }
     wrap.appendChild(t);
     const spd = Game.speed() || 1;
     const maxStack = spd >= 8 ? 2 : spd >= 3 ? 3 : 4;
@@ -286,8 +292,13 @@ export class Hud {
     }
   }
 
+  /** the map as the minimap paints it, one pixel per tile (the phone's map uses it) */
+  mapImage(): ImageData | null {
+    return this.mmImg;
+  }
+
   /* ---------- minimap ---------- */
-  drawMinimap(view: { x: number; z: number; yaw: number; planner: boolean; w: number; h: number }): void {
+  drawMinimap(view: { x: number; z: number; yaw: number; planner: boolean; w: number; h: number; route?: number[][]; dest?: { x: number; z: number } | null }): void {
     const c = $('minimap') as HTMLCanvasElement;
     const g = c.getContext('2d')!;
     if (!this.mmImg || this.mmVersion !== Game.mapVersion || this.mmSeason !== Weather.season) {
@@ -321,6 +332,22 @@ export class Hud {
     if (Math.floor(now / 300) % 2 === 0) {
       g.fillStyle = '#ff4040';
       for (const p of this.pinsList()) g.fillRect(p.x / 16 - 2, p.y / 16 - 2, 5, 5);
+    }
+    // the GPS route and where it ends
+    if (view.dest) {
+      g.strokeStyle = '#f0c27a';
+      g.lineWidth = 1.6;
+      g.lineJoin = 'round';
+      if (view.route && view.route.length) {
+        g.beginPath();
+        g.moveTo(view.x / 8, view.z / 8);
+        for (const [x, y] of view.route) g.lineTo(x + 0.5, y + 0.5);
+        g.stroke();
+      }
+      g.fillStyle = '#f0c27a';
+      g.beginPath();
+      g.arc(view.dest.x / 8, view.dest.z / 8, 3, 0, Math.PI * 2);
+      g.fill();
     }
     // the Founder: a gold arrow
     const fx = view.x / 8, fz = view.z / 8;

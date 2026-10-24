@@ -24,6 +24,10 @@ import { Snd } from './audio/sounds';
 import { get, AUTO } from './save/store';
 import { texturesReady } from './gfx/textures';
 import { Traffic } from './sim/traffic';
+import { Gps, distLabel } from './player/gps';
+import { Errands } from './player/errands';
+import { Phone } from './ui/phone';
+import { GpsArrows } from './render/gpsarrows';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -49,37 +53,69 @@ Traffic.onHonk = (who) => {
   if (d < 70) Snd.horn(Math.max(0.15, 1 - d / 70));
   if (who.trip) { who.bubble = '😤'; who.bubbleUntil = performance.now() + 2500; }
 };
+const gps = new Gps();
+const arrows = new GpsArrows(stage.scene);
 
 /* ---------- UI ---------- */
+const inPlanner = (): boolean => planner.active && !planner.leaving;
 const togglePlanner = () => {
-  if (planner.active && !planner.leaving) planner.exit();
+  if (inPlanner()) planner.exit();
   else {
     if (founder.driving) founder.car.speed = 0;
     planner.enter(founder.pos);
     Input.releaseLock();
   }
 };
+/** a place from a toast, a card or the minimap: fly the Planner over it, or on the street, route there */
+const goTo = (px: { x: number; y: number }, label?: string): void => {
+  if (inPlanner()) { planner.focus(px.x * 0.5, px.y * 0.5); return; }
+  gps.set(px.x * 0.5, px.y * 0.5, label || 'Pinned place');
+  hud.toast(`🧭 Route set: ${label || 'the pinned place'} — follow the arrows on the road`, undefined, true);
+};
 const hud = new Hud({
   togglePlanner,
-  isPlanner: () => planner.active && !planner.leaving,
-  focus: (px) => {
-    // a god can always rise and look: from the street, the Planner opens over the spot
-    if (!planner.active || planner.leaving) { planner.enter(founder.pos); Input.releaseLock(); }
-    planner.focus(px.x * 0.5, px.y * 0.5);
-  },
+  isPlanner: inPlanner,
+  focus: goTo,
   founder: () => ({ x: founder.pos.x, z: founder.pos.z, yaw: founder.yaw }),
   setTool: (k) => planner.setTool(k),
   openMayor: () => panels.showMayor(),
+  togglePhone: () => togglePhone(),
 });
 const panels = new Panels({
   toast: (m) => hud.toast(m),
-  focus: (px) => {
-    if (!planner.active || planner.leaving) { planner.enter(founder.pos); Input.releaseLock(); }
-    planner.focus(px.x * 0.5, px.y * 0.5);
-  },
-  afterLoad: () => { buildings.clear(); terrain.update(true); buildings.sync(); },
-  isPlanner: () => planner.active && !planner.leaving,
+  focus: goTo,
+  extraActions: (b) => (errands.canScratch(b) ? [{ label: 'Scratch card · $2', run: () => errands.scratch(b) }] : []),
+  afterLoad: () => { buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); },
+  isPlanner: inPlanner,
 });
+// (hud.toast's third argument means "already logged": personal moments stay out of the village news)
+const errands = new Errands(founder, gps, (m, at, news) => hud.toast(m, at, !news));
+let photoWanted = false;
+const phone = new Phone({
+  founder: () => ({ x: founder.driving ? founder.car.x : founder.pos.x, z: founder.driving ? founder.car.z : founder.pos.z, yaw: founder.driving ? founder.car.yaw : founder.yaw }),
+  gps,
+  purse: founder.purse,
+  mapImage: () => hud.mapImage(),
+  openPlanner: () => { if (!inPlanner()) togglePlanner(); },
+  openSettings: () => panels.openSettings(),
+  photo: () => { photoWanted = true; },
+});
+const togglePhone = (): void => {
+  phone.toggle();
+  if (phone.open) Input.releaseLock();
+};
+gps.onArrive = (d) => hud.toast(`🧭 You've arrived: ${d.label}`, undefined, true);
+gps.onChange = () => document.body.classList.toggle('gps', !!gps.dest);
+$('gps-stop').addEventListener('click', () => gps.clear());
+// the wallet pill flashes green or red with every change
+founder.purse.onChange = (e) => {
+  const pill = $('wallet-pill');
+  pill.classList.remove('flash-up', 'flash-down');
+  void pill.offsetWidth; // restart the animation
+  pill.classList.add(e.amount >= 0 ? 'flash-up' : 'flash-down');
+  $('wallet').textContent = `$${Math.round(founder.wallet)}`;
+};
+actors.extra = (a) => errands.draw((k, x, y, z, yaw, s, col) => a.prop(k, x, y, z, yaw, s, new THREE.Color(col)), (x, z) => founder.groundAt(x, z));
 planner.onBuilding = (b) => panels.showInfo(b);
 planner.onPerson = (p) => panels.showPerson(p);
 planner.onToolChange = (k) => hud.markTool(k);
@@ -87,19 +123,25 @@ planner.onEmptyClick = () => panels.hideInfo();
 Input.attach(canvas);
 initTouch();
 canvas.addEventListener('click', () => {
-  if (!planner.active && !panels.anyModalOpen()) Input.requestLock(canvas);
+  // with the phone out, the mouse stays free for it
+  if (!planner.active && !panels.anyModalOpen() && !phone.open) Input.requestLock(canvas);
 });
 
 /* ---------- the frame loop ---------- */
 let last = performance.now();
-let lastHud = 0, lastPanel = 0, lastVersion = -1, lastTrees = -1;
+let lastHud = 0, lastPanel = 0, lastPhone = 0, lastVersion = -1, lastTrees = -1;
 const tmpCam = new THREE.PerspectiveCamera();
 const focus = new THREE.Vector3();
 
 function interactions(): void {
   const prompt = $('prompt');
   let text = '';
-  if (founder.driving) {
+  // an errand right here (a runaway dog to call, a dog to hand back) comes first
+  const errand = errands.interaction();
+  if (errand) {
+    text = errand.text;
+    if (Input.take('interact')) errand.act();
+  } else if (founder.driving) {
     text = '<b>F</b> get out';
     if (Input.take('vehicle')) founder.exitCar();
   } else {
@@ -146,8 +188,10 @@ function frame(now: number): void {
   if (Input.take('planner')) togglePlanner();
   if (Input.take('journal')) hud.toggleJournal();
   if (Input.take('help')) panels.show('help');
+  if (Input.take('phone')) togglePhone();
   if (Input.take('cancel')) {
-    if (planner.active && planner.tool) planner.setTool(null);
+    if (phone.open) phone.close();
+    else if (planner.active && planner.tool) planner.setTool(null);
     else if (!panels.closeAll() && planner.active && !planner.leaving) planner.exit();
   }
   if (Input.take('undo') && planner.active) Game.undo();
@@ -173,6 +217,10 @@ function frame(now: number): void {
     interactions();
   } else if (!street) $('prompt').style.display = 'none';
   planner.update(dt);
+  // errands and directions follow the Founder (in the car, from the car)
+  const fx = founder.driving ? founder.car.x : founder.pos.x, fz = founder.driving ? founder.car.z : founder.pos.z;
+  errands.update(dt, street && !panels.anyModalOpen());
+  gps.update(dt, fx, fz);
 
   // cameras: street, aerial, or a blend while rising/descending
   stage.camera.fov = Settings.get('fov') || 70;
@@ -199,15 +247,26 @@ function frame(now: number): void {
   stage.update(dt, focus, terrain.lampSpots);
   terrain.frame(stage.night, stage.camera.position);
   actors.update(dt, focus.x, focus.z, range, now, stage.night);
+  if (gps.dest && street) arrows.update(dt, gps.route, fx, fz, (x, z) => founder.groundAt(x, z), stage.sky.exposure, stage.night);
+  else arrows.hide();
   stage.render();
+  // a photo is the frame just drawn (the canvas holds no interface), read before the browser shows it
+  if (photoWanted) {
+    photoWanted = false;
+    try {
+      phone.addPhoto(canvas.toDataURL('image/jpeg', 0.92));
+      Snd.tone(1800, 900, 0.08, 0.05, 'square');
+    } catch { hud.toast('📷 The camera could not take a photo here'); }
+  }
 
   // HUD
   if (now - lastHud > 400) {
     lastHud = now;
     hud.update();
     const w = planner.active ? planner.dist * 1.6 : 0;
-    hud.drawMinimap({ x: planner.active ? planner.target.x : founder.pos.x, z: planner.active ? planner.target.z : founder.pos.z, yaw: founder.yaw, planner: planner.active, w, h: w * 0.7 });
+    hud.drawMinimap({ x: planner.active ? planner.target.x : fx, z: planner.active ? planner.target.z : fz, yaw: founder.driving ? founder.car.yaw : founder.yaw, planner: planner.active, w, h: w * 0.7, route: gps.route, dest: gps.dest });
     $('wallet').textContent = `$${Math.round(founder.wallet)}`;
+    if (gps.dest) $('gps-text').textContent = `${gps.dest.label} · ${distLabel(gps.left)}`;
     const speedo = founder.driving ? `${Math.round(founder.speedKmh)} km/h` : '';
     if ($('speedo').textContent !== speedo) $('speedo').textContent = speedo;
     const mode = founder.driving ? 'car' : founder.firstPerson ? 'eye' : '';
@@ -218,12 +277,13 @@ function frame(now: number): void {
     if (planner.active) hud.markTool(planner.tool);
     else {
       const hint = Input.usingTouch ? 'Left thumb moves · right thumb looks'
-        : Input.locked ? `${WASD} move · <kbd>Shift</kbd> run · <kbd>V</kbd> camera · <kbd>F</kbd> drive · <kbd>P</kbd> Planner · <kbd>Esc</kbd> frees the mouse`
-          : `Drag to look · ${WASD} move · <kbd>F</kbd> drive · <kbd>P</kbd> Planner · <kbd>F1</kbd> help`;
+        : Input.locked ? `${WASD} move · <kbd>Shift</kbd> run · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>P</kbd> Planner · <kbd>Esc</kbd> frees the mouse`
+          : `Drag to look · ${WASD} move · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>P</kbd> Planner`;
       if ($('hint').innerHTML !== hint) $('hint').innerHTML = hint;
     }
   }
   if (now - lastPanel > 1200) { lastPanel = now; panels.refresh(); }
+  if (now - lastPhone > 150) { lastPhone = now; phone.tick(); }
 
   // sound
   Snd.tick(dt, {
@@ -284,4 +344,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone };

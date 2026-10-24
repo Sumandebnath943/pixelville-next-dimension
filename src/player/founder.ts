@@ -19,6 +19,7 @@ import { ENV } from '../gfx/env';
 import { Traffic } from '../sim/traffic';
 import { Life } from '../sim/life';
 import { Sim } from '../sim/agents';
+import { Wallet, Entry } from './wallet';
 
 const TM = 8;
 const R_BODY = 0.38;
@@ -54,7 +55,9 @@ export class Founder {
   onGround = true;
   driving = false;
   car: Car = { x: 0, z: 0, yaw: 0, speed: 0, y: 0, pitch: 0 };
-  wallet = 120;
+  /** the Founder's money: a balance and a ledger */
+  purse = new Wallet();
+  get wallet(): number { return this.purse.balance; }
   mesh = new THREE.Group();
   carMesh = new THREE.Group();
   private phase = 0;
@@ -128,10 +131,16 @@ export class Founder {
 
   /** start beside the Lodge (or wherever a save put us) */
   spawn(lodge: any, save?: FounderSave | null): void {
+    if (!save) { // a new village: a fresh start
+      this.purse.restore(undefined, []);
+      this.damage = 0;
+      this.offences = [];
+    }
     if (save) {
       this.pos.set(save.x, save.y, save.z);
       this.yaw = this.camYaw = save.yaw;
-      this.wallet = save.wallet ?? 120;
+      this.purse.restore(save.wallet, save.ledger as Entry[] | undefined);
+      this.damage = save.damage ?? 0;
       if (save.car) Object.assign(this.car, { x: save.car.x, z: save.car.z, yaw: save.car.yaw, speed: 0 });
       else this.parkCarAtLodge(lodge);
     } else if (lodge) {
@@ -160,7 +169,10 @@ export class Founder {
   }
 
   save(): FounderSave {
-    return { x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: { x: this.car.x, z: this.car.z, yaw: this.car.yaw }, wallet: Math.round(this.wallet) };
+    return {
+      x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: { x: this.car.x, z: this.car.z, yaw: this.car.yaw },
+      wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), damage: Math.round(this.damage),
+    };
   }
 
   /* ---------- ground & collisions ---------- */
@@ -323,7 +335,7 @@ export class Founder {
             c.speed = impact > 3 ? -c.speed * 0.25 : c.speed * 0.3;
             if (this.bumpCd <= 0) {
               this.bumpCd = 1.5;
-              if (impact > 5 && Life.founderCrash(o, o.x, o.y)) {
+              if (impact > 5 && Life.founderCrash(o)) {
                 c.speed = 0;
                 this.damage = Math.min(100, this.damage + impact * 2.5);
                 this.offence('crash');

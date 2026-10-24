@@ -43,6 +43,9 @@ export interface FounderSave {
   yaw: number;
   car?: { x: number; z: number; yaw: number } | null;
   wallet: number;
+  /** V2: the wallet's ledger (newest last) and the car's dents */
+  ledger?: { day: number; time: string; amount: number; label: string; kind: string }[];
+  damage?: number;
 }
 
 export const Game = {

@@ -42,7 +42,10 @@ const person = (p: any): string => `<span class="p-link" data-pid="${p.id}">${es
 
 export interface PanelApi {
   toast(msg: string): void;
-  focus(px: { x: number; y: number }): void;
+  /** fly the Planner there, or (on the street) set the GPS; `label` names the place */
+  focus(px: { x: number; y: number }, label?: string): void;
+  /** things the Founder can do at this building right now (a scratch card at a shop) */
+  extraActions?(b: any): { label: string; run: () => void }[];
   afterLoad(): void;
   isPlanner(): boolean;
 }
@@ -177,6 +180,8 @@ export class Panels {
     }
     const canUpgrade = b.type === 'house' && !b.upgrading && !b.construction && !b.ruined && b.residents.length && b.level < 3 && b.funds >= (b.level === 1 ? 250 : 600);
     let actions = '';
+    const extra = this.api.extraActions?.(b) || [];
+    extra.forEach((x, i) => { actions += `<button class="primary" data-extra="${i}">${esc(x.label)}</button>`; });
     if (canUpgrade) actions += `<button class="primary" id="upgrade-home">Add a floor · $${b.level === 1 ? 180 : 420}</button>`;
     actions += `<button id="info-go">${icon('pin')}Go there</button>`;
     if (this.api.isPlanner() && b.type !== 'lodge') actions += `<button class="danger" id="demolish">Demolish</button>`;
@@ -188,7 +193,8 @@ export class Panels {
       this.api.toast(`🔨 The ${b.residents[0].surname}s are adding a floor — you talked them into it!`);
       this.showInfo(b);
     };
-    ($('info-go') as HTMLButtonElement).onclick = () => this.api.focus({ x: (b.x + b.w / 2) * 16, y: (b.y + b.h / 2) * 16 });
+    el.querySelectorAll<HTMLElement>('[data-extra]').forEach((btn) => btn.addEventListener('click', () => { extra[+btn.dataset.extra!].run(); this.showInfo(b); }));
+    ($('info-go') as HTMLButtonElement).onclick = () => this.api.focus({ x: (b.door.x + 0.5) * 16, y: (b.door.y + 0.5) * 16 }, d.name);
     const dem = document.getElementById('demolish');
     if (dem) dem.onclick = () => {
       Game.recordBulldoze({ kind: 'building', b }, b.x, b.y);
@@ -253,7 +259,7 @@ export class Panels {
       over: `${kind} · ${p.age} years old`, title: Sim.fullName(p), pills, facts, notes,
       actions: `<button id="person-home">${icon('home')}Find home</button><button id="info-close">Close</button>`,
     });
-    ($('person-home') as HTMLButtonElement).onclick = () => { if (p.home) this.api.focus({ x: (p.home.x + p.home.w / 2) * 16, y: (p.home.y + p.home.h / 2) * 16 }); };
+    ($('person-home') as HTMLButtonElement).onclick = () => { if (p.home) this.api.focus({ x: (p.home.door.x + 0.5) * 16, y: (p.home.door.y + 0.5) * 16 }, `The ${p.surname} home`); };
     ($('info-close') as HTMLButtonElement).onclick = () => this.hideInfo();
     this.wireLinks(el);
   }

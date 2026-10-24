@@ -1315,7 +1315,7 @@ export const Life: any = {
      is wrecked like a V1 crash (the Founder's own car is the other one): the
      shaken driver heads home, onlookers gather, police come. Returns true if
      it became an incident (one wreck at a time, like V1). */
-  founderCrash(o, x, y) {
+  founderCrash(o) {
     if (this.crash) return false;
     const p = o && o.trip ? o : null;
     const visitor = !p && this.tourists.includes(o) ? o : null;
