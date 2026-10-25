@@ -162,7 +162,7 @@ export class Actors {
     this.head = new InstancedPool(PERSON.head, MAT.tint, PEOPLE_CAP, g);
     this.hair = new InstancedPool(PERSON.hair, MAT.tint, PEOPLE_CAP, g);
     this.hairLong = new InstancedPool(PERSON.hairLong, MAT.tint, PEOPLE_CAP, g);
-    const caps: Record<string, number> = { car: 500, taxi: 40, police: 30, fire: 12, bus: 24, moto: 80, loco: 16, coach: 60, wagon: 50, boat: 30, ferry: 3, raft: 12, heli: 4, plane: 4, balloon: 4, ufo: 1, sleigh: 1, ambulance: 8, truck: 24, van: 8 };
+    const caps: Record<string, number> = { car: 500, taxi: 40, police: 30, fire: 12, bus: 24, moto: 80, loco: 16, coach: 60, wagon: 50, boat: 30, ferry: 3, raft: 12, heli: 4, plane: 5, balloon: 4, ufo: 1, sleigh: 1, ambulance: 8, truck: 24, van: 9, tractor: 3 };
     for (const [k, m] of Object.entries(VEHICLES)) {
       const cap = caps[k] || 8;
       this.veh[k] = {
@@ -174,7 +174,7 @@ export class Actors {
       };
     }
     for (const [k, p] of Object.entries(PROPS)) {
-      const cap = k === 'puddle' ? 8 : k === 'bulb' ? 6000 : k === 'diya' ? 1200 : k === 'smoke' || k === 'flame' ? 8 : 160;
+      const cap = k === 'puddle' ? 8 : k === 'bulb' ? 6000 : k === 'diya' ? 1200 : k === 'smoke' || k === 'flame' ? 8 : k === 'pole' || k === 'carry' ? 8 : 160;
       this.props[k] = new InstancedPool(p.geo, p.glow ? this.glowTint : p.tinted ? MAT.tint : MAT.solid, cap, g, !p.glow && k !== 'puddle');
     }
     // fireworks & celebration sparks
@@ -241,6 +241,14 @@ export class Actors {
   }
   prop(k: string, x: number, y: number, z: number, yaw = 0, scale = 1, color?: THREE.Color | null, sy?: number): void {
     this.props[k]?.add(x, y, z, yaw, scale, color || null, 0, 0, sy);
+  }
+  /** V2 (Milestone 6): a jet of water from a hose (metres), arcing to where it lands */
+  spray(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): void {
+    const arc = Math.min(4, Math.hypot(x1 - x0, z1 - z0) * 0.18);
+    for (let i = 0; i < 16; i++) {
+      const f = (this.t * 2 + i / 16) % 1;
+      this.spark(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f + Math.sin(f * Math.PI) * arc, z0 + (z1 - z0) * f, 0.6, 0.8, 1);
+    }
   }
 
   /** the client adds its own figures each frame (the Founder's errands: a runaway dog) */

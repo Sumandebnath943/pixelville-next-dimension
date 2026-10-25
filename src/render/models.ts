@@ -134,6 +134,28 @@ export const VEHICLES: Record<string, VModel> = {
     s.box(-0.5, 2.05, 1.0, -0.15, 2.22, 1.15, W).box(0.15, 2.05, 1.0, 0.5, 2.22, 1.15, W);
     return { paint: p.build(), fixed: f.build(), lights: l.build(), siren: s.build() };
   })(),
+  /* V2 (Milestone 6): the farm tractor (big rear wheels, a cab with glass all round, an exhaust stack) */
+  tractor: (() => {
+    const p = new MeshBuilder(), f = new MeshBuilder(), l = new MeshBuilder(), s = new MeshBuilder();
+    p.box(-0.55, 0.75, 0.1, 0.55, 1.45, 2.1, W);   // the bonnet
+    p.box(-0.75, 0.75, -1.3, 0.75, 1.25, 0.15, W); // the body under the cab
+    p.box(-1.05, 1.18, -1.55, -0.65, 1.28, -0.3, W).box(0.65, 1.18, -1.55, 1.05, 1.28, -0.3, W); // mudguards
+    const glass = hex('#2a3a4a'), tyre = hex('#1c1c1e'), hub = hex('#d8b030');
+    f.box(-0.7, 1.25, -1.25, 0.7, 1.3, 0.05, hex('#2a2a2a'));
+    for (const sx of [-0.7, 0.7]) for (const z of [-1.2, 0.0]) f.box(sx - 0.04, 1.3, z - 0.04, sx + 0.04, 2.55, z + 0.04, hex('#2a2a2a'));
+    f.box(-0.72, 2.55, -1.3, 0.72, 2.65, 0.1, hex('#2a2a2a'));               // the cab roof
+    f.box(-0.68, 1.45, 0.0, 0.68, 2.45, 0.02, glass).box(-0.68, 1.45, -1.22, 0.68, 2.45, -1.2, glass);
+    for (const sx of [-1, 1]) f.box(sx * 0.7 - 0.01, 1.45, -1.2, sx * 0.7 + 0.01, 2.45, 0.0, glass);
+    f.box(0.3, 1.45, 1.4, 0.4, 2.5, 1.5, hex('#3a3a3a'));                      // the exhaust stack
+    for (const sx of [-1, 1]) {
+      f.box(sx * 0.86 - 0.22, 0, -1.55, sx * 0.86 + 0.22, 1.5, -0.25, tyre);   // big rear wheels
+      f.box(sx * 0.86 - 0.23, 0.45, -1.1, sx * 0.86 + 0.23, 1.05, -0.7, hub);
+      f.box(sx * 0.7 - 0.14, 0, 1.25, sx * 0.7 + 0.14, 0.8, 2.05, tyre);       // small front wheels
+    }
+    l.box(-0.45, 1.15, 2.1, -0.25, 1.3, 2.13, hex('#fff6d8')).box(0.25, 1.15, 2.1, 0.45, 1.3, 2.13, hex('#fff6d8'));
+    s.box(-0.12, 2.65, -0.7, 0.12, 2.82, -0.46, W); // an amber beacon on the roof
+    return { paint: p.build(), fixed: f.build(), lights: l.build(), siren: s.build() };
+  })(),
   bus: (() => {
     const p = new MeshBuilder(), f = new MeshBuilder(), l = new MeshBuilder();
     p.box(-1.25, 0.4, -5.2, 1.25, 3.0, 5.2, W);
@@ -314,4 +336,15 @@ export const PROPS: Record<string, { geo: THREE.BufferGeometry; tinted?: boolean
       .build(),
   },
   medbag: { geo: new MeshBuilder().box(-0.22, 0, -0.14, 0.22, 0.28, 0.14, hex('#2a8a4a')).box(-0.05, 0.12, 0.141, 0.05, 0.22, 0.15, hex('#f4f4f4')).build() },
+  /* V2 (Milestone 6): straw bales on a harvested row, a timber pole the linesmen climb, a load carried in the arms */
+  bale: { geo: new MeshBuilder().cyl(0, 0, 0, 0.62, 1.15, 10, hex('#d0b05a'), hex('#e0c878')).build() },
+  pole: {
+    geo: new MeshBuilder()
+      .cyl(0, 0, 0, 0.13, 7.8, 8, hex('#6a4e34'))
+      .box(-1.1, 7.0, -0.07, 1.1, 7.16, 0.07, hex('#5a4230'))
+      .box(-0.95, 7.16, -0.04, -0.85, 7.34, 0.04, hex('#e8e4dc')).box(-0.05, 7.16, -0.04, 0.05, 7.34, 0.04, hex('#e8e4dc')).box(0.85, 7.16, -0.04, 0.95, 7.34, 0.04, hex('#e8e4dc'))
+      .box(-0.25, 5.6, 0.13, 0.25, 6.3, 0.45, hex('#7a7f86'))
+      .build(),
+  },
+  carry: { geo: new MeshBuilder().box(-0.28, 0.95, 0.22, 0.28, 1.3, 0.62, hex('#a07a4a')).build() },
 };

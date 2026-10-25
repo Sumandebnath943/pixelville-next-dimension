@@ -13,11 +13,14 @@ const HOW: Record<Mode, string> = { road: 'On the road', rail: 'On the Intercity
 
 export class TravelUI implements TravelView {
   private mode = '';
+  private raf = 0;
 
   private open(kind: string): HTMLElement {
     const el = $('travel');
-    el.className = `on ${kind}`;
-    requestAnimationFrame(() => el.classList.add('shown'));
+    // (already up: stay up; coming up: fade in next frame, unless hide() comes first)
+    const shown = el.classList.contains('shown');
+    el.className = `on ${kind}${shown ? ' shown' : ''}`;
+    if (!shown) { cancelAnimationFrame(this.raf); this.raf = requestAnimationFrame(() => el.classList.add('shown')); }
     return $('tv-card');
   }
 
@@ -62,6 +65,7 @@ export class TravelUI implements TravelView {
 
   hide(): void {
     this.mode = '';
+    cancelAnimationFrame(this.raf); // (a fade-in still pending from this frame must not undo the hide)
     const el = $('travel');
     el.classList.remove('shown');
     setTimeout(() => { if (!el.classList.contains('shown')) el.className = ''; }, 500);

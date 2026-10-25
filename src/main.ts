@@ -54,6 +54,8 @@ import { Transit, placeName } from './player/transit';
 import { Travel, hhmm, hoursLabel } from './player/travel';
 import { Departures } from './ui/departures';
 import { TravelUI } from './ui/travelui';
+import { Shifts, JOB, JOBS, JobId } from './player/shifts';
+import { ShiftPanel } from './ui/shiftpanel';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -75,12 +77,14 @@ $('alert-pill').addEventListener('click', () => panels.showMayor());
 const founder = new Founder(stage.scene, buildings);
 const planner = new Planner(stage.scene, canvas, stage.camera, buildings, actors);
 Game.founderHooks = {
-  get: () => founder.save(),
+  get: () => ({ ...founder.save(), jobs: shifts.serialize() }),
   set: (s) => {
-    // a loaded village starts on the street
+    // a loaded village starts on the street (and off shift)
     if (indoors?.active) { dialogue.close(); indoors.exit(); document.body.classList.remove('indoors'); }
+    shifts.reset();
     founder.spawn(Game.lodge(), s);
     wanted.reset();
+    shifts.restore(s?.jobs as any);
   },
 };
 founder.spawn(Game.lodge(), null);
@@ -99,6 +103,7 @@ const togglePlanner = () => {
   if (inPlanner()) planner.exit();
   else if (scene) return;
   else if (wanted.stars > 0) hud.toast('🚨 The Planner is locked while the police are after you — lose them first', undefined, true);
+  else if (shifts.cur) hud.toast(`🦺 You're on shift — clock off first (phone → Jobs, or the shift card)`, undefined, true);
   else {
     if (founder.driving) founder.car.speed = 0;
     planner.enter(founder.pos);
@@ -126,6 +131,7 @@ const panels = new Panels({
   extraActions: (b) => [
     ...(errands.canScratch(b) ? [{ label: 'Scratch card · $2', run: () => errands.scratch(b) }] : []),
     ...motoring.buildingActions(b),
+    ...shiftActions(b),
   ],
   afterLoad: () => { buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); wanted.reset(); },
   isPlanner: inPlanner,
@@ -150,10 +156,30 @@ const travel = new Travel(founder, transit, travelUI, personalToast, {
   },
 });
 const departures = new Departures(() => panels.show('departui'), () => panels.close('departui'));
+
+/* ---------- Milestone 6: work shifts ---------- */
+const shifts = new Shifts(founder, gps, personalToast);
+shifts.blocked = () => (wanted.stars > 0 ? 'Not with the police after you' : travel.active ? 'Not while you\'re away on a trip' : transit.riding() || transit.waiting ? 'Not while you\'re riding' : null);
+shifts.indoors = () => indoors;
+shifts.travelView = () => travelUI;
+errands.onDuty = () => ['fire', 'police', 'medic'].includes(shifts.cur?.def.id || '');
+const shiftPanel = new ShiftPanel(shifts, () => clockOff());
+/** end the shift (from the card, the phone or a building); out of the room first if it's a shop shift */
+function clockOff(): void {
+  if (!shifts.cur) return;
+  shifts.end();
+}
+/** what a workplace's card or counter offers: a shift there, or clocking off */
+function shiftActions(b: any): { label: string; run: () => void }[] {
+  if (shifts.cur) return shifts.cur.b === b ? [{ label: 'Clock off', run: () => { panels.closeAll(); clockOff(); } }] : [];
+  return shifts.offers(b).map((id: JobId) => ({ label: `Start a shift · ${JOB[id].title.toLowerCase()}`, run: () => { panels.closeAll(); shifts.go(id, b); } }));
+}
+
 const GATEWAYS = ['busstop', 'trainstation', 'dock', 'taxistand', 'heliport', 'airport'];
 /** what leaves from `b` (from inside a terminal, you step out first) */
 function openDepartures(b: any): void {
   if (wanted.stars > 0) { hud.toast('🚨 Not with the police after you — lose them first', undefined, true); return; }
+  if (shifts.cur) { hud.toast('🦺 You\'re on shift — the rides can wait', undefined, true); return; }
   if (travel.active || transit.riding()) return;
   const list = [...transit.options(b), ...travel.options(b)].map((d) => ({ ...d, act: () => { if (indoors.active) goOut(); d.act(); } }));
   const name = b.type === 'busstop' ? placeName(b) : `the ${CAT[b.type].name}`;
@@ -178,6 +204,8 @@ const counter = new Counter({
     ...motoring.buildingActions(b),
     // Milestone 5: the ticket office sells the journeys too (and the airport's desk checks you in)
     ...(GATEWAYS.includes(b.type) ? [{ label: b.type === 'airport' ? 'Check in for a flight' : 'Departures and trips', run: () => openDepartures(b) }] : []),
+    // Milestone 6: a shift behind the counter (or wherever this workplace works)
+    ...shiftActions(b),
   ],
   about: (b) => panels.showInfo(b),
   talk: (p) => dialogue.start(p, { building: indoors.b }),
@@ -248,7 +276,16 @@ function goOut(): void {
   });
 }
 function indoorInteractions(): void {
-  const u = indoors.use(), prompt = $('prompt');
+  const prompt = $('prompt');
+  // Milestone 6: on shift behind the counter, E takes orders and serves
+  const job = shifts.interaction();
+  if (job) {
+    prompt.innerHTML = job.text;
+    prompt.style.display = 'block';
+    if (Input.take('interact')) job.act();
+    return;
+  }
+  const u = indoors.use();
   prompt.innerHTML = u?.text || '';
   prompt.style.display = u ? 'block' : 'none';
   if (!u || !Input.take('interact')) return;
@@ -376,6 +413,7 @@ const nearestOf = (type: string, x: number, z: number): any =>
     .sort((a: any, b: any) => Math.hypot(a.door.x * TM - x, a.door.y * TM - z) - Math.hypot(b.door.x * TM - x, b.door.y * TM - z))[0] || null;
 wanted.onBusted = (stars) => {
   if (scene) return;
+  if (shifts.cur) { shifts.cur.stars = 1; shifts.end('arrested on the job', true); }
   const x =founder.driving ? founder.car.x : founder.pos.x, z = founder.driving ? founder.car.z : founder.pos.z;
   const station = nearestOf('police', x, z) || Game.lodge();
   const why = wanted.why || 'resisting arrest', fine = FINES[stars];
@@ -400,6 +438,7 @@ wanted.onBusted = (stars) => {
 };
 wanted.onWasted = () => {
   if (scene) return;
+  if (shifts.cur) shifts.end('hurt on the job', true);
   const x =founder.driving ? founder.car.x : founder.pos.x, z = founder.driving ? founder.car.z : founder.pos.z;
   const hospital = nearestOf('hospital', x, z);
   const v = founder.vehicle;
@@ -443,6 +482,13 @@ const phone = new Phone({
     timetable: () => rideTimetable(),
     trips: () => rideTrips(),
   },
+  jobs: {
+    list: () => shifts.listing(),
+    current: () => shifts.panel(),
+    go: (id) => shifts.go(id as JobId),
+    end: () => clockOff(),
+    record: () => shifts.record as any,
+  },
   bag: () => founder.bag,
   eat: (i) => {
     const it = founder.bag[i];
@@ -482,6 +528,7 @@ actors.extra = (a) => {
   const draw = (type: string, x: number, y: number, z: number, yaw: number, paint: string, rotor: number): void => a.vehicle(type, x, y, z, yaw, new THREE.Color(paint), { rotor });
   transit.draw(draw);
   travel.draw(draw);
+  shifts.draw(a); // Milestone 6: the work vehicle, and what the job puts in the world
 };
 planner.onBuilding = (b) => panels.showInfo(b);
 planner.onPerson = (p) => panels.showPerson(p);
@@ -512,6 +559,25 @@ function interactions(): void {
     if (tp.alt && Input.take('interact')) tp.alt.act();
     return;
   }
+  // Milestone 6: in the train's cab or on the flight deck, the job has the controls
+  if (shifts.carrying()) {
+    const l = shifts.line();
+    prompt.innerHTML = l?.text || '';
+    prompt.style.display = l?.text ? 'block' : 'none';
+    if (l && Input.take('interact')) l.act();
+    return;
+  }
+  // on shift, E does the job's work where there's work to do (F still gets in and out)
+  const job = shifts.interaction();
+  if (job) {
+    if (Input.take('interact')) job.act();
+    const v = founder.vehicle;
+    const f = founder.driving ? `<b>F</b> get out` : founder.nearCar() && v ? `<b>F</b> drive the ${v.name}` : '';
+    if (Input.take('vehicle')) { if (founder.driving) founder.exitCar(); else if (f) founder.enterCar(); }
+    prompt.innerHTML = f ? `${job.text} &nbsp; ${f}` : job.text;
+    prompt.style.display = 'block';
+    return;
+  }
   // an errand right here (a runaway dog to call, a dog to hand back) comes first
   const errand = errands.interaction();
   if (errand) {
@@ -525,7 +591,7 @@ function interactions(): void {
     // Milestone 5: at the end of a highway, the road goes on to another town
     const c = founder.car, edge = c.x < 16 && World.isRoad(0, Math.floor(c.z / TM)) ? 'west' : c.z < 16 && World.isRoad(Math.floor(c.x / TM), 0) ? 'north' : null;
     const away = edge ? travel.roadTrip(edge) : null;
-    if (away && !service && !founder.hijacked && wanted.stars === 0) {
+    if (away && !service && !founder.hijacked && !founder.work && wanted.stars === 0) {
       text = `<b>E</b> drive on to ${away.name} (${hoursLabel(away.modes.road!.hours)}) &nbsp; ${text}`;
       if (Input.take('interact')) travel.start(away, 'road', null, edge);
     }
@@ -604,8 +670,10 @@ function frame(now: number): void {
     return;
   }
   // Milestone 5: away from the village (the journey, the city): the hours pass at home behind the screen
-  if (travel.overlay) {
-    travel.frame(now);
+  // (Milestone 6: so they do while the Founder flies the airliner to another city)
+  if (travel.overlay || shifts.overlay()) {
+    if (travel.overlay) travel.frame(now);
+    else { shifts.frame(now); if (now - lastPanel > 400) { lastPanel = now; shiftPanel.sync(); } }
     if (now - lastHud > 400) { lastHud = now; hud.update(); } // (the clock behind the screen keeps up)
     Input.endFrame();
     requestAnimationFrame(frame);
@@ -670,11 +738,14 @@ function frame(now: number): void {
     else $('prompt').style.display = 'none';
   } else if (street && free) {
     // Milestone 5: aboard a bus, a train, a cab, the helicopter, or watching a trip leave: the vehicle carries the Founder
-    if (!transit.riding()) founder.update(dt);
+    // (Milestone 6: so does the train you drive, or the plane you fly)
+    if (!transit.riding() && !shifts.carrying()) founder.update(dt);
     transit.update(dt);
     travel.update();
     interactions();
   } else if (!street) $('prompt').style.display = 'none';
+  // Milestone 6: the shift's work goes on (indoors too, behind a counter)
+  if (free && !planner.active) shifts.update(dt);
   if (!street && !inside && transit.riding()) transit.update(dt); // (the ride goes on under the Planner)
   planner.update(dt);
   // errands and directions follow the Founder (in the car, from the car)
@@ -719,6 +790,8 @@ function frame(now: number): void {
   if (gps.dest && street) arrows.update(dt, gps.route, fx, fz, (x, z) => founder.groundAt(x, z), stage.sky.exposure, stage.night);
   else arrows.hide();
   stage.render();
+  // Milestone 6: the tag over the shift's next target (in the room's own space for a shift behind a counter)
+  shiftPanel.mark(stage.camera, !planner.active && (!inside || shifts.cur?.def.id === 'shop'));
   // a photo is the frame just drawn (the canvas holds no interface), read before the browser shows it
   if (photoWanted) {
     photoWanted = false;
@@ -732,6 +805,7 @@ function frame(now: number): void {
   if (now - lastHud > 400) {
     lastHud = now;
     hud.update();
+    shiftPanel.sync();
     const w = planner.active ? planner.dist * 1.6 : 0;
     hud.drawMinimap({ x: planner.active ? planner.target.x : fx, z: planner.active ? planner.target.z : fz, yaw: founder.driving ? founder.car.yaw : founder.yaw, planner: planner.active, w, h: w * 0.7, route: gps.route, dest: gps.dest });
     $('wallet').textContent = `$${Math.round(founder.wallet)}`;
@@ -889,4 +963,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures };
+(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures, shifts, JOBS, Weather };

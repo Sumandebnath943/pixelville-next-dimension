@@ -99,7 +99,7 @@ export class Motoring {
     const f = this.f;
     const at = f.ownedAt();
     const policed = World.buildings.some((b: any) => b.type === 'police' && b.connected && !b.ruined && !b.construction);
-    if (!at || (f.driving && !f.hijacked) || !policed) { this.illegalT = 0; this.ticketed = false; return; }
+    if (!at || (f.driving && !f.hijacked && !f.work) || !policed) { this.illegalT = 0; this.ticketed = false; return; }
     this.checkT -= dt;
     if (this.checkT <= 0) { this.checkT = 1; this.reason = this.atLodge(at) ? null : parkingOffence(at.x, at.z); }
     if (!this.reason) { this.illegalT = 0; this.ticketed = false; return; }
@@ -139,7 +139,8 @@ export class Motoring {
   /* ---------- at the wheel: fill up, get it mended ---------- */
   interaction(): Interaction | null {
     const f = this.f, v = f.vehicle;
-    if (!v || !f.driving || Math.abs(f.car.speed) > 1) return null;
+    // (a work vehicle is fuelled and mended at its depot)
+    if (!v || v.work || !f.driving || Math.abs(f.car.speed) > 1) return null;
     const sp = SPEC[v.kind];
     const gas = this.nearest('gas', f.car.x, f.car.z);
     if (gas && v.fuel < 0.97 && this.within(gas, 7)) {
@@ -194,7 +195,7 @@ export class Motoring {
     }
     if (b.type === 'lodge') {
       const home = cur && Math.hypot(f.car.x - (b.door.x * TM + 4), f.car.z - (b.door.y * TM + 4)) < 40;
-      if (cur && home) out.push({ label: `Put the ${cur.name} away`, run: () => { f.stow('lodge'); this.toast(`🏠 The ${cur.name} is in the garage`); } });
+      if (cur && home && !cur.work) out.push({ label: `Put the ${cur.name} away`, run: () => { f.stow('lodge'); this.toast(`🏠 The ${cur.name} is in the garage`); } });
       for (const v of f.fleet.list.filter((q) => q.where === 'lodge')) {
         out.push({
           label: `Take out the ${v.name}`,

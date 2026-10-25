@@ -295,6 +295,9 @@ em.up, em.down { font-style: normal; }
 .ph-meters .gauge { width: 100%; }
 .ph-acts { display: flex; gap: 6px; padding-left: 30px; }
 .ph-acts button { padding: 5px 10px; font-size: 12px; }
+.ph-acts button[disabled], .ph-wide[disabled] { opacity: 0.5; cursor: default; }
+.ph-job { margin: 0 0 7px 30px; color: var(--ink-3); font-size: 11.5px; line-height: 1.4; }
+.ph-job i { font-style: normal; color: var(--ink-2); }
 .ph-mini { padding: 3px 10px; font-size: 11.5px; flex: none; }
 .ph-veh .pill { flex: none; }
 @media (max-height: 640px) { .ph-apps { gap: 10px 6px; } .ph-big { font-size: 40px; } .ph-home { padding-top: 12px; } }
@@ -347,6 +350,40 @@ body.planner #wanted { display: none; }
 #wanted.seen { border-color: rgba(255, 110, 96, 0.55); }
 #wanted .gauge { width: 54px; }
 #wanted.seen .gauge { opacity: 0.35; }
+
+/* ---------- Milestone 6: the shift card (top left on the street) and the marker over the next task ---------- */
+#shift { position: absolute; left: 12px; top: calc(var(--tbh) + 18px); width: 292px; display: none; flex-direction: column; gap: 5px; padding: 11px 12px 10px; }
+body.shift #shift { display: flex; }
+body.planner #shift, body.talking #shift { display: none !important; }
+.sh-head { display: flex; align-items: center; gap: 9px; }
+#sh-ico { font-size: 21px; line-height: 1; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: rgba(240, 194, 122, 0.14); }
+.sh-who { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.sh-who b { font-size: 13.5px; font-weight: 650; }
+.sh-who small { color: var(--ink-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sh-end { pointer-events: auto; width: 28px; height: 28px; }
+#sh-end svg { width: 14px; height: 14px; color: var(--ink-2); }
+#sh-obj { margin-top: 3px; font-size: 14.5px; font-weight: 600; line-height: 1.3; }
+#sh-sub { color: var(--ink-2); font-size: 12px; line-height: 1.4; }
+#sh-sub:empty { display: none; }
+#sh-gauge { width: 100%; height: 5px; margin: 3px 0 1px; }
+#sh-gauge.off { visibility: hidden; height: 0; margin: 0; }
+.sh-stats { display: flex; gap: 14px; align-items: center; color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sh-stats span { display: inline-flex; align-items: center; gap: 5px; }
+.sh-stats svg { width: 14px; height: 14px; color: var(--accent); }
+.sh-stats b { color: var(--ink); font-weight: 600; }
+#sh-stars { margin-left: auto; color: rgba(255, 255, 255, 0.2); letter-spacing: 1px; }
+#sh-stars b { color: #ffd35a; font-weight: 400; }
+/* (on a narrow window the toasts start to the right of the shift card) */
+@media (max-width: 1180px) { body.shift:not(.planner) #toasts { left: 316px; transform: none; width: min(520px, calc(100vw - 328px)); align-items: flex-start; } }
+#sh-flash { position: absolute; right: 12px; top: -12px; padding: 3px 9px; border-radius: 999px; background: rgba(134, 217, 160, 0.95); color: #0d2414; font-size: 12px; font-weight: 650; opacity: 0; pointer-events: none; white-space: nowrap; }
+#sh-flash.go { animation: shflash 1.6s ease-out; }
+@keyframes shflash { 0% { opacity: 0; transform: translateY(6px); } 15% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
+#shift-mark { position: absolute; left: 0; top: 0; display: none; transform: translate(-50%, -100%); padding: 3px 7px 4px; border-radius: 10px; font-size: 18px; line-height: 1;
+  background: rgba(16, 20, 27, 0.62); border: 1px solid rgba(240, 194, 122, 0.55); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); pointer-events: none; }
+#shift-mark::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -5px; border: 5px solid transparent; border-top-color: rgba(240, 194, 122, 0.75); border-bottom: 0; }
+#shift-mark.edge { opacity: 0.75; }
+body.planner #shift-mark, body.photo #shift-mark, body.talking #shift-mark { display: none !important; }
+body.shift #palette { display: none; }
 
 /* ---------- photo mode: the interface steps aside for a panel of camera controls ---------- */
 #photo { position: fixed; right: 12px; top: 12px; bottom: 12px; width: 284px; z-index: 30; display: none; flex-direction: column; gap: 7px; padding: 12px 14px; overflow-y: auto; font-size: 12.5px; }

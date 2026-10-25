@@ -26,12 +26,23 @@ export const MODELS: Model[] = [
 export const PAINTS = ['#3e1a5e', '#b0201c', '#1f3a6a', '#e8e6e0', '#151618', '#2f5a3a', '#c8a050', '#7a7f86', '#d06a1a', '#5a8ab8'];
 export const PAINT_NAMES = ['Founder violet', 'Post-box red', 'Harbour blue', 'Chalk white', 'Coal black', 'Hedge green', 'Harvest gold', 'Slate grey', 'Ember orange', 'Sky blue'];
 
-/** how each kind drives and drinks */
-export const SPEC: Record<Kind, { max: number; accel: number; range: number; tank: number; reach: number; radius: number; repair: number }> = {
-  // top speed m/s, acceleration m/s², km on a full tank, $ for a full tank, contact circles: centre offset and radius, $ per point of damage
+/** how a vehicle drives and drinks: top speed m/s, acceleration m/s², km on a full tank, $ for a full tank,
+    contact circles (centre offset and radius), $ per point of damage; and for the big ones, how sharply
+    it turns and how long it is in the traffic (tiles) */
+export interface Spec { max: number; accel: number; range: number; tank: number; reach: number; radius: number; repair: number; turn?: number; len?: number }
+export const SPEC: Record<Kind, Spec> = {
   car: { max: 30, accel: 9, range: 26, tank: 30, reach: 1.35, radius: 1.0, repair: 1.4 },
   moto: { max: 32, accel: 12, range: 20, tank: 14, reach: 0.65, radius: 0.55, repair: 0.8 },
 };
+
+/** V2 (Milestone 6): a workplace's vehicle lent for a shift, drawn as the village's own
+    (`type`: an instanced model such as 'fire' or 'bus', or a full 'police' or 'taxi' car) */
+export interface WorkLook { type: string; siren?: boolean; spec: Partial<Spec> }
+/** the handling of `v` (a work vehicle's own, on top of a car's) */
+export function specOf(v: Vehicle | null | undefined): Spec {
+  if (v?.work) return { ...SPEC.car, ...v.work.spec };
+  return SPEC[v?.kind || 'car'];
+}
 
 export interface Vehicle {
   id: number;
@@ -52,6 +63,8 @@ export interface Vehicle {
   flat?: boolean;
   /** not the Founder's: taken from this home's drive (the car record goes back there) */
   stolen?: { home: number; car: any; family: string };
+  /** not the Founder's: lent by a workplace for a shift (never in the fleet, never saved) */
+  work?: WorkLook;
 }
 
 export class Fleet {

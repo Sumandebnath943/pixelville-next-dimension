@@ -146,6 +146,8 @@ export const Health = {
     const tx = Math.floor(p.x / T), ty = Math.floor(p.y / T);
     const spot = World.nearestRoad(tx, ty, 6);
     if (!spot) return false;
+    // V2 (Milestone 6): the Founder's ambulance takes the call
+    if (Life.claim && Life.claim('ambulance', p)) return true;
     let best: any = null, bp: number[][] | null = null;
     for (const h of this.hospitals()) {
       const path = World.roadPath(h.door.x, h.door.y, spot.x, spot.y);

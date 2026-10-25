@@ -304,7 +304,21 @@ The vertical slice is still at `slice.html` (the "look lab"):
 
 ---
 
-## Milestone 6 — Work shifts
+## Milestone 6 — Work shifts (built 2026-10-25 on branch milestone-6; see "Left to do" below)
+
+**What's in:** `src/player/shifts.ts` (the manager), `src/jobs/` (emergency, driving, rails, town), `src/ui/shiftpanel.ts`, the phone's **Jobs** app. Covered by `tests/shifts.test.ts` (16 tests, one per job plus booking and pay).
+- **Starting**: the phone's Jobs app (routes you there; the shift starts at the door) or "Start a shift" on a workplace's card or counter. The workplace lends its vehicle at the kerb (fire engine, patrol car, ambulance, cab, bus, delivery truck, power van, builders' van, PVTV van, tractor), driven like your own and drawn as the village's own; your car waits where you left it. Planner, rides and trips are locked while on shift.
+- **Calls come to you first** (`Life.claim`): fires, break-ins, street fights, crashes, casualties and power cuts go to the Founder's shift instead of the village's crews; too slow (40–90 game min) and the village's own crew goes. Blue lights exempt you from speeding and red-light offences.
+- **The loops**: firefighter (hose the fire on foot; inspections cut a business's fire risk for a week), police (arrest the burglar, calm a dispute, secure a crash; beats deter crime), paramedic (treat, carry to the ward; home visits heal the sick), taxi (real villagers leaving work or venues, or at home in the day; the meter from their purse to the rank), bus (the line's real stop queues board; timetable bonus), delivery (Supply's real needs, yard to shop or site), train driver (the local's cab, stop at platforms, missed stops and buffers count against you), pilot (take off, fly off the map, journey screen and city turnaround, approach and land; visitors and import allowance), electrician (mend faults at the pole; servicing a substation cuts storm faults for a week), construction (carry loads to the scaffold, fetch materials when the pallet is bare), shop/chef (indoors: take the real customers' orders, make them at the counter, serve; they grow fond of the place), reporter (film real incidents and features, file at the station: PVTV headline; shortage stories raise the import allowance), farmer (drive the rows: harvest food to the yard, or sow/plough for +30% yield for a week).
+- **Pay**: hourly standby pay plus every task, ×(0.7 + 0.1 × stars), paid at clock-off by the village fund (public services; if it's empty it owes you and pays when taxes come in) or the workplace's till (as far as it can). Stars 1–5 move with good work and failures. Record kept in the save (`FounderSave.jobs`).
+- **Fixed on the way**: the travel overlay could stay stuck over the world after a trip home (a pending fade-in undid `hide()`; `src/ui/travelui.ts`).
+
+**Left to do (next session):**
+1. **The runway is far too short to take off from or land on** (the airport plot is 13 tiles, so the runway is ~100 m; the pilot currently "lands" in a generous zone that runs into the trees beyond it). Needs a proper runway: a longer airstrip (extend the airport footprint or lay a runway strip along its long side) used by both `Life.tickPlanes` and `PilotJob.runway()`, then retune ROTATE/flare/braking in `src/jobs/rails.ts`.
+2. Browser checks not yet done in the game (all pass headless): police, paramedic, delivery, electrician, construction, shop/chef indoors, reporter and farmer shifts; the shift card/marker on the 1366×768 laptop; mobile/touch (no pitch control for the plane on touch yet).
+3. Checked in the browser: Jobs app listing, booking and auto-start at the door, firefighter (claim, hose, building saved, clock-off pay and the fund's IOU), taxi (real fare picked up and dropped, meter to the rank), bus (queue boards at the next stop), train (cab view, platform call on time), pilot (take-off, journey, city turnaround, approach, touchdown).
+4. Polish noticed: the hose jet is faint in daylight; the train's follow camera can sit in lineside trees; work vehicles aren't solid to the Founder on foot.
+5. Merge milestone-6 into main once the above are checked.
 
 Playable shift loops with pay, performance and real effects on the sim:
 

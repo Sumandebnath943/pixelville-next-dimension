@@ -42,6 +42,9 @@ export class Errands {
   private helpT = 0;
   private helpAt: object | null = null;
 
+  /** V2 (Milestone 6): on an emergency shift, helping at a fire or a crash is the job itself (and paid as such) */
+  onDuty: () => boolean = () => false;
+
   constructor(private founder: Founder, private gps: Gps, private toast: Toast) {}
 
   /** a new map or a loaded save: nothing carries over */
@@ -54,7 +57,7 @@ export class Errands {
 
   update(dt: number, street: boolean): void {
     this.tickDog(dt, street);
-    if (street) this.tickHelping(dt);
+    if (street && !this.onDuty()) this.tickHelping(dt);
   }
 
   /* ---------- the runaway dog ---------- */

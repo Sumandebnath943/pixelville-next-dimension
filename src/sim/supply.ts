@@ -82,8 +82,11 @@ export const Supply = {
   prodT: 0,
   dispT: 0,
   stallSaid: 0,
+  /** V2 (Milestone 6): the load in the Founder's truck or van, and where it's going */
+  founderLoad: null as null | { to: any; g: Good; n: number },
 
   reset(): void {
+    this.founderLoad = null;
     this.allow = { ...IMPORTS };
     this.short = { food: 0, mats: 0, tex: 0, prod: 0 };
     this.wanting.clear();
@@ -199,6 +202,7 @@ export const Supply = {
   incoming(b: any): number {
     let n = 0;
     for (const t of Life.trucks) if (t.to === b && t.phase === 'go') n += t.n;
+    if (this.founderLoad && this.founderLoad.to === b) n += this.founderLoad.n;
     return n;
   },
   /** where a load of `g` can come from for `to`: a producer's yard, the warehouse, the station's shed */
@@ -419,7 +423,8 @@ export const Supply = {
       for (const w of b.workers) if (w.state === 'in' && w.at === b) present++;
       if (!present) continue;
       let rate = m.rate * present * (step / 60);
-      if (b.type === 'farm') rate *= (s === 3 ? 0.35 : s === 1 ? 1.2 : 1) * (Calamity.droughtLevel >= 0.6 ? 0.5 : 1);
+      // (V2, Milestone 6: fields the Founder sowed or ploughed this week yield more)
+      if (b.type === 'farm') rate *= (s === 3 ? 0.35 : s === 1 ? 1.2 : 1) * (Calamity.droughtLevel >= 0.6 ? 0.5 : 1) * (b.tended > Sim.day ? 1.3 : 1);
       if (b.type === 'fishmarket' && s === 3) rate *= 0.3;
       const cap = selfMade(b.type) ? SELLS[b.type].cap : YARD;
       const before = b.stock;

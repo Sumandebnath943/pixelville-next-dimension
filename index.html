@@ -57,6 +57,8 @@
       <symbol id="i-bus" viewBox="0 0 24 24"><path d="M6 17V5.5C6 4.7 6.7 4 7.5 4h9c.8 0 1.5.7 1.5 1.5V17M6 17h12M6 11h12M6 17v2M18 17v2M9 7.5h6" /><circle cx="8.8" cy="14" r="0.9" /><circle cx="15.2" cy="14" r="0.9" /></symbol>
       <symbol id="i-fuel" viewBox="0 0 24 24"><path d="M5 20V5.5C5 4.7 5.7 4 6.5 4h6c.8 0 1.5.7 1.5 1.5V20M4 20h11M5 10h9M14 9.5l3 1.5v6.5c0 .8.6 1.5 1.5 1.5s1.5-.7 1.5-1.5V8l-2.5-2.5" /></symbol>
       <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 4.5a4.5 4.5 0 0 0-4.3 5.8L4.5 16a2.1 2.1 0 0 0 3 3l5.7-5.7a4.5 4.5 0 0 0 5.8-4.3l-2.7 2.7-2.6-.7-.7-2.6z" /></symbol>
+      <symbol id="i-hardhat" viewBox="0 0 24 24"><path d="M3 17.5h18M4.5 17.5v-2a7.5 7.5 0 0 1 15 0v2M10 8.3V6h4v2.3M8 9.4l1 5M16 9.4l-1 5" /></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></symbol>
     </svg>
 
     <canvas id="game"></canvas>
@@ -141,6 +143,16 @@
       <div id="info" class="glass"></div>
       <div id="toasts"></div>
       <div id="wanted" class="glass" title="Wanted — stay out of sight and a star drops"><span id="stars"></span><i class="gauge"><b id="escape"></b></i></div>
+      <!-- Milestone 6: the shift you're working, and the marker over what to do next -->
+      <div id="shift" class="glass">
+        <div class="sh-head"><span id="sh-ico"></span><span class="sh-who"><b id="sh-title"></b><small id="sh-place"></small></span><button class="ib" id="sh-end" title="Clock off — end the shift and get paid"><svg><use href="#i-close" /></svg></button></div>
+        <div id="sh-obj"></div>
+        <div id="sh-sub"></div>
+        <i class="gauge" id="sh-gauge"><b id="sh-bar"></b></i>
+        <div class="sh-stats"><span><svg><use href="#i-clock" /></svg><b id="sh-left"></b></span><span><svg><use href="#i-coins" /></svg><b id="sh-earned"></b></span><span id="sh-stars"></span></div>
+        <div id="sh-flash"></div>
+      </div>
+      <div id="shift-mark"></div>
 
       <div id="sc-panel">
         <div id="tv" class="glass" title="PVTV — the village news channel">
@@ -265,6 +277,9 @@
           <div><h3>Gamepad and touch</h3>
             <p>Sticks move and look · A jump · X interact · Y car · R3 camera · Start Planner · triggers drive.<br />
             On phones: left thumb moves, right thumb looks, buttons for the rest. In the Planner, drag to pan and pinch to zoom.</p></div>
+          <div><h3>Work shifts</h3>
+            <p>The phone's <b>Jobs</b> app (or a workplace's card) starts a shift: firefighter, police, paramedic, taxi, bus, delivery, train driver, pilot, electrician, builder, shop or café, PVTV reporter, farmer.<br />
+            The card top left says what to do; a tag marks where. <kbd>E</kbd> does the work, <kbd>F</kbd> takes the work vehicle. In a cab or a cockpit: <kbd>W</kbd>/<kbd>S</kbd> power and brake, <kbd>E</kbd>/<kbd>Q</kbd> climb and descend. Clock off for your pay.</p></div>
           <div><h3>Getting started</h3>
             <p>Open the Planner and drop a <b>house</b> near the highway: a road connects itself and the first family moves in. Add jobs, shops and a school, then come back down and watch the morning commute.</p></div>
         </div>

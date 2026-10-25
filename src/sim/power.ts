@@ -57,7 +57,8 @@ const DEMAND: Record<string, number> = {
   burgerpalace: 2, goldenarches: 2, crispycluck: 2, tacobelle: 2, pizzapalace: 2, electronics: 2, carshowroom: 2,
 };
 
-interface Fault { cause: string; since: number; crew: boolean; fixAt?: number }
+/** `founder`: the Founder, on shift at the power plant, took the job (Milestone 6) */
+interface Fault { cause: string; since: number; crew: boolean; fixAt?: number; founder?: boolean }
 
 /** at the end of its run, or held up within a tile and a half of it for 3 s (something parked
     on the very spot): a van or truck stops where it is and gets on with the job */
@@ -100,9 +101,12 @@ export const Power = {
   /** outages lately (a fading count: the grievance list and the mayor read it) */
   recent: 0,
   outagesToday: 0,
+  /** V2 (Milestone 6): districts whose substation the Founder serviced, until this day */
+  serviced: new Map<number, number>(),
 
   reset(): void {
     this.faults.clear();
+    this.serviced.clear();
     this.shed.clear();
     this.dark.fill(0);
     this.version++;
@@ -242,7 +246,7 @@ export const Power = {
 
   /* ---------- faults and the crews that fix them ---------- */
   fault(d: number, cause: string): boolean {
-    if (this.faults.has(d) || this.faults.size >= 3) return false;
+    if (d < 0 || this.faults.has(d) || this.faults.size >= 3) return false;
     if (!World.buildings.some((b: any) => !b.ruined && this.districtOfB(b) === d)) return false;
     this.faults.set(d, { cause, since: now(), crew: false });
     this.recent += 1;
@@ -261,6 +265,9 @@ export const Power = {
   dispatchCrew(d: number): 'plant' | 'county' | null {
     const f = this.faults.get(d);
     if (!f) return null;
+    // V2 (Milestone 6): the Founder, on shift at the plant, takes the van out
+    if (Life.claim && Life.claim('power', d)) { f.crew = true; f.founder = true; return 'plant'; }
+    f.founder = false;
     const c = this.centre(d);
     const spot = World.nearestRoad(c.x, c.y, 10);
     if (!spot) { f.fixAt = now() + 240; return null; }
@@ -331,7 +338,7 @@ export const Power = {
     for (const [d, f] of this.faults) {
       if (f.fixAt !== undefined && now() >= f.fixAt) this.restore(d, 'the county got to it at last');
       else if (!f.crew && f.fixAt === undefined) this.dispatchCrew(d);
-      else if (f.crew && !Life.crews.some((c: any) => c.d === d)) { f.crew = false; } // the van was lost: send another
+      else if (f.crew && !f.founder && !Life.crews.some((c: any) => c.d === d)) { f.crew = false; } // the van was lost: send another
     }
     // the balance of the grid, every ten game-minutes; rolling blackouts move on
     this.evalT += gm;
@@ -357,7 +364,11 @@ export const Power = {
   storms(gm: number): void {
     const built = this.builtDistricts();
     if (!built.length) return;
-    const pick = (): number => built[(Math.random() * built.length) | 0];
+    // (a substation serviced this week mostly shrugs it off: -1 is no fault at all)
+    const pick = (): number => {
+      const d = built[(Math.random() * built.length) | 0];
+      return (this.serviced.get(d) ?? 0) > Sim.day && Math.random() < 0.65 ? -1 : d;
+    };
     // a lightning flash: sometimes it was a substation
     if (Weather.flash > 0.4 && this.flashArmed) {
       this.flashArmed = false;

@@ -56,6 +56,8 @@ export interface FounderSave {
   returnCars?: { home: number; car: unknown }[];
   /** what the Founder is carrying (bought over counters) */
   bag?: { name: string; from: string; day: number; food?: boolean; ticket?: boolean }[];
+  /** V2 (Milestone 6): shifts worked, by job (src/player/shifts.ts) */
+  jobs?: unknown;
 }
 
 export const Game = {

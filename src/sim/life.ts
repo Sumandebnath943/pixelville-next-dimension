@@ -40,6 +40,9 @@ export const Life: any = {
   arrests: 0, crimes: 0,
   cooldown: 240,        // game-min until first possible crime
   onEvent: null,        // toast hook
+  // V2 (Milestone 6): the Founder on a shift answers calls (src/player/shifts.ts):
+  // (kind: 'fire' | 'police' | 'ambulance' | 'power', scene) => true if they take it
+  claim: null,
 
   reset() {
     this.hikers = []; this.birds = []; this.ducks = []; this.butterflies = [];
@@ -214,6 +217,7 @@ export const Life: any = {
   },
   dispatchFire(b, announce) {
     if (!b || !b.fire || this.fireTrucks.some(u => u.target === b && !u.done)) return false;
+    if (this.claim && this.claim('fire', b)) return true; // V2: the Founder's engine is on its way
     const stations = World.buildings.filter(s => s.type === 'fire' && s.connected && !s.construction && !s.ruined);
     let best = null, bp = null;
     for (const s of stations) {
@@ -239,7 +243,7 @@ export const Life: any = {
     // has time for a truck to cross town, and neighbours can still limit
     // the damage when the village has not built a station yet.
     b.fire = 1; b.fireT = 300 + Math.random() * 120;
-    b.fireNoStationAnnounced = false; b.fireDispatchRetry = 0;
+    b.fireNoStationAnnounced = false; b.fireDispatchRetry = 0; b.hosed = false;
     this.firesRecent = (this.firesRecent || 0) + 1;
     for (const r of b.residents) {
       r.mood = Math.max(5, (r.mood === undefined ? 60 : r.mood) - 15); // shock
@@ -266,7 +270,8 @@ export const Life: any = {
     // ignition
     for (const b of World.buildings) {
       if (b.fire || b.ruined || b.construction) continue;
-      const mult = b.type === 'factory' ? 3 : (b.type === 'restaurant' || b.type === 'bakery') ? 2 : 1;
+      // V2 (Milestone 6): a fire safety inspection this week takes most of the risk away
+      const mult = (b.type === 'factory' ? 3 : (b.type === 'restaurant' || b.type === 'bakery') ? 2 : 1) * (b.inspected > Sim.day ? 0.35 : 1);
       if (Math.random() < 0.000007 * mult * gm) this.igniteBuilding(b);
     }
     // burn down
@@ -282,7 +287,7 @@ export const Life: any = {
       // flames LEAP: a blaze burning with no truck on scene can catch the
       // neighbours — fire is a real threat to a dense street now
       if (Math.random() < 0.0009 * gm &&
-          !this.fireTrucks.some(u => u.target === b && u.phase === 'douse') &&
+          !this.fireTrucks.some(u => u.target === b && u.phase === 'douse') && !b.hosed && // (V2: or the Founder's hose)
           World.buildings.filter(q => q.fire).length < 3) {
         const near = World.buildings.find(q => q !== b && !q.fire && !q.ruined && !q.construction &&
           Math.abs(q.x - b.x) < b.w + 3 && Math.abs(q.y - b.y) < b.h + 3);
@@ -670,6 +675,7 @@ export const Life: any = {
       }
     }
     for (const tr of this.trains) {
+      if (tr.driver) continue; // V2 (Milestone 6): the Founder has the controls (src/jobs/rails.ts)
       // the timetable: outside its window a service is stabled at the
       // terminus (hidden), so two services never share a track at once
       const active = this.serviceWindow(tr.type);
@@ -1354,6 +1360,8 @@ export const Life: any = {
   dispatchTo(tx, ty, scene, wait) {
     const spot = World.nearestRoad(tx, ty, 4);
     if (!spot) return null;
+    // V2 (Milestone 6): the Founder on patrol takes the call (the scene waits for them as for a squad car)
+    if (this.claim && scene && this.claim('police', scene)) return { founder: true, done: false, phase: 'go' };
     const stations = World.buildings.filter(s => s.type === 'police' && s.connected && !s.construction && !s.ruined);
     let best = null, bp = null;
     for (const s of stations) {
@@ -1747,6 +1755,7 @@ export const Life: any = {
   },
 
   dispatchPolice(c) {
+    if (this.claim && this.claim('police', c)) return; // V2 (Milestone 6): the Founder on patrol answers the alarm
     const stations = World.buildings.filter(b => b.type === 'police' && b.connected);
     let best = null, bp = null;
     for (const s of stations) {

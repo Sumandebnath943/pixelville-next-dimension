@@ -49,6 +49,14 @@ export interface PhoneApi {
     timetable(): { title: string; sub: string }[];
     trips(): { title: string; sub: string; go?: () => void }[];
   };
+  /** Milestone 6: the work shifts, for the Jobs app */
+  jobs: {
+    list(): { id: string; title: string; emoji: string; wave: string; blurb: string; where: string; ok: boolean; why: string | null; pay: string; worked: number; best: number }[];
+    current(): { emoji: string; title: string; place: string; text: string; left: string; earned: number; stars: string; lock: string | null } | null;
+    go(id: string): void;
+    end(): void;
+    record(): { n: Record<string, number>; earned: number; hours: number; owed: number };
+  };
   /** the Founder's vehicles, for the Garage app */
   garage: {
     list(): Vehicle[];
@@ -61,9 +69,10 @@ export interface PhoneApi {
   };
 }
 
-type App = 'home' | 'map' | 'wallet' | 'pvtv' | 'tasks' | 'camera' | 'garage' | 'contacts' | 'ride';
+type App = 'home' | 'map' | 'wallet' | 'pvtv' | 'tasks' | 'camera' | 'garage' | 'contacts' | 'ride' | 'jobs';
 const APPS: { id: App | 'planner' | 'settings'; name: string; icon: string; tint: string }[] = [
   { id: 'map', name: 'Map', icon: 'map', tint: '#3f8f86' },
+  { id: 'jobs', name: 'Jobs', icon: 'hardhat', tint: '#c46a2a' },
   { id: 'ride', name: 'Ride', icon: 'bus', tint: '#c8962e' },
   { id: 'contacts', name: 'Contacts', icon: 'people', tint: '#4a8a5a' },
   { id: 'wallet', name: 'Wallet', icon: 'wallet', tint: '#c08a3a' },
@@ -135,6 +144,11 @@ export class Phone {
       case 'garage': body.innerHTML = head('Garage') + `<div class="ph-scroll">${this.garageHtml()}</div>`; break;
       case 'contacts': body.innerHTML = head('Contacts') + `<div class="ph-scroll">${this.contactsHtml()}</div>`; break;
       case 'ride': body.innerHTML = head('Ride') + `<div class="ph-scroll">${this.rideHtml()}</div>`; break;
+      case 'jobs': body.innerHTML = head('Jobs') + `<div class="ph-scroll">${this.jobsHtml()}</div>`; break;
+    }
+    if (this.app === 'jobs') {
+      body.querySelector('#ph-clockoff')?.addEventListener('click', () => { this.api.jobs.end(); this.render(); });
+      body.querySelectorAll<HTMLElement>('[data-job]').forEach((el) => el.addEventListener('click', () => { this.api.jobs.go(el.dataset.job!); this.close(); }));
     }
     if (this.app === 'ride') {
       body.querySelector('#ph-cab')?.addEventListener('click', () => { this.api.ride.callCab(); this.close(); });
@@ -173,6 +187,30 @@ export class Phone {
     if (id === 'planner') { this.close(); this.api.openPlanner(); return; }
     if (id === 'settings') { this.close(); this.api.openSettings(); return; }
     this.go(id as App);
+  }
+
+  /** Jobs: the shift you're on (and clocking off), and every job in town with where it's worked */
+  private jobsHtml(): string {
+    const j = this.api.jobs, cur = j.current();
+    let h = '';
+    if (cur) {
+      h += `<div class="ph-balance"><span>${cur.emoji} ${esc(cur.title)} · ${esc(cur.place)}</span><b>$${cur.earned}</b><small>${esc(cur.text)} · ${esc(cur.left)} · ${cur.stars}</small></div>`;
+      h += `<button class="ph-wide primary" id="ph-clockoff"${cur.lock ? ` disabled title="${esc(cur.lock)}"` : ''}>${icon('hardhat')}${cur.lock ? esc(cur.lock) : 'Clock off and get paid'}</button>`;
+    } else {
+      const r = j.record(), n = Object.values(r.n).reduce((s, k) => s + k, 0);
+      h += `<p class="note">${n ? `${n} shift${n > 1 ? 's' : ''} worked, ${r.hours} hours, $${Math.round(r.earned)} earned${r.owed >= 1 ? ` — and the village fund owes you $${Math.round(r.owed)}` : ''}.` : 'Pick a job: the phone routes you to the workplace and the shift starts at the door.'} Pay is by the hour plus every task, scaled by how well it went.</p>`;
+    }
+    let wave = '';
+    for (const o of j.list()) {
+      if (o.wave !== wave) { wave = o.wave; h += `<div class="ph-sep">${esc(wave)}</div>`; }
+      const rec = o.worked ? `<span class="pill ok">${o.worked}× · ${'★'.repeat(Math.round(o.best))}</span>` : '';
+      h += `<div class="ph-veh">
+        <div class="ph-row"><span class="ico">${o.emoji}</span><span class="grow"><b>${esc(o.title)}</b><small>${esc(o.where)}</small></span>${rec}</div>
+        <p class="ph-job">${esc(o.blurb)} · <i>${esc(o.pay)}</i></p>
+        ${cur ? '' : `<div class="ph-acts"><button data-job="${o.id}"${o.ok ? '' : ' disabled'}>${icon('pin')}${o.ok ? 'Start a shift' : esc(o.why || 'Not here yet')}</button></div>`}
+      </div>`;
+    }
+    return h;
   }
 
   /** Ride: a cab to the GPS destination, the timetables, and the trips off the map */
