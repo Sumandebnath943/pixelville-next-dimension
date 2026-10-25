@@ -337,7 +337,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Sim** — `src/sim/agents.ts` (`Sim`): the people: families, schedules, trips, commuting, wages, savings, ambitions, businesses, weddings, births, ageing; plus stats.
 
-**Sounds** — `src/audio/sounds.ts`: V1's procedural audio (horns positional by distance).
+**Sounds** — `src/audio/sounds.ts`: V1's procedural audio. One-shots are positional (`Snd.at`): the sim's `Snd.siren(at)` etc. carry a place, heard quieter with distance and panned to their side of the listener (`Snd.listen`, set from the camera each frame); ambience is all around.
 
 **Subtitles** — M7 (`Subs` in `src/ui/access.ts`): villagers' street lines with their names (every greeting) and, if chosen, captions for horns, sirens, thunder, bells, crashes, fireworks; lower centre (lower left on narrower windows).
 
@@ -387,7 +387,9 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## V
 
-**V1** — The original PixelVille (2D, top-down). Its modules were ported into `src/sim` verbatim with `// @ts-nocheck`; changes are marked `V2:`. Never modify the V1 repo.
+**Types (sim)** — `src/sim/types.ts`: `Building`, `Person`, `Car`, `XY`, the shared entity types the V1 code is now checked against (each with an open index for the long tail).
+
+**V1** — The original PixelVille (2D, top-down). Its modules were ported into `src/sim` verbatim; changes are marked `V2:`. Since 2026-10-26 they're type-checked (no `@ts-nocheck`), the module objects still `any`. Never modify the V1 repo.
 
 **Vehicles (models)** — Full models: `src/gfx/car.ts` (Car with extruded profiles in hatch/sedan/estate/suv; taxi sign; police light bar; Moto). Instanced: `src/render/models.ts` (car, taxi, police, fire, ambulance, truck, van, tractor, bus, moto, loco, coach, wagon, boat, ferry, raft, heli, plane, balloon, ufo, sleigh).
 

@@ -426,7 +426,7 @@ All input goes through an **action map**, so bindings are rebindable and every d
 
 ### 17.3 Tooling
 
-Vite · TypeScript (strict for new code; the ported sim awaits a typing pass) · Three.js · Rapier (WASM, when physics needs it) · Vitest · ESLint + Prettier · Vercel (static site + `api/` functions).
+Vite · TypeScript (strict; the ported sim is checked against shared entity types, its module objects still loose) · Three.js · Rapier (WASM, when physics needs it) · Vitest · ESLint + Prettier · Vercel (static site + `api/` functions).
 
 ### 17.4 Performance
 

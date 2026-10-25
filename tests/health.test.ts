@@ -28,7 +28,8 @@ describe('health and ambulances', () => {
     expect(p.at).toBe(h);
     expect(p.state).toBe('in');
     expect(Health.patients(h)).toContain(p);
-    expect(Life.ambulances.length).toBe(0);
+    // (no ambulance still carries them; another villager may have been hurt meanwhile)
+    expect(Life.ambulances.some((a: any) => a.patient === p)).toBe(false);
     // mends on the ward and is discharged (with a bill) by day
     const takings = h.funds;
     expect(until(() => !p.ward, 1440 * 4)).toBe(true);

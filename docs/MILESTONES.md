@@ -23,8 +23,8 @@
 
 - **Characters and vehicles are procedural low-poly models**, generated in code like V1's sprites, instead of CC0 model packs. That means no downloads and no licensing. Rigged models can replace them later without touching the sim.
 - **No Rapier yet.** V1's world is a tile grid of rectangular plots, so walking and driving use a light custom collision against building boxes, tree trunks, water and the map edge. Rapier can come in M2 if crashes and pursuits need real physics.
-- **The sim modules are ported verbatim with `// @ts-nocheck`.** The new client code is strictly typed; a typing pass over `src/sim` (shared entity interfaces) is pending.
-- **Sounds are not yet positional**, and there is no separate mid-distance LOD tier: everything within range is instanced at full detail.
+- **The sim modules are ported verbatim with `// @ts-nocheck`.** The new client code is strictly typed; a typing pass over `src/sim` (shared entity interfaces) is pending. *(Done 2026-10-26: `src/sim/types.ts`, no file unchecked; see below.)*
+- **Sounds are not yet positional**, and there is no separate mid-distance LOD tier: everything within range is instanced at full detail. *(Positional one-shots done 2026-10-26; see below.)*
 - **The gamepad mapping** follows the standard layout but hasn't been tested on hardware yet.
 
 ### 1a · Foundations
@@ -77,6 +77,13 @@
 - Deploy.
 
 **Done when:** a fresh map grows from the first family to a town with a mayor, a railway and a festival, entirely visible from street level; the player can build anything V1 could, walk and drive anywhere, and a V1 save imports and keeps running.
+
+---
+
+### Milestone 1 leftovers, finished 2026-10-26
+- **The typing pass**: `@ts-nocheck` is gone from all ten V1 modules. `src/sim/types.ts` holds the shared entity types (`Building`, `Person`, `Car`, `XY`: the fields the game leans on, typed, plus an open index for the long tail); all 697 untyped parameters are typed (buildings and people by what they iterate over, the rest by what they are), string-keyed tables are records, and nullable `work`/`at` are explicit. No behaviour changed (the tests are the same). The module objects (`World`, `Sim`, `Life`…) are still `any`: the next level.
+- **Positional sound**: the sim's sounds say where they happen, and the audio engine plays each through a gain and a stereo panner set from the listener (the Founder on the street, the view's centre in the Planner, the camera in photo mode) and the camera's heading: quieter with distance, silent beyond each sound's reach (a crash 170 m, a siren 340 m, the church bells 750 m, fireworks 1.1 km), panned to its side, centred when close. Horns and the police chasing you are positional too; the 9:00 and 18:00 bells ring from the church or temple. Subtitles caption only what's actually heard. Covered by `tests/controls.test.ts` (a grand opening dings at the new shop).
+- **Checked end to end in the game** (the 156-villager test town, then a brand-new village): a conversation; buying a flat white at the café counter ($3 to its till); driving the saloon, a parking ticket and a tow for leaving it in a junction, collecting it from the impound ($40); placing, bulldozing and undoing a building, its card; two stars, squad cars with their sirens heard from 105 m, busted ($40, five hours, released at the station); waiting for the bus, boarding ($2) and being dropped at the chosen stop; a road trip to Westmere with a souvenir and "while you were away"; photo mode (paused, saved); a save and load round trip (516 KB, everything back); every phone app, the task book and the history chart; a firefighter shift (the call came to the Founder, the fire out in 21 s, $34 at four stars); a new village with the guide, two houses built and six people in within 32 s at 8×. No console errors.
 
 ---
 

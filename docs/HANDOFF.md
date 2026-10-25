@@ -104,7 +104,8 @@ slice.html + src/slice/   the "look lab" vertical slice (Milestone 1.5)
 
 **Key patterns**
 - **Sim ↔ client hooks**, set by the client, never imported by the sim: `Game.founderHooks` (the Founder in saves), `Traffic.guests` (the Founder in traffic), `Traffic.onHonk`, `Life.onEvent` (toasts), **`Life.claim`** (Milestone 6: a shift takes a fire / police / ambulance / power call before the village's crews; returns true if taken), `Life.runwayHeld`, `Supply.founderLoad`.
-- **V1 code** in `src/sim` is ported verbatim with `// @ts-nocheck`; V2 changes inside it are marked `V2:` / `V2 (Milestone N):`. A typing pass is still pending.
+- **V1 code** in `src/sim` was ported verbatim; V2 changes inside it are marked `V2:` / `V2 (Milestone N):`. Since the typing pass (2026-10-26) nothing is `@ts-nocheck`: the shared entity types live in `src/sim/types.ts` (`Building`, `Person`, `Car`, `XY`, each with an open index for the long tail) and every parameter is typed. The V1 module objects themselves (`World`, `Sim`, `Life`, `Gov`, `Calamity`, `Festivals`, `Weather`, `Mind`, `Tasks`, `Settings`) are still declared `any`: typing them is the next level.
+- **Sounds the sim asks for** carry where they happen: `Snd.siren(midPx(b))` (V1 px). The audio engine (`Snd.at` in `src/audio/sounds.ts`) plays them quieter with distance and panned to their side; the listener is set each frame from the camera (`Snd.listen`).
 - **Interactions:** `E` = interact/use/talk, `F` = vehicle (and departures at transit buildings). Modules return `{ text, act }` prompt lines; `main.ts` decides priority.
 - **Naming a control in text (Milestone 7):** never write `E` or `F` into a prompt or toast: write `{interact}`, `{vehicle}`, `{forward}`, `{climb}`… and it's filled in (`keys()` in `src/input/input.ts`) with the player's own key, the pad's button or the touch button. Gameplay reads `Input.held(action)`, `Input.move()`, `Input.rise()`, never raw key codes.
 - **Toasts:** `hud.toast(m, at?, fromSim?)`; "personal" toasts (the Founder's own business) stay out of the village news log.
@@ -193,8 +194,9 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 - With a very large interface size on a narrow window, the hint and the news can overlap.
 - The airport's runway is at game scale (372 m), not real scale; the pilot's auto-flare and touchdown zone are tuned to it.
 - Taxi fares depend on villagers' schedules: midday in a town where everyone works can be quiet (fares come from people leaving work within 40 min, leaving venues, or at home 09:00–21:30).
-- `src/sim` typing pass pending (`@ts-nocheck`); lint warnings for `any` throughout.
-- Sounds are not positional everywhere; gamepad mapping untested on hardware.
+- The V1 module objects are still typed `any` (see §5); lint warnings for `any` throughout.
+- Ambience (wind, rain, crickets, birdsong) is all around you rather than positional; interiors don't muffle the street yet. Gamepad mapping untested on hardware.
+- `health.test.ts`'s ambulance test failed once under the full suite: it assumed no other ambulance would be out after the delivery, which another villager's accident can break. It now checks only its own patient (2026-10-26); watch for any other test that leans on a quiet village.
 - Nothing is deployed; the Vercel project, preview deploys and the domain are still to set up.
 
 ---
@@ -203,7 +205,7 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 
 - **Launch** (the owner's steps in [LAUNCH.md](LAUNCH.md)), then play-test on a real phone and a real gamepad.
 - **The asset-licensing decision** (CC0-only, CC-BY/Mixamo, or paid) for real rigged people and cars; they'll change the performance budgets (today: ~9 ms GPU a frame at medium on the Intel laptop).
-- The typing pass over `src/sim` (`@ts-nocheck`), positional sound everywhere.
+- Typing the V1 module objects (the entities are typed), muffled sound indoors.
 - New feature ideas go to the owner first (§3).
 
 ---
