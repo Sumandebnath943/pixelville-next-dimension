@@ -860,6 +860,13 @@ export class Actors {
 
   /* planes, helicopters, balloons and the thing on dark nights */
   private collectSky(): void {
+    // V2 (Milestone 6): airliners parked at the stands (fewer while the village's are flying; the last stand is the Founder's)
+    for (const a of World.buildings) {
+      if (a.type !== 'airport' || a.construction || a.ruined) continue;
+      const f = Life.airfield(a);
+      const parked = Math.max(1, 3 - Life.planes.length);
+      for (let k = 0; k < parked; k++) if (this.near(f.stands[k].x, f.stands[k].z, 60)) this.vehicle('plane', f.stands[k].x, 0, f.stands[k].z, 0, hex(k === 1 ? '#e8eef4' : '#f4f6f7'));
+    }
     for (const pl of Life.planes) {
       const x = pl.x * PX, z = pl.y * PX;
       this.vehicle('plane', x, pl.alt * PX, z, Math.PI / 2, hex('#f4f6f7'), { pitch: pl.mode === 'takeoff' && pl.alt > 0 ? -0.18 : pl.mode === 'land' && pl.alt > 0 ? 0.06 : 0 });

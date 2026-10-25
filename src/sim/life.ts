@@ -980,14 +980,27 @@ export const Life: any = {
 
   /* ---------------- air traffic ---------------- */
   planes: [], planeT: 0,
+  /* V2 (Milestone 6): the airfield (metres): the runway along the south edge, a taxiway beside it,
+     and four stands in front of the terminal, 45 m apart (an airliner spans 30 m) */
+  airfield(a) {
+    const x0 = a.x * 8, z0 = a.y * 8, W = a.w * 8, D = a.h * 8;
+    return {
+      ry: z0 + D - 12, rx0: x0 + 6, rx1: x0 + W - 6, ty: z0 + D - 32,
+      stands: [0, 1, 2, 3].map(k => ({ x: x0 + 92 + k * 45, z: z0 + 50 })),
+    };
+  },
+  /* the Founder's airliner is using the runway (no village plane may until it's clear) */
+  runwayHeld: false,
   tickPlanes(dtSim, dtReal) {
     const airport = World.buildings.find(b => b.type === 'airport' && !b.construction && !b.ruined);
     if (!airport) { this.planes = []; return; }
     this.planeT -= dtSim * MIN_PER_SEC;
-    if (this.planeT <= 0 && this.planes.length < 2) {
+    // one plane on the runway at a time: the next waits until the last is well up (or down and stopped)
+    if (this.planeT <= 0 && !this.runwayHeld && !this.planes.some(p => p.alt < 60)) {
       this.planeT = 100 + Math.random() * 140;
-      const ry = airport.y * T + airport.h * T - 19; // runway sits along the south apron
-      const rx0 = airport.x * T + 4, rx1 = airport.x * T + airport.w * T - 4;
+      const f = this.airfield(airport);
+      const ry = f.ry * 2; // (V1 px)
+      const rx0 = f.rx0 * 2, rx1 = f.rx1 * 2;
       if (Math.random() < 0.5) this.planes.push({ mode: 'takeoff', x: rx0, y: ry, alt: 0, v: 14, rx1 });
       else this.planes.push({ mode: 'land', x: -40, y: ry, alt: 70, v: 85, rx0, rx1, stop: rx1 - 30 });
     }

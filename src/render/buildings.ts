@@ -1032,16 +1032,28 @@ function buildHeliport(c: Ctx): void {
 }
 
 function buildAirport(c: Ctx): void {
-  c.lot('#9a9ea6', 0.05);
-  // the runway along the south apron (V1 lands its planes there)
-  const rz = c.hd - 9.5;
-  c.body.box(-c.hw + 1, 0.1, rz - 5, c.hw - 1, 0.13, rz + 5, c.c('#3a3d44'));
-  for (let x = -c.hw + 6; x < c.hw - 6; x += 9) c.body.box(x, 0.13, rz - 0.25, x + 5, 0.15, rz + 0.25, c.c('#f0f0f0'));
-  for (let x = -c.hw + 3; x < c.hw - 2; x += 6) for (const z of [rz - 5.2, rz + 5.2]) c.glow.box(x - 0.2, 0.13, z - 0.2, x + 0.2, 0.4, z + 0.2, c.c(z < rz ? '#80c0ff' : '#ffd060'));
-  const top = c.block(-c.hw + 6, -c.hd + 3, 6, -c.hd + 22, 0.1, 2, '#d8dde2', { door: true, glass: true, winGap: 3, floorH: 4 });
-  c.body.box(-c.hw + 5, top, -c.hd + 2, 7, top + 1.2, -c.hd + 23, c.c('#e8ecf0'));
+  c.lot('#7f9a5c', 0.05); // (grass between the paved areas)
+  // V2 (Milestone 6): a real airfield (the layout is Life.airfield's): a long runway along the south edge,
+  // a parallel taxiway with links at both ends, and an apron with four stands in front of the terminal
+  const rz = c.hd - 12, tw = c.hd - 32, dark = c.c('#3a3d44'), conc = c.c('#a4a7ad');
+  c.body.box(-c.hw + 2, 0.1, rz - 7, c.hw - 2, 0.14, rz + 7, dark);
+  for (let x = -c.hw + 14; x < c.hw - 14; x += 14) c.body.box(x, 0.14, rz - 0.3, x + 7, 0.16, rz + 0.3, c.c('#f0f0f0'));
+  for (const sx of [-1, 1]) for (let k = 0; k < 6; k++) c.body.box(sx * (c.hw - 9) - 1, 0.14, rz - 6 + k * 2.2, sx * (c.hw - 9) + 1, 0.16, rz - 5 + k * 2.2, c.c('#f0f0f0')); // threshold bars
+  for (let x = -c.hw + 4; x < c.hw - 3; x += 12) for (const z of [rz - 7.2, rz + 7.2]) c.glow.box(x - 0.2, 0.14, z - 0.2, x + 0.2, 0.42, z + 0.2, c.c(z < rz ? '#80c0ff' : '#ffd060'));
+  c.body.box(-c.hw + 20, 0.1, tw - 4, c.hw - 20, 0.13, tw + 4, dark);
+  for (const sx of [-1, 1]) c.body.box(sx * (c.hw - 24) - 4, 0.1, tw, sx * (c.hw - 24) + 4, 0.13, rz, dark);
+  for (let x = -c.hw + 22; x < c.hw - 22; x += 6) c.body.box(x, 0.13, tw - 0.15, x + 3, 0.15, tw + 0.15, c.c('#e8c040'));
+  // the apron and its stands (an airliner spans 30 m: the stands are 45 m apart)
+  c.body.box(-c.hw + 66, 0.1, -c.hd + 26, -c.hw + 252, 0.12, tw - 4, conc);
+  for (let k = 0; k < 4; k++) {
+    const sx = -c.hw + 92 + k * 45;
+    c.body.box(sx - 0.2, 0.12, -c.hd + 30, sx + 0.2, 0.14, tw - 5, c.c('#e8c040'));
+    c.body.box(sx - 16, 0.12, -c.hd + 28, sx + 16, 0.14, -c.hd + 28.4, c.c('#e8c040'));
+  }
+  const top = c.block(-c.hw + 6, -c.hd + 3, -c.hw + 64, -c.hd + 22, 0.1, 2, '#d8dde2', { door: true, glass: true, winGap: 3, floorH: 4 });
+  c.body.box(-c.hw + 5, top, -c.hd + 2, -c.hw + 65, top + 1.2, -c.hd + 23, c.c('#e8ecf0'));
   // control tower
-  const tx = 18, tz = -c.hd + 10;
+  const tx = -c.hw + 72, tz = -c.hd + 10;
   c.body.cyl(tx, 0, tz, 2, 24, 8, c.c('#d8dde2'));
   c.win[2].cyl(tx, 24, tz, 3.4, 3, 8, hex('#ffffff'));
   c.body.cyl(tx, 27, tz, 3.6, 0.6, 8, c.c('#5a6068'));

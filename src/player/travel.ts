@@ -176,7 +176,7 @@ export class Travel {
       this.transit.follow(() => (ic && !ic.hidden ? { x: ic.x * PX, y: 1.6, z: ic.y * PX } : null), 20, () => this.beginJourney());
     } else if (t.mode === 'air') {
       const a = t.gate;
-      const ry = a.y * T + a.h * T - 19, rx0 = a.x * T + 4, rx1 = a.x * T + a.w * T - 4;
+      const ry = Life.airfield(a).ry * 2, rx0 = a.x * T + 4, rx1 = a.x * T + a.w * T - 4;
       const pl: any = { mode: 'takeoff', x: rx0, y: ry, alt: 0, v: 14, rx1, founder: true };
       Life.planes.push(pl);
       t.craft = pl;
@@ -335,7 +335,7 @@ export class Travel {
     }
     const g = t.gate && World.buildings.includes(t.gate) && !t.gate.ruined ? t.gate : null;
     if (t.mode === 'air' && g) {
-      const ry = g.y * T + g.h * T - 19;
+      const ry = Life.airfield(g).ry * 2;
       const pl = { mode: 'land', x: -40 + Math.max(0, g.x * T - 900), y: ry, alt: 70, v: 85, rx0: g.x * T + 4, rx1: g.x * T + g.w * T - 4, stop: g.x * T + g.w * T - 34, founder: true };
       Life.planes.push(pl);
       this.transit.follow(() => (Life.planes.includes(pl) && !(pl as any).done ? { x: pl.x * PX, y: pl.alt * 0.5 + 2, z: pl.y * PX } : null), 38, () => { this.founder.stepOutOf(g); done(); });

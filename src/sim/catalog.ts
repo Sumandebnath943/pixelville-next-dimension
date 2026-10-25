@@ -28,7 +28,7 @@ export const CAT: Record<string, CatDef> = {
   office: {name:"Office",emoji:"🏬",cat:"work",w:3,h:3,ex:26,jobs:12,hours:{s:480,e:1020},vars:3,key:"office",building:true},
   skyscraper: {name:"Skyscraper",emoji:"🏙️",cat:"work",w:4,h:4,ex:86,jobs:48,hours:{s:480,e:1050},key:"skyscraper",building:true},
   factory: {name:"Factory",emoji:"🏭",cat:"work",w:4,h:3,ex:14,jobs:16,hours:{s:420,e:990},smoke:true,key:"factory",building:true},
-  airport: {name:"Airport",emoji:"✈️",cat:"work",w:13,h:8,ex:12,jobs:30,hours:{s:0,e:1440},wkd:true,key:"airport",building:true},
+  airport: {name:"Airport",emoji:"✈️",cat:"work",w:48,h:15,ex:12,jobs:30,hours:{s:0,e:1440},wkd:true,key:"airport",building:true},
   farm: {name:"Farm",emoji:"🌾",cat:"work",w:7,h:5,ex:8,jobs:8,hours:{s:360,e:960},wkd:true,key:"farm",building:true},
   shop: {name:"Shop",emoji:"🏪",cat:"shop",w:2,h:2,ex:8,jobs:3,hours:{s:540,e:1140},wkd:true,visit:"shop",vars:3,key:"shop",building:true},
   market: {name:"Supermarket",emoji:"🛒",cat:"shop",w:3,h:2,ex:10,jobs:6,hours:{s:480,e:1260},wkd:true,visit:"shop",key:"market",building:true},

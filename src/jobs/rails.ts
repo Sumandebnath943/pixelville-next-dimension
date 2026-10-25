@@ -234,8 +234,8 @@ export class PilotJob implements Job {
   }
   /** the runway along the airport's south apron, as the village's own planes use it (metres) */
   runway(): { y: number; x0: number; x1: number } {
-    const a = this.c.b;
-    return { y: (a.y * T + a.h * T - 19) * PX, x0: (a.x * T + 4) * PX, x1: (a.x * T + a.w * T - 4) * PX };
+    const f = Life.airfield(this.c.b);
+    return { y: f.ry, x0: f.rx0, x1: f.rx1 };
   }
   private toRunway(): void {
     const r = this.runway();
@@ -252,6 +252,8 @@ export class PilotJob implements Job {
 
   update(dt: number): void {
     const p = this.pl, ctl = this.c.controls();
+    // the village's planes keep off the runway while the Founder takes off or comes in
+    Life.runwayHeld = this.phase === 'roll' || this.phase === 'climb' || this.phase === 'rollout' || (this.phase === 'approach' && p.alt < 90);
     const ground = this.phase === 'roll' || this.phase === 'rollout' || this.phase === 'gate';
     if (this.phase === 'gate') { p.v = 0; }
     else if (ground) {
@@ -288,8 +290,8 @@ export class PilotJob implements Job {
   private touchdown(): void {
     const p = this.pl, r = this.runway();
     const lined = Math.abs(wrap(p.yaw - Math.PI / 2)) < 0.4 || Math.abs(wrap(p.yaw + Math.PI / 2)) < 0.4;
-    // (the runway, with the grass overrun beyond the airport's end: the village's runway is short)
-    const onRunway = p.x > r.x0 - 120 && p.x < r.x1 + 260 && Math.abs(p.z - r.y) < 18;
+    // (on the runway, from just short of the threshold to with room left to stop)
+    const onRunway = p.x > r.x0 - 40 && p.x < r.x1 - 90 && Math.abs(p.z - r.y) < 10;
     const vs = p.vs;
     p.alt = 0; p.vs = 0;
     if (onRunway && lined && vs > -6 && p.v < 64) {
@@ -303,8 +305,8 @@ export class PilotJob implements Job {
     this.c.earn(15, 'Flight (rough landing)');
     this.flights++;
     Gateways.landed(this.c.b);
-    this.toRunway();
     this.phase = 'gate';
+    this.atStand();
   }
   private gentle = false;
   private landed(): void {
@@ -320,9 +322,12 @@ export class PilotJob implements Job {
     Supply.allow.tex += 4;
     this.c.toast(`✈️ Landed at ${World.name}! ${this.pax} passengers off — the visitors head into town`, undefined, true);
     this.phase = 'gate';
-    // taxied in to the stand at the end of the apron
-    const r = this.runway();
-    Object.assign(this.pl, { x: r.x1 - 14, z: r.y, yaw: -Math.PI / 2, v: 0, thr: 0 });
+    this.atStand();
+  }
+  /** taxied in to the Founder's stand (the last on the apron), nose to the taxiway */
+  private atStand(): void {
+    const s = Life.airfield(this.c.b).stands[3];
+    Object.assign(this.pl, { x: s.x, z: s.z, alt: 0, yaw: 0, v: 0, vs: 0, thr: 0, roll: 0 });
     this.dest = this.pickDest();
   }
 
@@ -411,6 +416,7 @@ export class PilotJob implements Job {
   }
   end(): void {
     const f = this.c.f;
+    Life.runwayHeld = false;
     this.c.travelView()?.hide();
     if (this.phase === 'away') Gateways.back();
     this.trip = null;
