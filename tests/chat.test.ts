@@ -12,7 +12,7 @@ import { buildContext, newsTopic } from '../src/ai/context';
 import { greeting, reply, topics, understand } from '../src/ai/templates';
 import { rememberChat, contacts, firstPerson } from '../src/ai/memory';
 import { validate, apply } from '../src/ai/effects';
-import { handleChat, validRequest, systemPrompt, readAnswer, resetLimits, resetModel, ready } from '../api/_chat';
+import { handleChat, validRequest, systemPrompt, readAnswer, resetLimits, resetModel, ready, originAllowed } from '../api/_chat';
 
 function villager(name = 'Greta'): any {
   const home = { x: 0, y: 0, type: 'house' };
@@ -138,6 +138,23 @@ describe('the chat proxy', () => {
     const codes: number[] = [];
     for (let i = 0; i < 14; i++) codes.push((await handleChat(body, { GROQ_API_KEY: 'k', GROQ_MODEL: 'm' }, 'd', f)).status);
     expect(codes.filter((c) => c === 429).length).toBe(2);
+  });
+
+  it('keeps a budget for the whole server, and refuses pages from other sites (Milestone 7)', async () => {
+    const f = (async () => groq('{"reply":"ok"}')) as unknown as typeof fetch;
+    // the day's cap across every address
+    const codes: number[] = [];
+    for (let i = 0; i < 5; i++) codes.push((await handleChat(body, { GROQ_API_KEY: 'k', GROQ_MODEL: 'm', CHAT_DAILY_CAP: '3' }, `addr${i}`, f)).status);
+    expect(codes).toEqual([200, 200, 200, 429, 429]);
+    resetLimits();
+    // this site, a local test page and a listed one pass; any other site's page is refused
+    const site = (origin: string | null) => handleChat(body, { GROQ_API_KEY: 'k', GROQ_MODEL: 'm', CHAT_ORIGINS: 'https://friends.example' }, 'e', f, { origin, host: 'pixelville.next.houseofnamus.com' });
+    expect((await site('https://pixelville.next.houseofnamus.com')).status).toBe(200);
+    expect((await site('http://t5.localhost:5174')).status).toBe(200);
+    expect((await site('https://friends.example')).status).toBe(200);
+    expect((await site(null)).status).toBe(200);
+    expect((await site('https://elsewhere.example')).status).toBe(403);
+    expect(originAllowed('not a url', 'x')).toBe(false);
   });
 
   it('reads an answer even when the JSON is wrapped or cut off', () => {

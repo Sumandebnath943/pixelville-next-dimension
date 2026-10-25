@@ -2,11 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#0d1117" />
     <title>PixelVille — Next Dimension</title>
     <meta name="description" content="The living village sim, now in 3D: walk, drive and build a village whose people think, remember and vote." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏘️</text></svg>" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -103,6 +108,7 @@
           <hr />
           <button id="btn-settings"><svg><use href="#i-gear" /></svg>Settings</button>
           <button id="btn-sound"><svg><use href="#i-sound" /></svg><span>Sound on</span></button>
+          <button id="btn-full"><svg><use href="#i-eye" /></svg><span>Full screen</span></button>
           <button id="btn-help"><svg><use href="#i-help" /></svg>Help &amp; controls<kbd>F1</kbd></button>
         </div>
       </div>
@@ -201,6 +207,7 @@
       <button id="tour-btn" class="primary"></button>
     </div>
     <div id="tour-ring"></div>
+    <div id="rotate"><i>📱</i><b>Turn your phone sideways</b><span>The village is wide: PixelVille plays in landscape.</span></div>
 
     <div id="modals">
       <div id="settings" class="modal"><div class="modal-card glass">

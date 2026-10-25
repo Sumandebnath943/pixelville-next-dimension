@@ -20,7 +20,8 @@ function chatApi(): Plugin {
           if (req.method === 'POST') {
             let body: unknown = null;
             try { body = JSON.parse(raw); } catch { /* handled as a bad request */ }
-            r = await handleChat(body, { GROQ_API_KEY: env.GROQ_API_KEY, GROQ_MODEL: env.GROQ_MODEL }, req.socket?.remoteAddress || 'local');
+            r = await handleChat(body, { GROQ_API_KEY: env.GROQ_API_KEY, GROQ_MODEL: env.GROQ_MODEL, CHAT_ORIGINS: env.CHAT_ORIGINS }, req.socket?.remoteAddress || 'local', fetch,
+              { origin: req.headers.origin, host: req.headers.host });
           }
           res.statusCode = r.status;
           res.setHeader('content-type', 'application/json');

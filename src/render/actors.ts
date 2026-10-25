@@ -1050,6 +1050,14 @@ export class Actors {
     const d = Math.hypot(x - this.camX, z - this.camZ);
     if (d < 60) this.bubbleWant.push({ x, y, z, e, d });
   }
+  /** V2 (Milestone 7): the thought bubbles' shader is compiled with everything else before the first frame
+   *  (one bubble, textured, out of sight, while the stage warms up), not the first time someone has a thought */
+  prewarm(on: boolean): void {
+    const s = this.bubbles[0];
+    if (!s) return;
+    s.visible = on;
+    if (on) { s.position.set(0, -500, 0); s.material.map = emojiTexture('💭'); s.material.needsUpdate = true; }
+  }
   private drawBubbles(_now: number): void {
     this.bubbleWant.sort((a, b) => a.d - b.d);
     // one thought per head: drop any bubble that would sit on top of a nearer one

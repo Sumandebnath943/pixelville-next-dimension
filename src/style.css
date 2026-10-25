@@ -618,7 +618,7 @@ body.pad.planner #crosshair { display: block; width: 26px; height: 26px; margin:
 #subs p.snd { font-style: italic; color: #dfe6ee; font-size: 13.5px; }
 #subs p.out { opacity: 0; }
 body.talking #subs, body.planner #subs { display: none; }
-@media (max-width: 1240px) { #subs { bottom: 238px; } }
+@media (max-width: 1240px) { #subs { left: 12px; transform: none; bottom: 96px; width: min(440px, calc(100vw - 540px)); align-items: flex-start; } #subs p { text-align: left; } }
 #set-tabs { margin: 4px 0 8px; display: flex; flex-wrap: wrap; }
 .set-pane { display: none; }
 .set-pane.on { display: block; }
@@ -666,7 +666,6 @@ body.touring #subs { bottom: 300px; }
 @media (max-width: 1240px) {
   #tour, body.touring.planner #tour { left: auto; right: 10px; top: calc(var(--tbh) + 18px); bottom: auto; transform: none; width: min(380px, calc(100vw - 290px)); }
   body.touring #info { top: calc(var(--tbh) + 210px); }
-  body.touring #subs { bottom: 238px; }
 }
 @media (max-width: 760px) {
   #tour, body.touring.planner #tour { width: min(330px, calc(100vw - 214px)); padding: 9px 12px 11px; }
@@ -674,3 +673,58 @@ body.touring #subs { bottom: 300px; }
   #tour-title { font-size: 14.5px; }
 }
 body.talking #tour, body.talking #tour-ring, body.phone #tour-ring, body.photo #tour { display: none !important; }
+
+/* ---------- Milestone 7: phones in landscape (short screens with touch) ---------- */
+@media (max-height: 520px) {
+  #tb-left, #tb-right { padding: 3px 6px; gap: 4px; min-height: 38px; }
+  #chip-tier, .tb-sep, #clock, #stat-leader-text, #filebtns #btn-stats { display: none; }
+  #time { font-size: 16px; }
+  .stats .stat:nth-child(n + 3):not(#stat-leader) { display: none; }
+  body:not(.planner) #speed { display: none; }
+  .ib { width: 30px; height: 30px; }
+  #palette { width: 196px; bottom: 8px; padding: 8px; }
+  .pal-grid { grid-template-columns: repeat(2, 1fr); }
+  #pal-tabs button span { display: none; }
+  #pal-title { margin: 8px 4px 6px; }
+  #info { right: 10px; left: auto; top: calc(var(--tbh) + 14px); bottom: auto; width: min(320px, 46vw); max-height: calc(100% - var(--tbh) - 28px); }
+  #journal { height: calc(100% - var(--tbh) - 28px); }
+  #shift { transform: scale(0.86); transform-origin: left top; }
+  #toasts { left: 10px; transform: none; align-items: flex-start; width: min(400px, calc(100vw - 250px)); top: calc(var(--tbh) + 14px); }
+  .toast { padding: 6px 11px; font-size: 12px; }
+  #phone { height: calc(100% - var(--tbh) - 20px); bottom: 8px; right: 8px; width: 320px; }
+  .modal-card { max-height: 94vh; padding: 12px 16px 14px; }
+  #tv { display: none; }
+  #minimap { width: 120px; height: 120px; }
+  #rci { display: none; }
+  #prompt { bottom: 14px; font-size: 13px; padding: 7px 12px 7px 8px; }
+  #talk { bottom: 8px; max-height: calc(100vh - var(--tbh) - 24px); }
+  #subs { bottom: 64px; }
+  #tour, body.touring.planner #tour { top: calc(var(--tbh) + 14px); right: 10px; left: auto; bottom: auto; transform: none; width: min(340px, calc(100vw - 230px)); }
+}
+/* the touch layout on a short screen: stick bottom left, buttons bottom right, the map above them, the wallet up top */
+@media (max-height: 520px) {
+  body.touch #hint { display: none; }
+  body.touch #stick { left: 16px; bottom: 16px; width: 112px; height: 112px; }
+  body.touch #stick i { left: 33px; top: 33px; width: 46px; height: 46px; }
+  body.touch #tbtns { right: 12px; bottom: 12px; grid-template-columns: repeat(3, 46px); gap: 7px; }
+  body.touch #tbtns button { width: 46px; height: 46px; font-size: 13px; }
+  body.touch #streethud { left: 10px; bottom: auto; top: calc(var(--tbh) + 14px); flex-wrap: wrap; max-width: calc(100vw - 250px); }
+  body.touch.shift #streethud { top: auto; bottom: 140px; }
+  body.touch #sc-panel { transform: none; right: 12px; bottom: 128px; }
+  body.touch #mapwrap { padding: 5px; }
+  body.touch #minimap { width: 104px; height: 104px; }
+  body.touch.planner #sc-panel { bottom: 68px; }
+  body.touch #prompt { bottom: 14px; max-width: calc(100vw - 340px); white-space: normal; }
+  body.touch #toasts { width: min(380px, calc(100vw - 330px)); top: calc(var(--tbh) + 58px); }
+  body.touch #tour { width: min(320px, calc(100vw - 200px)); }
+}
+/* a phone held upright: the village is wide, so ask for it sideways */
+#rotate { position: fixed; inset: 0; z-index: 60; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center;
+  background: radial-gradient(ellipse at 50% 40%, #1b2330 0%, #0b0e13 75%); color: var(--ink-2); font-size: 15px; }
+#rotate b { color: var(--ink); font-size: 19px; }
+#rotate i { font-style: normal; font-size: 46px; animation: tilt 2.4s ease-in-out infinite; }
+@keyframes tilt { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+@media (orientation: portrait) and (max-width: 600px) { body.touch #rotate, body.coarse #rotate { display: flex; } }
+/* in the Planner the walking buttons have nothing to do: only the crane (back down) stays */
+body.touch.planner #tbtns button:not([data-a='planner']) { display: none !important; }
+body.touch.planner #tbtns { grid-template-columns: 52px; }

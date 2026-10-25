@@ -15,6 +15,7 @@ export async function POST(request: Request): Promise<Response> {
   const body = await request.json().catch(() => null);
   const ip = (request.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'anon';
   const e = env();
-  const r = await handleChat(body, { GROQ_API_KEY: e.GROQ_API_KEY, GROQ_MODEL: e.GROQ_MODEL }, ip);
+  const r = await handleChat(body, { GROQ_API_KEY: e.GROQ_API_KEY, GROQ_MODEL: e.GROQ_MODEL, CHAT_ORIGINS: e.CHAT_ORIGINS, CHAT_DAILY_CAP: e.CHAT_DAILY_CAP }, ip, fetch,
+    { origin: request.headers.get('origin'), host: request.headers.get('x-forwarded-host') || request.headers.get('host') });
   return json(r.json, r.status);
 }

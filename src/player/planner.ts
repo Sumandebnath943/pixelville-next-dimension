@@ -37,6 +37,7 @@ export class Planner {
   private down: { x: number; y: number; button: number; moved: number } | null = null;
   private touches = new Map<number, { x: number; y: number }>();
   private pinch0 = 0;
+  private twist0: number | null = null;
   /** camera blend 0..1 when rising in or descending out */
   blend = 0;
   leaving = false;
@@ -85,6 +86,7 @@ export class Planner {
         if (this.touches.size === 2) {
           const [a, b] = [...this.touches.values()];
           this.pinch0 = Math.hypot(a.x - b.x, a.y - b.y);
+          this.twist0 = null;
           this.down = null;
           return;
         }
@@ -104,6 +106,15 @@ export class Planner {
           const d = Math.hypot(a.x - b.x, a.y - b.y);
           if (this.pinch0) this.dist = Math.max(40, Math.min(700, this.dist * (this.pinch0 / d)));
           this.pinch0 = d;
+          // V2 (Milestone 7): and a twist of the two fingers turns the view
+          const ang = Math.atan2(b.y - a.y, b.x - a.x);
+          if (this.twist0 !== null) {
+            let da = ang - this.twist0;
+            if (da > Math.PI) da -= Math.PI * 2;
+            if (da < -Math.PI) da += Math.PI * 2;
+            this.yaw += da;
+          }
+          this.twist0 = ang;
           return;
         }
         this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });

@@ -8,7 +8,7 @@
    proposed effects, which the game validates before using.
    ============================================================ */
 
-export interface Env { GROQ_API_KEY?: string; GROQ_MODEL?: string }
+export interface Env { GROQ_API_KEY?: string; GROQ_MODEL?: string; CHAT_ORIGINS?: string; CHAT_DAILY_CAP?: string }
 export interface Turn { role: 'user' | 'assistant'; content: string }
 export interface ChatResult { status: number; json: Record<string, unknown> }
 
@@ -57,7 +57,29 @@ export function readAnswer(content: string): { reply: string; effects: unknown }
   if (!reply) return null;
   return { reply, effects: parsed && parsed.effects && typeof parsed.effects === 'object' ? parsed.effects : {} };
 }
-export const LIMITS = { perMinute: 12, perDay: 400, message: 400, history: 8, turn: 600, context: 7000 };
+export const LIMITS = { perMinute: 12, perDay: 400, message: 400, history: 8, turn: 600, context: 7000, allPerMinute: 90, allPerDay: 4000 };
+
+/* Milestone 7 (launch): the whole server's budget, so many addresses together can't spend the key's quota
+   (CHAT_DAILY_CAP sets the day's; each server instance keeps its own count) */
+const all: number[] = [];
+export function overBudget(now = Date.now(), perDay = LIMITS.allPerDay): boolean {
+  while (all.length && now - all[0] >= 86_400_000) all.shift();
+  let minute = 0;
+  for (let i = all.length - 1; i >= 0 && now - all[i] < 60_000; i--) minute++;
+  if (minute >= LIMITS.allPerMinute || all.length >= perDay) return true;
+  all.push(now);
+  return false;
+}
+/** a browser page elsewhere may not use the villagers' voices: the request's Origin must be this site's
+ *  (or one listed in CHAT_ORIGINS); requests without an Origin (same-site navigations, tests) pass */
+export function originAllowed(origin: string | null | undefined, host: string | null | undefined, extra = ''): boolean {
+  if (!origin) return true;
+  let o: URL;
+  try { o = new URL(origin); } catch { return false; }
+  if (host && o.host === host) return true;
+  if (/^(localhost|127\.0\.0\.1|\[::1\])$|\.localhost$/.test(o.hostname)) return true;
+  return extra.split(',').map((x) => x.trim()).filter(Boolean).some((x) => x === o.origin || x === o.host);
+}
 
 /* per-address limits, held by this server instance */
 const hits = new Map<string, number[]>();
@@ -71,7 +93,7 @@ export function rateLimited(ip: string, now = Date.now()): boolean {
   if (hits.size > 5000) hits.clear(); // a crude cap on memory
   return false;
 }
-export function resetLimits(): void { hits.clear(); }
+export function resetLimits(): void { hits.clear(); all.length = 0; }
 
 /** check the request's shape and size */
 export function validRequest(body: unknown): { ok: true; context: Record<string, unknown>; history: Turn[]; message: string } | { ok: false; error: string } {
@@ -109,11 +131,13 @@ export function systemPrompt(ctx: Record<string, unknown>): string {
 }
 
 /** handle one chat request: validate, rate-limit, ask the model, check its answer */
-export async function handleChat(body: unknown, env: Env, ip: string, fetchImpl: typeof fetch = fetch): Promise<ChatResult> {
+export async function handleChat(body: unknown, env: Env, ip: string, fetchImpl: typeof fetch = fetch, site: { origin?: string | null; host?: string | null } = {}): Promise<ChatResult> {
   if (!env.GROQ_API_KEY) return { status: 503, json: { error: 'offline' } };
+  if (!originAllowed(site.origin, site.host, env.CHAT_ORIGINS)) return { status: 403, json: { error: 'not from here' } };
   const req = validRequest(body);
   if (!req.ok) return { status: 400, json: { error: req.error } };
   if (rateLimited(ip)) return { status: 429, json: { error: 'slow down' } };
+  if (overBudget(Date.now(), Number(env.CHAT_DAILY_CAP) || LIMITS.allPerDay)) return { status: 429, json: { error: 'busy' } };
   const messages = [
     { role: 'system', content: systemPrompt(req.context) },
     ...req.history,

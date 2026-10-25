@@ -12,10 +12,18 @@ export function initTouch(): void {
   let stickId = -1, lookId = -1;
   let lookLast = { x: 0, y: 0 };
 
+  // V2 (Milestone 7): a phone or tablet shows its controls from the start; the first tap goes full screen, sideways
+  const phone = matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+  if (phone) { document.body.classList.add('touch', 'coarse'); Input.usingTouch = true; Input.device = 'touch'; }
   window.addEventListener('touchstart', () => {
     document.body.classList.add('touch');
     Input.usingTouch = true;
+    if (phone) fullScreen();
   }, { once: true, passive: true });
+  document.getElementById('btn-full')?.addEventListener('click', () => {
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+    else fullScreen();
+  });
 
   const setStick = (e: PointerEvent) => {
     const r = stick.getBoundingClientRect();
@@ -69,4 +77,13 @@ export function initTouch(): void {
       b.addEventListener('pointerleave', up);
     }
   });
+}
+
+/** full screen, and (where the browser allows) held in landscape */
+function fullScreen(): void {
+  const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+  try {
+    const p = el.requestFullscreen?.({ navigationUI: 'hide' }) ?? el.webkitRequestFullscreen?.();
+    void Promise.resolve(p).then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape')).catch(() => {});
+  } catch { /* not offered here (an iPhone browser): the Home Screen app is full screen instead */ }
 }

@@ -1,0 +1,11 @@
+{
+  "name": "PixelVille — Next Dimension",
+  "short_name": "PixelVille",
+  "description": "The living village sim, now in 3D: walk, drive and build a village whose people think, remember and vote.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0e13",
+  "theme_color": "#0d1117",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

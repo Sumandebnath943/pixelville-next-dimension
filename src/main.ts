@@ -20,7 +20,7 @@ import { Planner } from './player/planner';
 import { Input, keys } from './input/input';
 import { PadNav } from './input/padnav';
 import { Tour } from './ui/tour';
-import { applyAccess } from './ui/access';
+import { applyAccess, Subs } from './ui/access';
 import { Hud } from './ui/hud';
 import { Panels } from './ui/panels';
 import { initTouch } from './ui/touch';
@@ -1010,7 +1010,9 @@ async function boot(): Promise<void> {
   await texturesReady();
   step('Lighting the village…', 0.85);
   await yieldFrame();
+  actors.prewarm(true);
   try { await stage.warmUp(); } catch { /* draw anyway */ }
+  actors.prewarm(false);
   step('Ready', 1);
   requestAnimationFrame((t) => {
     last = t;
@@ -1027,4 +1029,4 @@ async function boot(): Promise<void> {
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { tour, padNav, applyAccess, Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures, shifts, JOBS, Weather };
+(window as unknown as Record<string, unknown>).PV = { tour, padNav, applyAccess, Subs, Settings, Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures, shifts, JOBS, Weather };

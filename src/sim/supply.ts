@@ -62,6 +62,8 @@ export const STORE_CAP: Record<string, number> = { warehouse: 300, trainstation:
 export const LOAD = 20;
 /** what comes in from off the map each day without a railway */
 export const IMPORTS: Record<Good, number> = { food: 60, mats: 40, tex: 30, prod: 40 };
+/** and more for every villager (Milestone 7) */
+export const IMPORTS_PER_HEAD: Record<Good, number> = { food: 0.3, mats: 0.5, tex: 0.1, prod: 0.2 };
 const TRUCK_SPEED = 1.3; // tiles/s, ~37 km/h with a load
 
 const now = (): number => Sim.day * 1440 + Sim.clock;
@@ -110,7 +112,10 @@ export const Supply = {
     b.matsNeed = Math.round(8 + b.w * b.h * 2.5);
     const total = b.conTotal || b.construction || 1;
     b.matsUsed = b.matsNeed * Math.max(0, 1 - b.construction / total);
-    b.mats = Math.min(b.matsNeed - b.matsUsed, Math.ceil(b.matsNeed * 0.4));
+    // (Milestone 7 balance: a young village's builders bring most of what they need, and so do a small home's;
+    // otherwise the first houses and the first farm stood idle for days waiting for imports)
+    const bring = Sim.people.length < 30 ? 0.8 : b.w * b.h <= 4 ? 0.7 : 0.4;
+    b.mats = Math.min(b.matsNeed - b.matsUsed, Math.ceil(b.matsNeed * bring));
     b.stalled = false;
   },
   storeUsed(b: any): number {
@@ -346,7 +351,7 @@ export const Supply = {
     if (to.construction > 0) {
       this.initSite(to);
       to.mats += t.n;
-      if (t.kind === 'import') Gov.treasury = Math.max(0, Gov.treasury - t.n * u * 0.5);
+      if (t.kind === 'import') Gov.treasury = Math.max(0, Gov.treasury - t.n * u * 0.25); // (M7: was half: it pinned the fund at $0)
       else if (t.from && World.buildings.includes(t.from)) t.from.funds += t.n * u * 0.5;
       return;
     }
@@ -451,7 +456,9 @@ export const Supply = {
   /** once a day: a fresh import allowance (more by rail), the day's numbers reset */
   daily(): void {
     const freight = Life.trains.some((tr: any) => tr.type === 'freight');
-    for (const g of GOOD_KEYS) this.allow[g] = IMPORTS[g] * (freight ? 1.5 : 1);
+    // (Milestone 7 balance: the county sends more as the village grows)
+    const pop = Sim.people.length;
+    for (const g of GOOD_KEYS) this.allow[g] = (IMPORTS[g] + IMPORTS_PER_HEAD[g] * pop) * (freight ? 1.5 : 1);
     for (const b of World.buildings) b.emptyToday = 0;
     this.made = { food: 0, mats: 0, tex: 0, prod: 0 };
     this.sold = { food: 0, mats: 0, tex: 0, prod: 0 };
