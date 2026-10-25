@@ -42,6 +42,8 @@ const PX = 0.5;
 const TM = 8;
 const PEOPLE_CAP = 900;
 const CAR_COLORS = PARKED_COLORS;
+/* a hose's jet and the spray where it lands */
+const JET = hex('#dfeaf2'), SPLASH = hex('#f2f6f8');
 
 export type Mode = 'walk' | 'run' | 'stand' | 'lie' | 'sit';
 interface PersonDraw {
@@ -174,7 +176,7 @@ export class Actors {
       };
     }
     for (const [k, p] of Object.entries(PROPS)) {
-      const cap = k === 'puddle' ? 8 : k === 'bulb' ? 6000 : k === 'diya' ? 1200 : k === 'smoke' || k === 'flame' ? 8 : k === 'pole' || k === 'carry' ? 8 : 160;
+      const cap = k === 'puddle' ? 8 : k === 'bulb' ? 6000 : k === 'diya' ? 1200 : k === 'smoke' || k === 'flame' ? 8 : k === 'pole' || k === 'carry' ? 8 : k === 'jet' ? 64 : 160;
       this.props[k] = new InstancedPool(p.geo, p.glow ? this.glowTint : p.tinted ? MAT.tint : MAT.solid, cap, g, !p.glow && k !== 'puddle');
     }
     // fireworks & celebration sparks
@@ -244,9 +246,23 @@ export class Actors {
   }
   /** V2 (Milestone 6): a jet of water from a hose (metres), arcing to where it lands */
   spray(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): void {
-    const arc = Math.min(4, Math.hypot(x1 - x0, z1 - z0) * 0.18);
-    for (let i = 0; i < 16; i++) {
-      const f = (this.t * 2 + i / 16) % 1;
+    const h = Math.hypot(x1 - x0, z1 - z0), arc = Math.min(4, h * 0.18), yaw = Math.atan2(x1 - x0, z1 - z0);
+    // V2 (Milestone 7): solid slugs of water along the arc (the additive glints alone vanished in daylight),
+    // thickening as the jet breaks up, and a burst of spray where it lands
+    const jet = this.props.jet, hd = Math.max(1, h);
+    for (let i = 0; i < 40; i++) {
+      const f = (this.t * 1.6 + i / 40) % 1;
+      // nose along the arc: positive pitch tips +z down
+      const slope = (y1 - y0) / hd + (Math.cos(f * Math.PI) * Math.PI * arc) / hd;
+      const s = 0.8 + f * 1.3, wob = Math.sin(i * 12.9898 + this.t * 9) * 0.006 * f * h;
+      jet.add(x0 + (x1 - x0) * f + Math.cos(yaw) * wob, y0 + (y1 - y0) * f + Math.sin(f * Math.PI) * arc, z0 + (z1 - z0) * f - Math.sin(yaw) * wob, yaw, s, JET, -Math.atan(slope));
+    }
+    for (let i = 0; i < 10; i++) {
+      const a = i * 2.4 + this.t * 3, r = 0.4 + ((this.t * 2 + i * 0.37) % 1) * 1.6;
+      this.prop('jet', x1 + Math.cos(a) * r, y1 + ((i * 0.53 + this.t) % 1) * 1.4, z1 + Math.sin(a) * r, a, 2.2, SPLASH);
+    }
+    for (let i = 0; i < 8; i++) {
+      const f = (this.t * 2 + i / 8) % 1;
       this.spark(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f + Math.sin(f * Math.PI) * arc, z0 + (z1 - z0) * f, 0.6, 0.8, 1);
     }
   }

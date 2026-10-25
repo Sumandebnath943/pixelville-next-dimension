@@ -347,4 +347,6 @@ export const PROPS: Record<string, { geo: THREE.BufferGeometry; tinted?: boolean
       .build(),
   },
   carry: { geo: new MeshBuilder().box(-0.28, 0.95, 0.22, 0.28, 1.3, 0.62, hex('#a07a4a')).build() },
+  /* V2 (Milestone 7): a slug of water in a hose's jet, lit like everything else so it shows in daylight */
+  jet: { geo: new MeshBuilder().blob(0, 0, 0, 0.12, 0.12, 0.42, W).build(), tinted: true },
 };

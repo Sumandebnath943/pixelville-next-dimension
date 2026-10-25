@@ -119,6 +119,7 @@ function readControls(): Controls {
   let pitch = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
   const ay = Input.pad?.axes[3] || 0;
   if (Math.abs(ay) > 0.15) pitch -= ay;
+  pitch += Input.touchPitch;
   return { gas, brake, steer: Input.steer(), pitch: Math.max(-1, Math.min(1, pitch)) };
 }
 

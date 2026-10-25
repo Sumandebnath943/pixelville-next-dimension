@@ -29,6 +29,25 @@ const GRAV = 22;
 /** how far the street camera keeps from walls (the near plane's corners reach ~0.44 m) */
 const CAM_RADIUS = 0.45;
 
+/** how far (m) a camera at (x, y, z) must rise to clear the leaves of the trees around it: each crown is an
+ *  ellipsoid sized like the street trees (11–18 m tall, the crown from about a third of the way up) */
+export function crownLift(x: number, y: number, z: number): number {
+  const tx = Math.floor(x / TM), tz = Math.floor(z / TM);
+  let lift = 0;
+  for (let j = -1; j <= 1; j++)
+    for (let i = -1; i <= 1; i++) {
+      const gx = tx + i, gz = tz + j;
+      if (!World.inB(gx, gz) || !World.tree[World.idx(gx, gz)]) continue;
+      const t = treeSpot(gx, gz), H = 14 * t.s, rx = 0.32 * H + CAM_RADIUS;
+      const d2 = ((x - t.x) ** 2 + (z - t.z) ** 2) / (rx * rx);
+      if (d2 >= 1) continue;
+      const base = Math.max(0, heightAt(t.x, t.z)), cy = base + 0.62 * H, ry = 0.42 * H + CAM_RADIUS;
+      const top = cy + ry * Math.sqrt(1 - d2);
+      if (y > cy - ry * Math.sqrt(1 - d2) && y < top) lift = Math.max(lift, top - y + 0.5);
+    }
+  return lift;
+}
+
 /** where a ray from o (inverse direction i) first enters the box, if before `max` (else Infinity) */
 function slab(ox: number, oy: number, oz: number, ix: number, iy: number, iz: number, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, max: number): number {
   let t0 = 0, t1 = max;
@@ -419,6 +438,24 @@ export class Founder {
     return hit;
   }
 
+  /** V2 (Milestone 7): on foot, the vehicles the Founder has out are solid: the one in hand (a fire engine,
+   *  a bus, your own car) and the owned one left standing; each a capsule along its length */
+  private collideVehicles(p: { x: number; z: number }, r: number): void {
+    const solid = (v: Vehicle | null, x: number, z: number, yaw: number): void => {
+      if (!v) return;
+      const sp = specOf(v), fx = Math.sin(yaw), fz = Math.cos(yaw), rr = sp.radius + r;
+      // the nearest point on the axis between the rear and front contact circles
+      const t = Math.max(-sp.reach, Math.min(sp.reach, (p.x - x) * fx + (p.z - z) * fz));
+      const cx = x + fx * t, cz = z + fz * t, dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz);
+      if (d >= rr) return;
+      if (d < 1e-4) { p.x = cx - fz * rr; p.z = cz + fx * rr; return; }
+      p.x = cx + (dx / d) * rr;
+      p.z = cz + (dz / d) * rr;
+    };
+    if (!this.driving) solid(this.vehicle, this.car.x, this.car.z, this.car.yaw);
+    if (this.leftAt) solid(this.fleet.cur, this.leftAt.x, this.leftAt.z, this.leftAt.yaw);
+  }
+
   nearCar(): boolean {
     return !this.driving && !!this.vehicle && Math.hypot(this.pos.x - this.car.x, this.pos.z - this.car.z) < 3.4;
   }
@@ -633,6 +670,7 @@ export class Founder {
     const moving = Math.hypot(vx, vz) > 0.1;
     const p = { x: this.pos.x + vx * dt, z: this.pos.z + vz * dt };
     this.collide(p, R_BODY);
+    this.collideVehicles(p, R_BODY);
     const g = this.groundAt(p.x, p.z);
     // steps up to ~0.5 m are climbed; mountains are walked
     if (g - this.pos.y < 0.55 || heightAt(p.x, p.z) > 0.3) {
@@ -795,8 +833,14 @@ export class Founder {
       if (!this.driving && !aboard && reach < 0.9) this.mesh.visible = false;
     }
     cam.position.copy(this.camPos);
+    // V2 (Milestone 7): following a vehicle, the camera rises over a tree's crown rather than sitting in its
+    // leaves (the train's view along a wooded line); up at once, easing back down
+    const lift = this.driving || aboard ? crownLift(this.camPos.x, this.camPos.y, this.camPos.z) : 0;
+    this.camLift = lift > this.camLift ? lift : this.camLift + (lift - this.camLift) * Math.min(1, dt * 1.5);
+    cam.position.y += this.camLift;
     cam.lookAt(target);
   }
+  private camLift = 0;
 
   /** how far the camera can travel from o along unit d (up to len) before touching ground or a building */
   private camReach(o: THREE.Vector3, d: THREE.Vector3, len: number): number {

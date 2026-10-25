@@ -567,19 +567,28 @@ body.touch #touch { display: block; }
 #tbtns { position: absolute; right: 14px; bottom: 200px; display: grid; grid-template-columns: repeat(3, 52px); gap: 8px; }
 #tbtns button { width: 52px; height: 52px; padding: 0; justify-content: center; border-radius: 50%; font-size: 15px; font-weight: 650; background: var(--glass); backdrop-filter: var(--blur); touch-action: none; }
 #tbtns svg { width: 20px; height: 20px; }
+/* the pilot's climb and descend, only on the flight deck */
+#tbtns .t-fly { display: none; }
+body.flying #tbtns .t-fly { display: inline-flex; background: rgba(240, 194, 122, 0.22); }
 body.touch #streethud { bottom: 172px; }
 body.touch.planner #stick { display: none; }
 body.touch #sc-panel { transform: scale(0.82); transform-origin: right bottom; }
 body.planner #lookpad { display: none; }
 
-/* below ~1200 px the bottom-right news and map reach the centre: lift the prompt above them
-   and move the hint to the left, above the wallet (beside the palette in the Planner) */
+/* (Milestone 7) on a 1366-wide laptop the top bar keeps to one row */
+@media (max-width: 1440px) {
+  .stat { padding: 5px 5px; }
+  #tb-left, #tb-right { gap: 6px; }
+  /* the hint's centre line runs into the news and the map: it moves to the left, above the wallet
+     (beside the palette in the Planner) */
+  #hint { left: 12px; bottom: 54px; transform: none; max-width: calc(100vw - 520px); white-space: normal; border-radius: 12px; }
+  body.planner #hint { left: 278px; bottom: 12px; max-width: calc(100vw - 760px); }
+}
+/* below ~1200 px the bottom-right news and map reach the centre: lift the prompt above them */
 @media (max-width: 1240px) {
   #prompt { bottom: 190px; }
   #toasts { left: 10px; transform: none; align-items: flex-start; width: min(430px, calc(100vw - 420px)); }
   body.planner #toasts { left: 278px; width: min(400px, calc(100vw - 660px)); }
-  #hint { left: 12px; bottom: 54px; transform: none; max-width: calc(100vw - 500px); white-space: normal; border-radius: 12px; }
-  body.planner #hint { left: 278px; bottom: 12px; max-width: calc(100vw - 760px); }
 }
 
 @media (max-width: 760px) {

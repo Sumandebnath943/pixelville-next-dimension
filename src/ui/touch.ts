@@ -57,8 +57,13 @@ export function initTouch(): void {
   document.querySelectorAll<HTMLButtonElement>('#tbtns button').forEach((b) => {
     if (b.dataset.a) b.addEventListener('pointerdown', (e) => { e.preventDefault(); Input.press(b.dataset.a as Action); });
     if (b.dataset.hold) {
-      b.addEventListener('pointerdown', (e) => { e.preventDefault(); Input.touchRun = true; });
-      const up = () => { Input.touchRun = false; };
+      // held buttons: run, and (Milestone 7) the plane's climb and descend
+      const hold = b.dataset.hold, set = (on: boolean): void => {
+        if (hold === 'run') Input.touchRun = on;
+        else Input.touchPitch = on ? (hold === 'climb' ? 1 : -1) : 0;
+      };
+      b.addEventListener('pointerdown', (e) => { e.preventDefault(); set(true); });
+      const up = () => set(false);
       b.addEventListener('pointerup', up);
       b.addEventListener('pointercancel', up);
       b.addEventListener('pointerleave', up);

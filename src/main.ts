@@ -779,6 +779,7 @@ function frame(now: number): void {
   }
   document.body.classList.toggle('planner', planner.active && !planner.leaving);
   document.body.classList.toggle('fp', street && founder.firstPerson && !founder.driving);
+  document.body.classList.toggle('flying', shifts.cur?.def.id === 'pilot' && shifts.carrying());
 
   const range = planner.active ? Math.min(700, planner.dist * 1.6 + 120) : 240;
   syncPowerMap(Game.mapVersion); // V2: blacked-out districts go dark in every window, sign and lantern

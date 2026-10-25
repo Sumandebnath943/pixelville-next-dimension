@@ -26,6 +26,8 @@ class InputState {
   touchMove = { x: 0, y: 0 };
   touchLook = { dx: 0, dy: 0 };
   touchRun = false;
+  /** the plane's climb (+1) or descend (-1) buttons, held */
+  touchPitch = 0;
   pad: Gamepad | null = null;
   private padPrev: boolean[] = [];
   usingTouch = false;
