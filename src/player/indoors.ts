@@ -187,7 +187,7 @@ export class Indoors {
   /** what E would do here: the nearest thing in front of the Founder */
   use(): Use | null {
     const L = this.L!;
-    if (this.seated) return { kind: 'spot', spot: this.seated, text: '<b>E</b> stand up' };
+    if (this.seated) return { kind: 'spot', spot: this.seated, text: '<b>{interact}</b> stand up' };
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
     const ahead = (x: number, z: number, reach: number): number => {
       const dx = x - this.pos.x, dz = z - this.pos.y, d = Math.hypot(dx, dz);
@@ -199,7 +199,7 @@ export class Indoors {
       const d = ahead(s.x, s.z, 1.4);
       if (d < bd) {
         const who = s.kind === 'counter' ? this.server(s) : null;
-        const text = s.kind === 'counter' ? (who ? `<b>E</b> ${s.label} · ${who.p.name} is serving` : `${s.label} — nobody's serving`) : `<b>E</b> ${s.label}`;
+        const text = s.kind === 'counter' ? (who ? `<b>{interact}</b> ${s.label} · ${who.p.name} is serving` : `${s.label} — nobody's serving`) : `<b>{interact}</b> ${s.label}`;
         bd = d;
         best = { kind: 'spot', spot: s, text };
       }
@@ -208,7 +208,7 @@ export class Indoors {
       const d = ahead(o.place.x, o.place.z, 2.2);
       if (d < bd - 0.3) {
         bd = d;
-        best = { kind: 'person', who: o, text: `<b>E</b> talk to ${o.p.name} ${o.p.surname}${o.staff ? ` (${jobName(o.p)})` : ''}` };
+        best = { kind: 'person', who: o, text: `<b>{interact}</b> talk to ${o.p.name} ${o.p.surname}${o.staff ? ` (${jobName(o.p)})` : ''}` };
       }
     }
     return best;

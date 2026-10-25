@@ -187,8 +187,8 @@ body.gps #gps-pill { display: inline-flex !important; }
 #gps-pill .ib svg { width: 14px; height: 14px; color: var(--ink-2); }
 #wallet-pill.flash-up { animation: flash-up 1s ease-out; }
 #wallet-pill.flash-down { animation: flash-down 1s ease-out; }
-@keyframes flash-up { 0% { box-shadow: 0 0 0 3px rgba(134, 217, 160, 0.75); color: var(--ok); } 100% { box-shadow: var(--shadow); } }
-@keyframes flash-down { 0% { box-shadow: 0 0 0 3px rgba(255, 148, 132, 0.65); color: var(--bad); } 100% { box-shadow: var(--shadow); } }
+@keyframes flash-up { 0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 75%, transparent); color: var(--ok); } 100% { box-shadow: var(--shadow); } }
+@keyframes flash-down { 0% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 65%, transparent); color: var(--bad); } 100% { box-shadow: var(--shadow); } }
 
 #fuel-pill { display: none !important; }
 body.driving #fuel-pill { display: inline-flex !important; }
@@ -605,3 +605,72 @@ body.planner #lookpad { display: none; }
   .help-grid { grid-template-columns: 1fr; }
   #journal { left: 10px; right: 10px; width: auto; }
 }
+
+/* ---------- Milestone 7: the gamepad's highlight, and its ring in the Planner ---------- */
+.padfocus, body.pad :focus-visible { outline: 2px solid var(--accent) !important; outline-offset: 2px; }
+.pal-item.padfocus { border-color: var(--accent); background: rgba(240, 194, 122, 0.2); }
+body.pad.planner #crosshair { display: block; width: 26px; height: 26px; margin: -13px; background: none; border: 2px solid var(--accent); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(0, 0, 0, 0.3); }
+
+/* ---------- Milestone 7: subtitles, settings tabs, interface size, colour vision, reduced motion ---------- */
+#subs { position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%); width: min(640px, calc(100vw - 32px)); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+#subs p { margin: 0; padding: 5px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 15px; line-height: 1.4; text-align: center; text-shadow: 0 1px 2px #000; transition: opacity 0.35s; }
+#subs p b { color: var(--accent); font-weight: 650; margin-right: 6px; }
+#subs p.snd { font-style: italic; color: #dfe6ee; font-size: 13.5px; }
+#subs p.out { opacity: 0; }
+body.talking #subs, body.planner #subs { display: none; }
+@media (max-width: 1240px) { #subs { bottom: 238px; } }
+#set-tabs { margin: 4px 0 8px; display: flex; flex-wrap: wrap; }
+.set-pane { display: none; }
+.set-pane.on { display: block; }
+.modal-card h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+#set-keys { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; margin-top: 6px; }
+#set-keys span { color: var(--ink-2); }
+#set-keys button { min-width: 92px; justify-content: center; font-weight: 650; font-variant-numeric: tabular-nums; }
+#set-keys button.wait { background: var(--accent); color: var(--accent-ink); }
+#set-keys button.none { color: var(--bad); }
+/* the interface size: everything over the world scales together */
+#hud, #modals, #photo, #travel, #curtain, #tour { zoom: var(--ui, 1); }
+/* colour vision: the good and bad colours (and the pills, flashes and meters drawn from them) */
+body[data-cv='redgreen'] { --ok: #6cb8ff; --bad: #ff8f2e; }
+body[data-cv='blueyellow'] { --ok: #4fd8c6; --bad: #ff5c93; }
+.pill.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.pill.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+/* never colour alone: a struggling statistic is underlined too */
+.stat.bad b { text-decoration: underline wavy color-mix(in srgb, var(--bad) 70%, transparent); text-underline-offset: 3px; }
+/* reduced motion: no slides, pops, blinks, flashes or scrolling ticker */
+body.calm *, body.calm *::before, body.calm *::after { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; transition-duration: 0.001s !important; }
+body.calm #tv-ticker-text { animation: none !important; padding-left: 0; }
+body.calm #tv-ticker { text-overflow: ellipsis; padding: 5px 10px; }
+body.calm #flash { display: none; }
+
+/* ---------- Milestone 7: the first-day guide ---------- */
+#tour { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); width: min(440px, calc(100vw - 24px)); padding: 11px 16px 14px; z-index: 8; display: none; }
+body.touring #tour { display: block; animation: pop 0.25s ease-out; }
+body.touring.planner #tour { bottom: 56px; }
+body.touring #subs { bottom: 300px; }
+.tr-head { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+#tour-dots { display: flex; gap: 4px; }
+#tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); }
+#tour-dots i.done { background: var(--accent); opacity: 0.45; }
+#tour-dots i.on { background: var(--accent); }
+#tour-skip { margin-left: auto; padding: 3px 8px; font-size: 11px; background: none; border: 0; color: var(--ink-3); }
+#tour-skip:hover { color: var(--ink); }
+#tour-title { display: block; font-size: 16px; margin: 6px 0 3px; }
+#tour-text { margin: 0; color: var(--ink-2); line-height: 1.5; font-size: 13.5px; }
+#tour-text small { display: block; margin-top: 6px; color: var(--accent); font-size: 12px; }
+#tour-btn { margin-top: 10px; }
+#tour-ring { position: fixed; z-index: 9; display: none; pointer-events: none; border-radius: 14px; border: 2px solid var(--accent);
+  box-shadow: 0 0 0 4px rgba(240, 194, 122, 0.25), 0 0 24px rgba(240, 194, 122, 0.5); animation: ringPulse 1.4s ease-in-out infinite; }
+@keyframes ringPulse { 50% { box-shadow: 0 0 0 9px rgba(240, 194, 122, 0.08), 0 0 30px rgba(240, 194, 122, 0.35); } }
+/* on a narrower screen the guide sits top right, clear of the prompt and the palette */
+@media (max-width: 1240px) {
+  #tour, body.touring.planner #tour { left: auto; right: 10px; top: calc(var(--tbh) + 18px); bottom: auto; transform: none; width: min(380px, calc(100vw - 290px)); }
+  body.touring #info { top: calc(var(--tbh) + 210px); }
+  body.touring #subs { bottom: 238px; }
+}
+@media (max-width: 760px) {
+  #tour, body.touring.planner #tour { width: min(330px, calc(100vw - 214px)); padding: 9px 12px 11px; }
+  #tour-text { font-size: 12.5px; line-height: 1.4; }
+  #tour-title { font-size: 14.5px; }
+}
+body.talking #tour, body.talking #tour-ring, body.phone #tour-ring, body.photo #tour { display: none !important; }

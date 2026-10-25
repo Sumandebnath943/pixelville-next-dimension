@@ -12,6 +12,7 @@ import { Life } from '../sim/life';
 import { Mind } from '../sim/mind';
 import { Rep } from '../sim/reputation';
 import { Settings } from '../sim/settings';
+import { Input, BINDABLE, keyName, type Action } from '../input/input';
 import { Game } from '../sim/game';
 import { Health } from '../sim/health';
 import { Power, PLANT_CAP } from '../sim/power';
@@ -53,6 +54,10 @@ export interface PanelApi {
   extraActions?(b: any): { label: string; run: () => void }[];
   afterLoad(): void;
   isPlanner(): boolean;
+  /** Milestone 7: a setting that applies at once was changed */
+  settingsChanged?(): void;
+  /** Milestone 7: run the first-day guide again */
+  startTour?(): void;
 }
 
 export class Panels {
@@ -68,6 +73,7 @@ export class Panels {
     $('btn-new').addEventListener('click', () => { ($('nm-name') as HTMLInputElement).value = 'PixelVille'; this.show('newmap'); });
     $('btn-stats').addEventListener('click', () => { this.show('statsui'); this.drawStats(); });
     $('btn-help').addEventListener('click', () => this.show('help'));
+    this.wireSettings();
     const sound = (on: boolean): void => { $('btn-sound').innerHTML = `${icon(on ? 'sound' : 'mute')}<span>${on ? 'Sound on' : 'Sound off'}</span>`; };
     $('btn-sound').addEventListener('click', () => sound(Snd.toggle()));
     sound(Snd.enabled);
@@ -103,7 +109,12 @@ export class Panels {
     });
   }
 
-  show(id: string): void { $(id).style.display = 'flex'; document.exitPointerLock?.(); }
+  show(id: string): void {
+    // (Milestone 7: the help names the player's own keys)
+    if (id === 'help') document.querySelectorAll<HTMLElement>('#help kbd[data-k]').forEach((k) => { const c = Input.binds[k.dataset.k as Action]?.[0]; k.textContent = c ? keyName(c) : '—'; });
+    $(id).style.display = 'flex';
+    document.exitPointerLock?.();
+  }
   close(id: string): void {
     if (id === 'settings') this.closeSettings();
     $(id).style.display = id === 'journal' ? 'none' : 'none';
@@ -428,9 +439,20 @@ export class Panels {
     ($('set-invert') as HTMLInputElement).checked = !!Settings.get('invertY');
     ($('set-vol') as HTMLInputElement).value = String(Settings.get('volume'));
     ($('set-autosave') as HTMLSelectElement).value = String(Settings.get('autosaveMin'));
+    // V2 (Milestone 7): graphics, controls and accessibility, applied as they change
+    ($('set-res') as HTMLSelectElement).value = String(Settings.get('resScale') ?? 'auto');
+    ($('set-fps') as HTMLSelectElement).value = String(Settings.get('fpsCap') || 0);
+    ($('set-ui') as HTMLSelectElement).value = String(Settings.get('uiScale') || 1);
+    ($('set-subs') as HTMLSelectElement).value = Settings.get('subtitles') || 'speech';
+    ($('set-cv') as HTMLSelectElement).value = Settings.get('colorVision') || 'standard';
+    ($('set-shake') as HTMLInputElement).checked = Settings.get('shake') !== false;
+    ($('set-bob') as HTMLInputElement).checked = Settings.get('headBob') !== false;
+    ($('set-calm') as HTMLInputElement).checked = !!Settings.get('calm');
+    this.renderKeys();
     this.show('settings');
   }
   private closeSettings(): void {
+    Input.capture = null;
     const nm = ($('set-name') as HTMLInputElement).value.trim();
     if (nm && nm !== World.name) { World.name = nm.slice(0, 24); this.api.toast(`🏷️ The village is now called ${World.name}`); }
     Settings.set('growthPace', ($('set-pace') as HTMLSelectElement).value);
@@ -441,6 +463,52 @@ export class Panels {
     Settings.set('invertY', ($('set-invert') as HTMLInputElement).checked);
     Settings.set('autosaveMin', +($('set-autosave') as HTMLSelectElement).value);
     Snd.setVolume(+($('set-vol') as HTMLInputElement).value);
+  }
+  /** the settings that take effect at once (Milestone 7) */
+  private wireSettings(): void {
+    document.querySelectorAll<HTMLButtonElement>('#set-tabs button').forEach((b) => b.addEventListener('click', () => {
+      document.querySelectorAll<HTMLElement>('#set-tabs button').forEach((t) => t.classList.toggle('on', t === b));
+      document.querySelectorAll<HTMLElement>('.set-pane').forEach((p) => p.classList.toggle('on', p.dataset.pane === b.dataset.pane));
+      Input.capture = null;
+    }));
+    const live: [string, string, (el: HTMLInputElement & HTMLSelectElement) => unknown][] = [
+      ['set-res', 'resScale', (e) => (e.value === 'auto' ? 'auto' : +e.value)],
+      ['set-fps', 'fpsCap', (e) => +e.value],
+      ['set-ui', 'uiScale', (e) => +e.value],
+      ['set-subs', 'subtitles', (e) => e.value],
+      ['set-cv', 'colorVision', (e) => e.value],
+      ['set-shake', 'shake', (e) => e.checked],
+      ['set-bob', 'headBob', (e) => e.checked],
+      ['set-calm', 'calm', (e) => e.checked],
+      ['set-fov', 'fov', (e) => +e.value],
+      ['set-sens', 'mouseSens', (e) => +e.value],
+      ['set-invert', 'invertY', (e) => e.checked],
+    ];
+    for (const [id, key, read] of live) $(id).addEventListener('change', (ev) => { Settings.set(key, read(ev.target as HTMLInputElement & HTMLSelectElement)); this.api.settingsChanged?.(); });
+    $('set-quality').addEventListener('change', () => { $('set-gfx-note').textContent = 'Quality changes after a reload (save first, or it picks up from the autosave).'; });
+    $('set-keys-reset').addEventListener('click', () => { Input.resetBinds(); $('set-keys-note').textContent = 'Back to the defaults.'; this.renderKeys(); });
+    $('set-tour').addEventListener('click', () => { this.close('settings'); this.api.startTour?.(); });
+  }
+  /** every bindable action, its key, and a button to rebind it */
+  private renderKeys(): void {
+    const wrap = $('set-keys');
+    wrap.innerHTML = BINDABLE.map((b) => {
+      const k = Input.binds[b.a]?.[0];
+      return `<span>${esc(b.label)}</span><button data-bind="${b.a}" class="${k ? '' : 'none'}">${k ? esc(keyName(k)) : 'not set'}</button>`;
+    }).join('');
+    wrap.querySelectorAll<HTMLButtonElement>('[data-bind]').forEach((btn) => btn.addEventListener('click', () => {
+      const a = btn.dataset.bind as Action;
+      wrap.querySelectorAll('.wait').forEach((w) => w.classList.remove('wait'));
+      btn.classList.add('wait');
+      btn.textContent = 'press a key…';
+      Input.capture = (code) => {
+        if (code === 'Escape') { this.renderKeys(); return; }
+        const lost = Input.bind(a, code);
+        const label = (x: Action): string => BINDABLE.find((q) => q.a === x)!.label.split(' · ')[0].toLowerCase();
+        $('set-keys-note').textContent = lost.length ? `${keyName(code)} was ${lost.map(label).join(' and ')}: give ${lost.length > 1 ? 'them' : 'it'} another key.` : `${BINDABLE.find((q) => q.a === a)!.label.split(' · ')[0]}: ${keyName(code)}.`;
+        this.renderKeys();
+      };
+    }));
   }
 
   /* ---------- saves ---------- */

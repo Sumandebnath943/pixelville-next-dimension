@@ -85,7 +85,7 @@ export class FireJob implements Job {
       const h = here(f), m = midM(b);
       if (!call.arrived && toPlot(b, h.x, h.z) < 30) {
         call.arrived = true;
-        this.c.toast('🧯 On scene — out of the cab (F), face the flames and the hose does the rest');
+        this.c.toast('🧯 On scene — out of the cab ({vehicle}), face the flames and the hose does the rest');
       }
       if (!call.arrived && nowAbs() - call.at > FIRE_WAIT) { this.release(); return; }
       // the hose: on foot, close to the building, facing it
@@ -146,7 +146,7 @@ export class FireJob implements Job {
     if (this.call || !ins || ins.w.t > 0) return null;
     const d = doorM(ins.b);
     if (!onFootNear(f, d.x, d.z, 9)) return null;
-    return { text: `<b>E</b> inspect the ${nameOf(ins.b)} for fire safety`, act: () => { ins.w.t = 1e-3; } };
+    return { text: `<b>{interact}</b> inspect the ${nameOf(ins.b)} for fire safety`, act: () => { ins.w.t = 1e-3; } };
   }
 
   objective(): { text: string; sub?: string; k?: number } {
@@ -161,7 +161,7 @@ export class FireJob implements Job {
       const d = doorM(ins.b);
       return ins.w.t > 0
         ? { text: `Inspecting the ${nameOf(ins.b)}`, sub: 'Exits, wiring, the kitchen, the extinguishers…', k: ins.w.k }
-        : { text: `Fire safety inspection: the ${nameOf(ins.b)}`, sub: `${metres(distTo(f, d.x, d.z))} · E at the door` };
+        : { text: `Fire safety inspection: the ${nameOf(ins.b)}`, sub: `${metres(distTo(f, d.x, d.z))} · {interact} at the door` };
     }
     return { text: 'Standing by for calls', sub: 'Every business has been inspected this week' };
   }
@@ -299,13 +299,13 @@ export class PoliceJob implements Job {
       const bx = B.x / 2, bz = B.y / 2;
       const ok = onFootNear(f, bx, bz, 2.8) || (f.driving && Math.abs(f.car.speed) < 4 && Math.hypot(f.car.x - bx, f.car.z - bz) < 5);
       if (!ok) return null;
-      return { text: '<b>E</b> arrest the burglar', act: () => this.arrest() };
+      return { text: '<b>{interact}</b> arrest the burglar', act: () => this.arrest() };
     }
     const at = this.where(call);
     if (call.kind === 'dispute') {
       if (!onFootNear(f, at.x, at.z, 7)) return null;
       return {
-        text: '<b>E</b> calm them down', act: () => {
+        text: '<b>{interact}</b> calm them down', act: () => {
           call.done = true;
           s.arrived = true; // (the sim talks them down: the quarrel ends)
           this.c.earn(12, 'Calmed a street argument');
@@ -316,7 +316,7 @@ export class PoliceJob implements Job {
     }
     if (!onFootNear(f, at.x, at.z, 11)) return null;
     return {
-      text: '<b>E</b> secure the scene and take statements', act: () => {
+      text: '<b>{interact}</b> secure the scene and take statements', act: () => {
         call.done = true;
         s.arrived = true; // (statements taken, tow truck called)
         this.c.earn(12, 'Secured a crash scene');
@@ -344,10 +344,10 @@ export class PoliceJob implements Job {
       if (call.kind === 'burglary') {
         const B = call.scene.burglar;
         if (B.phase === 'rob') return { text: `Break-in at the ${nameOf(call.scene.target)}`, sub: `${far} · catch them before they get out` };
-        return { text: 'The burglar is running — chase them down', sub: `${far} · on foot or alongside, E to arrest` };
+        return { text: 'The burglar is running — chase them down', sub: `${far} · on foot or alongside, {interact} to arrest` };
       }
       if (!call.arrived) return { text: call.kind === 'dispute' ? 'An argument in the street' : 'A car crash', sub: `${far} · blue lights on` };
-      return call.kind === 'dispute' ? { text: 'Calm the argument down', sub: 'On foot, E beside them' } : { text: 'Secure the crash scene', sub: 'On foot, E by the wreck' };
+      return call.kind === 'dispute' ? { text: 'Calm the argument down', sub: 'On foot, {interact} beside them' } : { text: 'Secure the crash scene', sub: 'On foot, {interact} by the wreck' };
     }
     if (this.beat) { const d = doorM(this.beat); return { text: `Patrol: the ${nameOf(this.beat)}`, sub: `${metres(distTo(f, d.x, d.z))} · burglars stay away from a busy beat` }; }
     return { text: 'On patrol', sub: 'Listening to the radio' };
@@ -488,10 +488,10 @@ export class MedicJob implements Job {
     const f = this.c.f, call = this.call;
     if (call) {
       const p = call.p;
-      if (call.phase === 'go' && onFootNear(f, p.x / 2, p.y / 2, 2.8)) return { text: `<b>E</b> treat ${p.name}`, act: () => { call.phase = 'treat'; call.arrived = true; } };
+      if (call.phase === 'go' && onFootNear(f, p.x / 2, p.y / 2, 2.8)) return { text: `<b>{interact}</b> treat ${p.name}`, act: () => { call.phase = 'treat'; call.arrived = true; } };
       if (call.phase === 'carry' && call.h) {
         const d = doorM(call.h);
-        if (stoppedNear(f, d.x, d.z, 18)) return { text: `<b>E</b> hand ${p.name} over to the ward`, act: () => this.deliver() };
+        if (stoppedNear(f, d.x, d.z, 18)) return { text: `<b>{interact}</b> hand ${p.name} over to the ward`, act: () => this.deliver() };
       }
       return null;
     }
@@ -499,17 +499,17 @@ export class MedicJob implements Job {
     if (!v || v.w.t > 0) return null;
     const d = doorM(v.p.home);
     if (!onFootNear(f, d.x, d.z, 9)) return null;
-    return { text: `<b>E</b> check on ${v.p.name} (${Health.label(v.p).toLowerCase()})`, act: () => { v.w.t = 1e-3; } };
+    return { text: `<b>{interact}</b> check on ${v.p.name} (${Health.label(v.p).toLowerCase()})`, act: () => { v.w.t = 1e-3; } };
   }
 
   objective(): { text: string; sub?: string; k?: number } {
     const f = this.c.f, call = this.call;
     if (call) {
       const p = call.p, far = metres(distTo(f, p.x / 2, p.y / 2));
-      if (call.phase === 'go') return { text: `Casualty: ${p.name} ${p.surname}`, sub: call.arrived ? 'On foot, E beside them' : `${far} · blue lights on` };
+      if (call.phase === 'go') return { text: `Casualty: ${p.name} ${p.surname}`, sub: call.arrived ? 'On foot, {interact} beside them' : `${far} · blue lights on` };
       if (call.phase === 'treat') return { text: `Treating ${p.name}`, sub: 'Stay with them', k: call.w.k };
       const d = call.h ? doorM(call.h) : null;
-      return { text: `${p.name} aboard — to the Hospital`, sub: d ? `${metres(distTo(f, d.x, d.z))} · stop at the door, E to hand over` : '' };
+      return { text: `${p.name} aboard — to the Hospital`, sub: d ? `${metres(distTo(f, d.x, d.z))} · stop at the door, {interact} to hand over` : '' };
     }
     const v = this.visit;
     if (v) {

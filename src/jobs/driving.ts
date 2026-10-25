@@ -381,8 +381,8 @@ export class TruckJob implements Job {
     const at = j.phase === 'load' ? j.src : j.dst, k = kerbM(at), d = doorM(at);
     if (!stoppedNear(f, k.x, k.z, 16) && !stoppedNear(f, d.x, d.z, 12)) return null;
     return j.phase === 'load'
-      ? { text: `<b>E</b> load ${j.n} ${GOODS[j.g].name.toLowerCase()} at the ${nameOf(j.src)}`, act: () => this.loadUp() }
-      : { text: `<b>E</b> unload at the ${nameOf(j.dst)}`, act: () => this.unload() };
+      ? { text: `<b>{interact}</b> load ${j.n} ${GOODS[j.g].name.toLowerCase()} at the ${nameOf(j.src)}`, act: () => this.loadUp() }
+      : { text: `<b>{interact}</b> unload at the ${nameOf(j.dst)}`, act: () => this.unload() };
   }
   objective(): { text: string; sub?: string; k?: number } {
     const j = this.job, f = this.c.f;
@@ -390,7 +390,7 @@ export class TruckJob implements Job {
     const at = j.phase === 'load' ? j.src : j.dst, k = kerbM(at), far = metres(distTo(f, k.x, k.z));
     return j.phase === 'load'
       ? { text: `Pick up at the ${nameOf(j.src)}`, sub: `${far} · ${j.n} ${GOODS[j.g].name.toLowerCase()} for the ${nameOf(j.dst)}` }
-      : { text: `Deliver to the ${nameOf(j.dst)}`, sub: `${far} · ${j.load} ${GOODS[j.g].name.toLowerCase()} aboard · stop at the door, E` };
+      : { text: `Deliver to the ${nameOf(j.dst)}`, sub: `${far} · ${j.load} ${GOODS[j.g].name.toLowerCase()} aboard · stop at the door, {interact}` };
   }
   marker(): { x: number; y: number; z: number; icon: string } | null {
     const j = this.job;

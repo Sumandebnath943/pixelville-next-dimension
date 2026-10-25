@@ -135,17 +135,17 @@ export class PowerJob implements Job {
   }
   interaction(): Act | null {
     const f = this.c.f, call = this.call, s = this.service;
-    if (call && call.w.t === 0 && onFootNear(f, call.spot.x, call.spot.z, 4.5)) return { text: '<b>E</b> climb the pole and mend the lines', act: () => { call.w.t = 1e-3; } };
-    if (!call && s && s.w.t === 0 && onFootNear(f, s.spot.x, s.spot.z, 4.5)) return { text: `<b>E</b> service the substation`, act: () => { s.w.t = 1e-3; } };
+    if (call && call.w.t === 0 && onFootNear(f, call.spot.x, call.spot.z, 4.5)) return { text: '<b>{interact}</b> climb the pole and mend the lines', act: () => { call.w.t = 1e-3; } };
+    if (!call && s && s.w.t === 0 && onFootNear(f, s.spot.x, s.spot.z, 4.5)) return { text: `<b>{interact}</b> service the substation`, act: () => { s.w.t = 1e-3; } };
     return null;
   }
   objective(): { text: string; sub?: string; k?: number } {
     const f = this.c.f, call = this.call, s = this.service;
     if (call) {
       if (call.w.t > 0) return { text: STAGES.find(([k]) => call.w.k < k)![1], sub: `Power cut in ${Power.where(call.d)}`, k: call.w.k };
-      return { text: `Power cut in ${Power.where(call.d)}`, sub: `${metres(distTo(f, call.spot.x, call.spot.z))} · ${call.arrived ? 'on foot at the pole, E' : 'the district is in the dark'}` };
+      return { text: `Power cut in ${Power.where(call.d)}`, sub: `${metres(distTo(f, call.spot.x, call.spot.z))} · ${call.arrived ? 'on foot at the pole, {interact}' : 'the district is in the dark'}` };
     }
-    if (s) return s.w.t > 0 ? { text: 'Servicing the substation', sub: Power.where(s.d), k: s.w.k } : { text: `Service the substation in ${Power.where(s.d)}`, sub: `${metres(distTo(f, s.spot.x, s.spot.z))} · on foot at the pole, E` };
+    if (s) return s.w.t > 0 ? { text: 'Servicing the substation', sub: Power.where(s.d), k: s.w.k } : { text: `Service the substation in ${Power.where(s.d)}`, sub: `${metres(distTo(f, s.spot.x, s.spot.z))} · on foot at the pole, {interact}` };
     return { text: 'Standing by at the plant', sub: 'Every substation has been serviced this week' };
   }
   marker(): { x: number; y: number; z: number; icon: string } | null {
@@ -261,12 +261,12 @@ export class BuildJob implements Job {
     if (r) {
       const at = r.phase === 'fetch' ? r.src : s, k = kerbM(at), d = doorM(at);
       if (!stoppedNear(f, k.x, k.z, 16) && !stoppedNear(f, d.x, d.z, 12)) return null;
-      return r.phase === 'fetch' ? { text: `<b>E</b> load the van at the ${nameOf(r.src)}`, act: () => this.fetch() } : { text: '<b>E</b> unload the materials onto the site', act: () => this.bring() };
+      return r.phase === 'fetch' ? { text: `<b>{interact}</b> load the van at the ${nameOf(r.src)}`, act: () => this.fetch() } : { text: '<b>{interact}</b> unload the materials onto the site', act: () => this.bring() };
     }
     if (f.driving) return null;
-    if (this.holding) return toPlot(s, f.pos.x, f.pos.z) < 2.6 ? { text: '<b>E</b> set the load on the scaffold', act: () => this.lay() } : null;
+    if (this.holding) return toPlot(s, f.pos.x, f.pos.z) < 2.6 ? { text: '<b>{interact}</b> set the load on the scaffold', act: () => this.lay() } : null;
     const p = this.pallet(s);
-    if (s.mats >= 1 && Math.hypot(f.pos.x - p.x, f.pos.z - p.z) < 2.8) return { text: '<b>E</b> pick up a load of bricks', act: () => { this.holding = true; } };
+    if (s.mats >= 1 && Math.hypot(f.pos.x - p.x, f.pos.z - p.z) < 2.8) return { text: '<b>{interact}</b> pick up a load of bricks', act: () => { this.holding = true; } };
     return null;
   }
   objective(): { text: string; sub?: string; k?: number } {
@@ -276,11 +276,11 @@ export class BuildJob implements Job {
     const r = this.run;
     if (r) {
       const at = r.phase === 'fetch' ? r.src : s, kb = kerbM(at);
-      return r.phase === 'fetch' ? { text: `Fetch materials from the ${nameOf(r.src)}`, sub: `${metres(distTo(f, kb.x, kb.z))} · stop at the door, E`, k } : { text: `Bring the materials to the ${nameOf(s)}`, sub: `${metres(distTo(f, kb.x, kb.z))} · ${r.load} aboard`, k };
+      return r.phase === 'fetch' ? { text: `Fetch materials from the ${nameOf(r.src)}`, sub: `${metres(distTo(f, kb.x, kb.z))} · stop at the door, {interact}`, k } : { text: `Bring the materials to the ${nameOf(s)}`, sub: `${metres(distTo(f, kb.x, kb.z))} · ${r.load} aboard`, k };
     }
     if (this.holding) return { text: 'Carry the load to the scaffold', sub: `The ${nameOf(s)} · ${Math.round(k * 100)}% built`, k };
     if (s.mats < 1) return { text: `The ${nameOf(s)} is out of materials`, sub: 'Looking for a yard with bricks and timber…', k };
-    return { text: `Build the ${nameOf(s)}`, sub: `${Math.round(k * 100)}% built · the pallet by the site, E · ${this.loads} loads laid`, k };
+    return { text: `Build the ${nameOf(s)}`, sub: `${Math.round(k * 100)}% built · the pallet by the site, {interact} · ${this.loads} loads laid`, k };
   }
   marker(): { x: number; y: number; z: number; icon: string } | null {
     const s = this.site;
@@ -379,14 +379,14 @@ export class ShopJob implements Job {
     if (!room || room.seated) return null;
     const u = room.use();
     if (this.carry) {
-      if (u?.kind === 'person' && u.who.p === this.carry.p) return { text: `<b>E</b> serve ${this.carry.p.name} the ${this.carry.item.name.toLowerCase()}`, act: () => this.serve() };
+      if (u?.kind === 'person' && u.who.p === this.carry.p) return { text: `<b>{interact}</b> serve ${this.carry.p.name} the ${this.carry.item.name.toLowerCase()}`, act: () => this.serve() };
       return null;
     }
     if (u?.kind === 'person' && !u.who.staff) {
       const p = u.who.p, o = this.orders.get(p);
       if (o?.state === 'wait') {
         return {
-          text: `<b>E</b> take ${p.name}'s order`, act: () => {
+          text: `<b>{interact}</b> take ${p.name}'s order`, act: () => {
             const w = this.wares();
             o.item = w[Math.floor(Math.random() * w.length)];
             o.state = 'ordered';
@@ -398,19 +398,19 @@ export class ShopJob implements Job {
     }
     if (u?.kind === 'spot' && u.spot.kind === 'counter' && !this.prep) {
       const next = [...this.orders].find(([, o]) => o.state === 'ordered');
-      if (next) return { text: `<b>E</b> make ${next[0].name}'s ${next[1].item!.name.toLowerCase()}`, act: () => { this.prep = { p: next[0], w: new Work(3) }; } };
+      if (next) return { text: `<b>{interact}</b> make ${next[0].name}'s ${next[1].item!.name.toLowerCase()}`, act: () => { this.prep = { p: next[0], w: new Work(3) }; } };
     }
     return null;
   }
   objective(): { text: string; sub?: string; k?: number } {
     const room = this.room();
-    if (!room) return { text: `Into the ${nameOf(this.c.b)} — your shift's behind the counter`, sub: 'E at the door' };
-    if (this.carry) return { text: `Take the ${this.carry.item.name.toLowerCase()} to ${this.carry.p.name}`, sub: 'Face them, E' };
+    if (!room) return { text: `Into the ${nameOf(this.c.b)} — your shift's behind the counter`, sub: '{interact} at the door' };
+    if (this.carry) return { text: `Take the ${this.carry.item.name.toLowerCase()} to ${this.carry.p.name}`, sub: 'Face them, {interact}' };
     if (this.prep) return { text: `Making ${this.prep.p.name}'s order`, sub: 'At the counter', k: this.prep.w.k };
     const ordered = [...this.orders].filter(([, o]) => o.state === 'ordered');
     if (ordered.length) return { text: `Make ${ordered[0][0].name}'s ${ordered[0][1].item!.name.toLowerCase()}`, sub: `At the counter · ${ordered.length} order${ordered.length > 1 ? 's' : ''} waiting`, k: 1 - Math.min(1, (performance.now() - ordered[0][1].at) / (PATIENCE * 1000)) };
     const waiting = [...this.orders].filter(([, o]) => o.state === 'wait');
-    if (waiting.length) return { text: `${waiting.length} customer${waiting.length > 1 ? 's' : ''} to serve`, sub: 'Face them, E to take the order' };
+    if (waiting.length) return { text: `${waiting.length} customer${waiting.length > 1 ? 's' : ''} to serve`, sub: 'Face them, {interact} to take the order' };
     return { text: 'Quiet in here', sub: this.count ? `${this.count} served so far · customers come and go with the hour` : 'Customers come and go with the hour' };
   }
   marker(): { x: number; y: number; z: number; icon: string } | null {
@@ -534,7 +534,7 @@ export class ReporterJob implements Job {
     const s = this.story, f = this.c.f;
     if (!s || !s.filmed) return null;
     const d = doorM(this.c.b);
-    return stoppedNear(f, d.x, d.z, 14) ? { text: '<b>E</b> file the story for the next bulletin', act: () => this.file() } : null;
+    return stoppedNear(f, d.x, d.z, 14) ? { text: '<b>{interact}</b> file the story for the next bulletin', act: () => this.file() } : null;
   }
   objective(): { text: string; sub?: string; k?: number } {
     const s = this.story, f = this.c.f;

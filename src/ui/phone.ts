@@ -15,6 +15,7 @@ import { distLabel } from '../player/gps';
 import type { Wallet } from '../player/wallet';
 import type { Vehicle } from '../player/fleet';
 import { icon, splitLead } from './hud';
+import { keys } from '../input/input';
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: unknown) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -143,8 +144,8 @@ export class Phone {
       case 'camera': body.innerHTML = head('Camera') + `<div class="ph-scroll">${this.cameraHtml()}</div>`; break;
       case 'garage': body.innerHTML = head('Garage') + `<div class="ph-scroll">${this.garageHtml()}</div>`; break;
       case 'contacts': body.innerHTML = head('Contacts') + `<div class="ph-scroll">${this.contactsHtml()}</div>`; break;
-      case 'ride': body.innerHTML = head('Ride') + `<div class="ph-scroll">${this.rideHtml()}</div>`; break;
-      case 'jobs': body.innerHTML = head('Jobs') + `<div class="ph-scroll">${this.jobsHtml()}</div>`; break;
+      case 'ride': body.innerHTML = head('Ride') + `<div class="ph-scroll">${keys(this.rideHtml())}</div>`; break;
+      case 'jobs': body.innerHTML = head('Jobs') + `<div class="ph-scroll">${keys(this.jobsHtml())}</div>`; break;
     }
     if (this.app === 'jobs') {
       body.querySelector('#ph-clockoff')?.addEventListener('click', () => { this.api.jobs.end(); this.render(); });
@@ -223,7 +224,7 @@ export class Phone {
     h += `<h2>Timetables</h2>${tt.length ? tt.map((t) => `<div class="save-slot"><span class="slot-name">${esc(t.title)}<small>${esc(t.sub)}</small></span></div>`).join('') : '<p class="note">No buses, trains or ferries run yet.</p>'}`;
     const trips = r.trips();
     h += `<h2>Trips off the map</h2>${trips.map((t, i) => `<div class="save-slot"><span class="slot-name">${esc(t.title)}<small>${esc(t.sub)}</small></span>${t.go ? `<button data-trip="${i}">${icon('pin')}</button>` : ''}</div>`).join('')}`;
-    h += '<p class="note">At a stop, a station, a dock, a rank, the airport or a heliport, <b>F</b> shows what leaves from there.</p>';
+    h += '<p class="note">At a stop, a station, a dock, a rank, the airport or a heliport, <b>{vehicle}</b> shows what leaves from there.</p>';
     return h;
   }
 

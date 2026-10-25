@@ -80,8 +80,13 @@ export const Game = {
     this.resetAll();
     World.genStarterMap(seed);
     Weather.init();
+    this.fairStart();
     this.ensureLodge();
     this.afterMapEdit();
+  },
+  /** V2 (Milestone 7): a new village's first morning is fair, so the founding can be seen (a loaded save keeps its own weather) */
+  fairStart(): void {
+    Object.assign(Weather, { kind: 'clear', target: 0, intensity: 0, nextChange: 300 + Math.random() * 120 });
   },
 
   resetAll(): void {
@@ -104,6 +109,7 @@ export const Game = {
     World.genStarterMap(seed);
     this.resetAll();
     Weather.init();
+    this.fairStart();
     World.name = (name || 'PixelVille').slice(0, 24);
     this.ensureLodge();
     this.founderHooks?.set(null);
@@ -115,7 +121,7 @@ export const Game = {
       this.toast(`🎯 Scenario: ${def.name} — ${def.desc}. Good luck!`);
     }
     this.afterMapEdit();
-    this.toast(`New land discovered 🗺️ — open the Planner (P) and drop a house to found ${World.name}!`);
+    this.toast(`New land discovered 🗺️ — open the Planner ({planner}) and drop a house to found ${World.name}!`);
   },
 
   /** The Founder's Lodge: the player's home base beside the west highway. */

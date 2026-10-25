@@ -172,7 +172,7 @@ export class TrainJob implements Job {
   line(): Act | null {
     if (!this.tr) return null;
     const speed = kmh(this.v * TM);
-    return { text: this.dwell > 0 ? `🚆 Doors open — passengers boarding · ${Math.ceil(this.dwell)} s` : `🚆 <b>W</b> power · <b>S</b> brake · ${speed} km/h`, act: () => {} };
+    return { text: this.dwell > 0 ? `🚆 Doors open — passengers boarding · ${Math.ceil(this.dwell)} s` : `🚆 <b>{forward}</b> power · <b>{back}</b> brake · ${speed} km/h`, act: () => {} };
   }
   interaction(): Act | null { return null; }
   objective(): { text: string; sub?: string; k?: number } {
@@ -264,7 +264,7 @@ export class PilotJob implements Job {
       p.vs = 0;
       p.alt = 0;
       p.roll *= 0.9;
-      if (this.phase === 'roll' && p.v > ROTATE && ctl.pitch > 0.2) { this.phase = 'climb'; p.vs = 3; this.c.toast('✈️ Wheels up — climb out (E), A/D to turn'); }
+      if (this.phase === 'roll' && p.v > ROTATE && ctl.pitch > 0.2) { this.phase = 'climb'; p.vs = 3; this.c.toast('✈️ Wheels up — climb out ({climb}), {left}/{right} to turn'); }
       if (this.phase === 'rollout' && p.v < 2) this.landed();
     } else {
       p.thr = Math.max(0, Math.min(1, p.thr + (ctl.gas - ctl.brake) * dt * 0.5));
@@ -376,20 +376,20 @@ export class PilotJob implements Job {
     const r = this.runway();
     Object.assign(this.pl, { x: r.x0 - 1100, z: r.y, alt: 120, yaw: Math.PI / 2, v: 66, vs: -1, thr: 0.42, roll: 0 });
     this.phase = 'approach';
-    this.c.toast(`✈️ Back over ${World.name}: the runway is dead ahead — ease down (Q), throttle back (S), and land her gently`);
+    this.c.toast(`✈️ Back over ${World.name}: the runway is dead ahead — ease down ({descend}), throttle back ({back}), and land her gently`);
   }
 
   line(): Act | null {
     const p = this.pl;
-    if (this.phase === 'gate') return { text: `✈️ At the stand · <b>E</b> fly the next flight, to ${this.dest.name}`, act: () => this.toRunway() };
-    const keys = this.phase === 'rollout' ? '<b>S</b> brake' : this.phase === 'roll' ? '<b>W</b>/<b>S</b> throttle · <b>E</b> nose up' : '<b>E</b>/<b>Q</b> climb, descend · <b>A</b>/<b>D</b> turn · <b>W</b>/<b>S</b> throttle';
+    if (this.phase === 'gate') return { text: `✈️ At the stand · <b>{interact}</b> fly the next flight, to ${this.dest.name}`, act: () => this.toRunway() };
+    const keys = this.phase === 'rollout' ? '<b>{back}</b> brake' : this.phase === 'roll' ? '<b>{forward}</b>/<b>{back}</b> throttle · <b>{climb}</b> nose up' : '<b>{climb}</b>/<b>{descend}</b> climb, descend · <b>{left}</b>/<b>{right}</b> turn · <b>{forward}</b>/<b>{back}</b> throttle';
     return { text: `✈️ ${kmh(p.v)} km/h · ${Math.round(p.alt)} m · throttle ${Math.round(p.thr * 100)}% · ${keys}`, act: () => {} };
   }
   interaction(): Act | null { return null; }
   objective(): { text: string; sub?: string; k?: number } {
     const p = this.pl, r = this.runway();
     switch (this.phase) {
-      case 'roll': return { text: `Take off for ${this.dest.name}`, sub: `${kmh(p.v)} km/h · throttle up (W); at ${kmh(ROTATE)} km/h lift the nose (E)`, k: Math.min(1, p.v / ROTATE) };
+      case 'roll': return { text: `Take off for ${this.dest.name}`, sub: `${kmh(p.v)} km/h · throttle up ({forward}); at ${kmh(ROTATE)} km/h lift the nose ({climb})`, k: Math.min(1, p.v / ROTATE) };
       case 'climb': return { text: 'Climb out', sub: `${Math.round(p.alt)} m · keep the speed up` };
       case 'out': {
         const edge = Math.min(p.x, p.z, GW * TM - p.x, GH * TM - p.z);

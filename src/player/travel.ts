@@ -413,8 +413,8 @@ export class Travel {
   interaction(): { text: string; act: () => void; alt?: { text: string; act: () => void } } | null {
     const t = this.trip;
     if (!t || t.phase !== 'board') return null;
-    if (t.mode === 'rail') return { text: `🚆 Waiting for the Intercity Express to ${t.c.name} (leaves ${hhmm(Gateways.nextDeparture())}) · <b>F</b> don't go`, act: () => this.cancel() };
-    if (t.mode === 'air') return { text: `✈️ Checked in for the ${hhmm(t.flightAt)} to ${t.c.name} · <b>E</b> wait at the gate until boarding · <b>F</b> don't go`, act: () => this.cancel(), alt: { text: '', act: () => this.gateWait() } };
+    if (t.mode === 'rail') return { text: `🚆 Waiting for the Intercity Express to ${t.c.name} (leaves ${hhmm(Gateways.nextDeparture())}) · <b>{vehicle}</b> don't go`, act: () => this.cancel() };
+    if (t.mode === 'air') return { text: `✈️ Checked in for the ${hhmm(t.flightAt)} to ${t.c.name} · <b>{interact}</b> wait at the gate until boarding · <b>{vehicle}</b> don't go`, act: () => this.cancel(), alt: { text: '', act: () => this.gateWait() } };
     return null;
   }
   /** wait at the gate: the time passes until the flight is called, then off you go */

@@ -21,6 +21,17 @@ export const Settings: any = {
     invertY: false,
     fov: 70,              // street-level field of view (degrees)
     firstPerson: false,   // start in first-person instead of third
+    // V2 (Milestone 7): performance, controls and accessibility (this browser's, not the village's)
+    resScale: 'auto',     // auto (dynamic) | 1 | 0.85 | 0.7 | 0.55
+    fpsCap: 0,            // 0 = uncapped | 30
+    keys: {},             // the player's own key bindings over the defaults (src/input/input.ts)
+    uiScale: 1,           // interface size
+    subtitles: 'speech',  // off | speech | all (speech and sound captions)
+    colorVision: 'standard', // standard | redgreen | blueyellow
+    shake: true,          // camera shake
+    headBob: true,        // first-person head bob
+    calm: false,          // reduce motion
+    tourDone: false,      // the first-day guide has been seen (or skipped)
   },
 
   load() {

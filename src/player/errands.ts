@@ -215,7 +215,7 @@ export class Errands {
     if (!d || f.driving) return null;
     if (!d.following && Math.hypot(d.x - f.pos.x, d.z - f.pos.z) < 2.6) {
       return {
-        text: `<b>E</b> call ${d.name} over`,
+        text: `<b>{interact}</b> call ${d.name} over`,
         act: () => {
           d.following = true;
           this.gps.set(d.home.door.x * TM + 4, d.home.door.y * TM + 4, `The ${d.fam}' home`);
@@ -225,7 +225,7 @@ export class Errands {
     }
     const hx = d.home.door.x * TM + 4, hz = d.home.door.y * TM + 4;
     if (d.following && Math.hypot(hx - f.pos.x, hz - f.pos.z) < 9) {
-      return { text: `<b>E</b> return ${d.name} to the ${d.fam}`, act: () => this.returnDog() };
+      return { text: `<b>{interact}</b> return ${d.name} to the ${d.fam}`, act: () => this.returnDog() };
     }
     return null;
   }

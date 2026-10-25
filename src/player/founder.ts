@@ -800,7 +800,10 @@ export class Founder {
     head.intensity = this.driving || night > 0.3 ? 30 * night : 0;
     const aboard = this.passenger;
     if (this.firstPerson && !this.driving && !aboard) {
-      cam.position.set(this.pos.x, this.pos.y + 1.65, this.pos.z);
+      // V2 (Milestone 7): a gentle head bob while walking (Settings → Accessibility turns it off)
+      const k = this.bobK += ((Settings.get('headBob') !== false && this.onGround ? Math.min(1, this.speedKmh / 12) : 0) - this.bobK) * Math.min(1, dt * 6);
+      const sway = Math.cos(this.phase) * 0.02 * k;
+      cam.position.set(this.pos.x - Math.cos(this.camYaw) * sway, this.pos.y + 1.65 + Math.sin(this.phase * 2) * 0.03 * k, this.pos.z + Math.sin(this.camYaw) * sway);
       const look = new THREE.Vector3(Math.sin(this.camYaw) * Math.cos(this.camPitch), Math.sin(this.camPitch), Math.cos(this.camYaw) * Math.cos(this.camPitch));
       cam.lookAt(cam.position.clone().add(look));
       this.yaw = this.camYaw;
@@ -841,6 +844,7 @@ export class Founder {
     cam.lookAt(target);
   }
   private camLift = 0;
+  private bobK = 0;
 
   /** how far the camera can travel from o along unit d (up to len) before touching ground or a building */
   private camReach(o: THREE.Vector3, d: THREE.Vector3, len: number): number {

@@ -4,6 +4,7 @@
    world (wind, rain, crickets, birdsong); the sim's `sound`
    events trigger the jingles. V2 adds a car engine hum.
    ============================================================ */
+import { Subs } from '../ui/access';
 import { Settings } from '../sim/settings';
 import { Weather } from '../sim/weather';
 import { on } from '../sim/core';
@@ -152,15 +153,18 @@ class Sound {
     for (let i = 0; i < n; i++) this.tone(2300 + Math.random() * 700, 1800 + Math.random() * 300, 0.07, 0.035, 'sine', i * 0.11);
   }
   place(): void { this.tone(150, 90, 0.1, 0.16, 'sine'); this.noise(0.06, 0.08, 900); }
-  crunch(): void { this.noise(0.16, 0.14, 450); this.tone(90, 55, 0.14, 0.1, 'triangle'); }
+  crunch(): void { this.noise(0.16, 0.14, 450); this.tone(90, 55, 0.14, 0.1, 'triangle'); Subs.sound('crunch', 'Crash!'); }
   bell(): void {
+    Subs.sound('bell', 'Church bells ring', 20000);
     for (let s = 0; s < 2; s++) for (const [f, p] of [[523, 0.09], [784, 0.05], [1046, 0.03]]) this.tone(f, null, 1.6, p, 'sine', s * 1.1);
   }
   thunder(): void {
+    Subs.sound('thunder', 'Thunder rumbles', 8000);
     this.noise(1.6, 0.3, 130, 'lowpass', 0.25 + Math.random() * 0.6);
     this.noise(0.9, 0.16, 70, 'lowpass', 1.1 + Math.random() * 0.4);
   }
   siren(): void {
+    Subs.sound('siren', 'Sirens', 10000);
     for (let i = 0; i < 3; i++) {
       this.tone(700, null, 0.13, 0.045, 'triangle', i * 0.26);
       this.tone(950, null, 0.13, 0.045, 'triangle', i * 0.26 + 0.13);
@@ -170,6 +174,7 @@ class Sound {
   /** a car horn, `k` 0..1 for how near it is */
   horn(k = 1): void {
     const p = 0.045 * k;
+    if (k > 0.35) Subs.sound('horn', 'A horn sounds');
     this.tone(415, null, 0.34, p, 'square');
     this.tone(523, null, 0.34, p * 0.8, 'square');
   }
@@ -184,10 +189,12 @@ class Sound {
     this.noise(0.05, 0.03, 3200, 'highpass', 0.02);
   }
   fanfare(): void {
+    Subs.sound('fanfare', 'A fanfare plays', 10000);
     [523, 659, 784, 1046].forEach((f, i) => this.tone(f, null, 0.28, 0.06, 'triangle', i * 0.14));
     this.tone(1046, null, 0.65, 0.05, 'sine', 0.62);
   }
   pop(): void {
+    Subs.sound('pop', 'Fireworks', 8000);
     this.noise(0.1, 0.12, 1200, 'highpass');
     for (let i = 0; i < 4; i++) this.noise(0.04, 0.05, 2600, 'highpass', 0.12 + i * 0.07 + Math.random() * 0.05);
   }

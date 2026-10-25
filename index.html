@@ -142,6 +142,7 @@
       <div id="crosshair"></div>
       <div id="info" class="glass"></div>
       <div id="toasts"></div>
+      <div id="subs" aria-live="polite"></div>
       <div id="wanted" class="glass" title="Wanted — stay out of sight and a star drops"><span id="stars"></span><i class="gauge"><b id="escape"></b></i></div>
       <!-- Milestone 6: the shift you're working, and the marker over what to do next -->
       <div id="shift" class="glass">
@@ -192,26 +193,60 @@
       </div>
     </div>
 
+    <!-- Milestone 7: the first-day guide, and the ring round what it means -->
+    <div id="tour" class="glass" role="dialog" aria-live="polite">
+      <div class="tr-head"><span id="tour-step"></span><span id="tour-dots"></span><button id="tour-skip">Skip the guide</button></div>
+      <b id="tour-title"></b>
+      <p id="tour-text"></p>
+      <button id="tour-btn" class="primary"></button>
+    </div>
+    <div id="tour-ring"></div>
+
     <div id="modals">
       <div id="settings" class="modal"><div class="modal-card glass">
         <header class="m-head"><h1>Settings</h1><button class="ib" data-close="settings" title="Close"><svg><use href="#i-close" /></svg></button></header>
-        <h2>Village</h2>
-        <div class="set-row"><label for="set-name">Name</label><input id="set-name" maxlength="24" spellcheck="false" /></div>
-        <div class="set-row"><label for="set-pace">Growth pace</label><select id="set-pace">
-          <option value="cozy">Cozy — slow and steady</option><option value="normal">Normal</option><option value="bustling">Bustling — fast growth</option></select></div>
-        <div class="set-row"><label for="set-xmas">Christmas fast-forward lock</label><select id="set-xmas">
-          <option value="eve">Only Christmas Eve &amp; Day</option><option value="season">The whole festive week</option><option value="off">Never lock</option></select></div>
-        <div class="set-row"><label for="set-autosave">Autosave</label><select id="set-autosave">
-          <option value="2">Every 2 minutes</option><option value="5">Every 5 minutes</option><option value="0">Off</option></select></div>
-        <h2>Graphics &amp; view</h2>
-        <div class="set-row"><label for="set-quality">Quality</label><select id="set-quality">
-          <option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
-        <div class="set-row"><label for="set-fov">Field of view</label><input id="set-fov" type="range" min="55" max="95" step="1" /></div>
-        <h2>Controls &amp; sound</h2>
-        <div class="set-row"><label for="set-sens">Look sensitivity</label><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" /></div>
-        <div class="set-row"><label for="set-invert">Invert look up/down</label><input id="set-invert" type="checkbox" class="toggle" /></div>
-        <div class="set-row"><label for="set-vol">Volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" /></div>
-        <p class="note">Graphics quality applies after a reload.</p>
+        <div id="set-tabs" class="seg"><button data-pane="village" class="on">Village</button><button data-pane="graphics">Graphics</button><button data-pane="controls">Controls</button><button data-pane="access">Accessibility</button></div>
+        <section class="set-pane on" data-pane="village">
+          <div class="set-row"><label for="set-name">Name</label><input id="set-name" maxlength="24" spellcheck="false" /></div>
+          <div class="set-row"><label for="set-pace">Growth pace</label><select id="set-pace">
+            <option value="cozy">Cozy — slow and steady</option><option value="normal">Normal</option><option value="bustling">Bustling — fast growth</option></select></div>
+          <div class="set-row"><label for="set-xmas">Christmas fast-forward lock</label><select id="set-xmas">
+            <option value="eve">Only Christmas Eve &amp; Day</option><option value="season">The whole festive week</option><option value="off">Never lock</option></select></div>
+          <div class="set-row"><label for="set-autosave">Autosave</label><select id="set-autosave">
+            <option value="2">Every 2 minutes</option><option value="5">Every 5 minutes</option><option value="0">Off</option></select></div>
+          <div class="set-row"><label for="set-vol">Volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" /></div>
+          <div class="set-row"><label>First-day guide</label><button id="set-tour">Show me around again</button></div>
+        </section>
+        <section class="set-pane" data-pane="graphics">
+          <div class="set-row"><label for="set-quality">Quality</label><select id="set-quality">
+            <option value="auto">Auto (picked for this device)</option><option value="low">Low — phones, older laptops</option><option value="medium">Medium — laptops</option><option value="high">High — gaming PCs</option></select></div>
+          <div class="set-row"><label for="set-res">Resolution</label><select id="set-res">
+            <option value="auto">Auto — lowers itself to keep the game smooth</option><option value="1">Full</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.55">55%</option></select></div>
+          <div class="set-row"><label for="set-fps">Frame rate</label><select id="set-fps">
+            <option value="0">As fast as it goes</option><option value="30">30 fps — saves battery</option></select></div>
+          <div class="set-row"><label for="set-fov">Field of view</label><input id="set-fov" type="range" min="55" max="95" step="1" /></div>
+          <p class="note" id="set-gfx-note">Quality applies after a reload; the rest at once.</p>
+        </section>
+        <section class="set-pane" data-pane="controls">
+          <div class="set-row"><label for="set-sens">Look sensitivity</label><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" /></div>
+          <div class="set-row"><label for="set-invert">Invert look up/down</label><input id="set-invert" type="checkbox" class="toggle" /></div>
+          <h2>Keys <small>click one, then press the new key · Esc cancels</small></h2>
+          <div id="set-keys"></div>
+          <div class="row-end split"><span class="note" id="set-keys-note"></span><button id="set-keys-reset">Reset to the defaults</button></div>
+          <p class="note">A gamepad works as it is: sticks to move and look, <kbd>A</kbd> jump, <kbd>X</kbd> use, <kbd>Y</kbd> vehicle, triggers to drive, <kbd>View</kbd> phone, <kbd>Menu</kbd> Planner, and the d-pad and <kbd>A</kbd> through every menu (<kbd>B</kbd> backs out).</p>
+        </section>
+        <section class="set-pane" data-pane="access">
+          <div class="set-row"><label for="set-ui">Interface size</label><select id="set-ui">
+            <option value="0.85">Compact</option><option value="1">Standard</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></div>
+          <div class="set-row"><label for="set-subs">Subtitles</label><select id="set-subs">
+            <option value="off">Off</option><option value="speech">What people say in the street</option><option value="all">Speech and sounds (horns, sirens, thunder…)</option></select></div>
+          <div class="set-row"><label for="set-cv">Colour vision</label><select id="set-cv">
+            <option value="standard">Standard</option><option value="redgreen">Red–green safe (blue and orange)</option><option value="blueyellow">Blue–yellow safe (teal and pink)</option></select></div>
+          <div class="set-row"><label for="set-shake">Camera shake (earthquakes, crashes)</label><input id="set-shake" type="checkbox" class="toggle" /></div>
+          <div class="set-row"><label for="set-bob">Head bob when walking in first person</label><input id="set-bob" type="checkbox" class="toggle" /></div>
+          <div class="set-row"><label for="set-calm">Reduce motion (no flashes, sliding panels or scrolling ticker)</label><input id="set-calm" type="checkbox" class="toggle" /></div>
+          <p class="note">Motion sickness? A wider field of view (Graphics) and turning off head bob and camera shake usually help.</p>
+        </section>
         <div class="row-end"><button class="primary" data-close="settings">Done</button></div>
       </div></div>
 
@@ -267,21 +302,21 @@
         <p class="lede">You are <b>the Founder</b>: walk your village at street level, drive its roads, and rise into the sky to build. <b>The village figures out the rest</b>: families move in, find work, fall in love, vote, gossip and remember.</p>
         <div class="help-grid">
           <div><h3>On the street</h3>
-            <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look (click the view first)<br />
-            <kbd>V</kbd> first or third person · <kbd>E</kbd> a building or villager nearby<br />
-            <kbd>F</kbd> into or out of your car (parked at the Lodge) · <kbd>W</kbd>/<kbd>S</kbd> gas and brake · <kbd>Space</kbd> handbrake<br />
-            <kbd>Tab</kbd> your phone: map and directions, wallet, news, tasks, camera<br />
-            <kbd>F2</kbd> photo mode: the world pauses, the camera flies free (lens, focus, looks, another hour or weather); <kbd>Enter</kbd> saves a PNG</p></div>
+            <p><kbd data-k="forward">W</kbd><kbd data-k="left">A</kbd><kbd data-k="back">S</kbd><kbd data-k="right">D</kbd> move · <kbd data-k="run">Shift</kbd> run · <kbd data-k="jump">Space</kbd> jump · mouse to look (click the view first)<br />
+            <kbd data-k="camera">V</kbd> first or third person · <kbd data-k="interact">E</kbd> a building or villager nearby<br />
+            <kbd data-k="vehicle">F</kbd> into or out of your car (parked at the Lodge) · <kbd data-k="forward">W</kbd>/<kbd data-k="back">S</kbd> gas and brake · <kbd data-k="jump">Space</kbd> handbrake<br />
+            <kbd data-k="phone">Tab</kbd> your phone: map and directions, wallet, news, tasks, camera<br />
+            <kbd data-k="photo">F2</kbd> photo mode: the world pauses, the camera flies free (lens, focus, looks, another hour or weather); <kbd>Enter</kbd> saves a PNG</p></div>
           <div><h3>The Planner</h3>
-            <p><kbd>P</kbd> rise into the Planner and back down · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> glide · wheel zoom · <kbd>Q</kbd>/<kbd>E</kbd> or right-drag to rotate<br />
-            Pick from the palette and click to place · <kbd>R</kbd> turns the door side · drag roads, rails, rivers and the bulldozer<br />
-            Click any building or villager to inspect · right-click or <kbd>Esc</kbd> cancels · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · up to 8× speed</p></div>
+            <p><kbd data-k="planner">P</kbd> rise into the Planner and back down · <kbd data-k="forward">W</kbd><kbd data-k="left">A</kbd><kbd data-k="back">S</kbd><kbd data-k="right">D</kbd> glide · wheel zoom · <kbd data-k="descend">Q</kbd>/<kbd data-k="climb">E</kbd> or right-drag to rotate<br />
+            Pick from the palette and click to place · <kbd data-k="rotate">R</kbd> turns the door side · drag roads, rails, rivers and the bulldozer<br />
+            Click any building or villager to inspect · right-click or <kbd>Esc</kbd> cancels · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · up to 8× speed · Settings → Controls changes any key</p></div>
           <div><h3>Gamepad and touch</h3>
-            <p>Sticks move and look · A jump · X interact · Y car · R3 camera · Start Planner · triggers drive.<br />
-            On phones: left thumb moves, right thumb looks, buttons for the rest. In the Planner, drag to pan and pinch to zoom.</p></div>
+            <p>Sticks move and look · <kbd>A</kbd> jump · <kbd>X</kbd> use · <kbd>Y</kbd> vehicle · <kbd>R3</kbd> camera · <kbd>LB</kbd> photo · <kbd>View</kbd> phone · <kbd>Menu</kbd> Planner · triggers drive. In any menu the d-pad moves, <kbd>A</kbd> presses, <kbd>B</kbd> backs out. In the Planner the ring in the middle is your cursor: <kbd>A</kbd> places, <kbd>LB</kbd> turns the palette's tabs, <kbd>X</kbd> pauses.<br />
+            On phones: left thumb moves, right thumb looks, buttons for the rest (▲▼ climb and descend on the flight deck). In the Planner, drag to pan and pinch to zoom.</p></div>
           <div><h3>Work shifts</h3>
             <p>The phone's <b>Jobs</b> app (or a workplace's card) starts a shift: firefighter, police, paramedic, taxi, bus, delivery, train driver, pilot, electrician, builder, shop or café, PVTV reporter, farmer.<br />
-            The card top left says what to do; a tag marks where. <kbd>E</kbd> does the work, <kbd>F</kbd> takes the work vehicle. In a cab or a cockpit: <kbd>W</kbd>/<kbd>S</kbd> power and brake, <kbd>E</kbd>/<kbd>Q</kbd> climb and descend. Clock off for your pay.</p></div>
+            The card top left says what to do; a tag marks where. <kbd data-k="interact">E</kbd> does the work, <kbd data-k="vehicle">F</kbd> takes the work vehicle. In a cab or a cockpit: <kbd data-k="forward">W</kbd>/<kbd data-k="back">S</kbd> power and brake, <kbd data-k="climb">E</kbd>/<kbd data-k="descend">Q</kbd> climb and descend. Clock off for your pay.</p></div>
           <div><h3>Getting started</h3>
             <p>Open the Planner and drop a <b>house</b> near the highway: a road connects itself and the first family moves in. Add jobs, shops and a school, then come back down and watch the morning commute.</p></div>
         </div>

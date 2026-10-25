@@ -17,7 +17,10 @@ import { BuildingLayer, yieldFrame } from './render/buildings';
 import { Actors } from './render/actors';
 import { Founder } from './player/founder';
 import { Planner } from './player/planner';
-import { Input } from './input/input';
+import { Input, keys } from './input/input';
+import { PadNav } from './input/padnav';
+import { Tour } from './ui/tour';
+import { applyAccess } from './ui/access';
 import { Hud } from './ui/hud';
 import { Panels } from './ui/panels';
 import { initTouch } from './ui/touch';
@@ -60,10 +63,18 @@ import { ShiftPanel } from './ui/shiftpanel';
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
 const TM = 8;
-const WASD = '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>';
+const WASD = '<kbd>{forward}</kbd><kbd>{left}</kbd><kbd>{back}</kbd><kbd>{right}</kbd>';
+/** the interaction prompt, its `{action}` tokens named for the device in use (rewritten only when it changes) */
+function showPrompt(el: HTMLElement, html: string): void {
+  const h = keys(html);
+  if (el.dataset.h !== h) { el.dataset.h = h; el.innerHTML = h; }
+  el.style.display = h ? 'block' : 'none';
+}
 
 /* ---------- the world ---------- */
 Game.boot();
+Input.loadBinds(); // (the player's own keys, now the settings are loaded)
+applyAccess();
 const stage = new Stage(canvas);
 const terrain = new Terrain(stage.scene, stage.profile);
 stage.waterUpdate = (r, s, c, ambient, reflect) => terrain.water.update(r, s, c, ambient, reflect, terrain.ice);
@@ -133,8 +144,14 @@ const panels = new Panels({
     ...motoring.buildingActions(b),
     ...shiftActions(b),
   ],
-  afterLoad: () => { buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); wanted.reset(); },
+  afterLoad: () => {
+    buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); wanted.reset();
+    // Milestone 7: a brand-new village for someone who hasn't had the guide yet
+    if (!Settings.get('tourDone') && World.buildings.length <= 2 && !tour.active) tour.start();
+  },
   isPlanner: inPlanner,
+  settingsChanged: () => applyAccess(),
+  startTour: () => { Settings.set('tourDone', false); tour.start(); },
 });
 // (hud.toast's third argument means "already logged": personal moments stay out of the village news)
 const personalToast = (m: string, at?: { x: number; y: number }, news?: boolean): void => hud.toast(m, at, !news);
@@ -219,6 +236,7 @@ const dialogue = new Dialogue({
   release: () => Input.releaseLock(),
   onStart: (p, onPhone) => {
     document.body.classList.add('talking');
+    tour.saw('talk');
     // someone in the street stops to talk; someone inside turns to face you
     if (!indoors.active && !onPhone && p.state === 'walk' && p.trip) p.freezeT = Math.max(p.freezeT || 0, 600);
     if (indoors.active) indoors.talkingTo = indoors.people.find((o) => o.p === p) ?? null;
@@ -280,14 +298,12 @@ function indoorInteractions(): void {
   // Milestone 6: on shift behind the counter, E takes orders and serves
   const job = shifts.interaction();
   if (job) {
-    prompt.innerHTML = job.text;
-    prompt.style.display = 'block';
+    showPrompt(prompt, job.text);
     if (Input.take('interact')) job.act();
     return;
   }
   const u = indoors.use();
-  prompt.innerHTML = u?.text || '';
-  prompt.style.display = u ? 'block' : 'none';
+  showPrompt(prompt, u?.text || '');
   if (!u || !Input.take('interact')) return;
   if (u.kind === 'person') { dialogue.start(u.who.p, { building: indoors.b }); return; }
   const s = u.spot;
@@ -349,11 +365,9 @@ let lastPhotoSync = 0;
 function photoFrame(now: number, dt: number): void {
   if (Input.take('cancel') || Input.take('photo')) { leavePhoto(); return; }
   if (Input.take('hide')) photoPanel.toggle();
-  if (Input.take('shoot')) shotWanted = true;
+  if (Input.take('shoot') || (Input.device === 'pad' && Input.take('jump'))) shotWanted = true;
   Input.dragLook = true;
-  const k = Input.keys;
-  const rise = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
-  photo.fly(dt, Input.move(), rise, Input.look(Settings.get('mouseSens') || 1, !!Settings.get('invertY')), Input.running(), Input.wheel);
+  photo.fly(dt, Input.move(), Input.rise(), Input.look(Settings.get('mouseSens') || 1, !!Settings.get('invertY')), Input.running(), Input.wheel);
   photo.pose(stage.camera);
   stage.update(dt, photo.focusPoint(focus), terrain.lampSpots);
   photo.dress(stage.camera);
@@ -508,8 +522,23 @@ const phone = new Phone({
 });
 const togglePhone = (): void => {
   phone.toggle();
-  if (phone.open) Input.releaseLock();
+  if (phone.open) { Input.releaseLock(); tour.saw('phone'); }
 };
+
+/* ---------- Milestone 7: the first day, with a guide ---------- */
+const tour = new Tour({
+  planner: () => inPlanner(),
+  founder: () => ({ x: founder.pos.x, z: founder.pos.z, yaw: founder.camYaw }),
+  talking: () => dialogue.open,
+  phoneOpen: () => phone.open,
+  palette: (cat) => hud.showCategory(cat),
+  findFamily: () => {
+    const p = Sim.people.find((q: any) => q.home && q.state !== 'away');
+    if (p) { findVillager(p); hud.toast(`🧭 ${p.name} ${p.surname} — follow the arrows`, undefined, true); }
+    else hud.toast('🏠 Nobody has moved in yet', undefined, true);
+  },
+  toast: (m) => hud.toast(m, undefined, true),
+});
 gps.onArrive = (d) => hud.toast(`🧭 You've arrived: ${d.label}`, undefined, true);
 gps.onChange = () => document.body.classList.toggle('gps', !!gps.dest);
 $('gps-stop').addEventListener('click', () => gps.clear());
@@ -532,7 +561,7 @@ actors.extra = (a) => {
 };
 planner.onBuilding = (b) => panels.showInfo(b);
 planner.onPerson = (p) => panels.showPerson(p);
-planner.onToolChange = (k) => hud.markTool(k);
+planner.onToolChange = (k) => { hud.markTool(k); if (k && Input.device === 'pad') padNav.release(); };
 planner.onEmptyClick = () => panels.hideInfo();
 Input.attach(canvas);
 initTouch();
@@ -540,6 +569,16 @@ canvas.addEventListener('click', () => {
   // with the phone out, the mouse stays free for it
   if (!planner.active && !panels.anyModalOpen() && !phone.open && !photo.active) Input.requestLock(canvas);
 });
+
+/* ---------- Milestone 7: the gamepad through every menu (topmost first) ---------- */
+const padNav = new PadNav(() => [
+  ...[...document.querySelectorAll<HTMLElement>('#modals .modal')].map((el) => ({ el, modal: true })),
+  { el: $('tv-card'), modal: true },
+  { el: $('talk'), modal: true },
+  { el: $('phone'), modal: true },
+  { el: $('info'), modal: false },
+  { el: $('palette'), modal: false },
+]);
 
 /* ---------- the frame loop ---------- */
 let last = performance.now();
@@ -553,8 +592,7 @@ function interactions(): void {
   // Milestone 5: waiting for a bus, aboard one, a trip about to leave: that's all F does now
   const tp: { text: string; act: () => void; alt?: { act: () => void } } | null = travel.interaction() || transit.interaction();
   if (tp) {
-    prompt.innerHTML = tp.text;
-    prompt.style.display = tp.text ? 'block' : 'none';
+    showPrompt(prompt, tp.text);
     if (Input.take('vehicle')) tp.act();
     if (tp.alt && Input.take('interact')) tp.alt.act();
     return;
@@ -562,8 +600,7 @@ function interactions(): void {
   // Milestone 6: in the train's cab or on the flight deck, the job has the controls
   if (shifts.carrying()) {
     const l = shifts.line();
-    prompt.innerHTML = l?.text || '';
-    prompt.style.display = l?.text ? 'block' : 'none';
+    showPrompt(prompt, l?.text || '');
     if (l && Input.take('interact')) l.act();
     return;
   }
@@ -572,10 +609,9 @@ function interactions(): void {
   if (job) {
     if (Input.take('interact')) job.act();
     const v = founder.vehicle;
-    const f = founder.driving ? `<b>F</b> get out` : founder.nearCar() && v ? `<b>F</b> drive the ${v.name}` : '';
+    const f = founder.driving ? `<b>{vehicle}</b> get out` : founder.nearCar() && v ? `<b>{vehicle}</b> drive the ${v.name}` : '';
     if (Input.take('vehicle')) { if (founder.driving) founder.exitCar(); else if (f) founder.enterCar(); }
-    prompt.innerHTML = f ? `${job.text} &nbsp; ${f}` : job.text;
-    prompt.style.display = 'block';
+    showPrompt(prompt, f ? `${job.text} &nbsp; ${f}` : job.text);
     return;
   }
   // an errand right here (a runaway dog to call, a dog to hand back) comes first
@@ -586,13 +622,13 @@ function interactions(): void {
   } else if (founder.driving) {
     // at the pumps or the garage: fill up, get it mended
     const service = motoring.interaction();
-    text = (service ? `${service.text} &nbsp; ` : '') + `<b>F</b> get ${founder.vehicle?.kind === 'moto' ? 'off' : 'out'}`;
+    text = (service ? `${service.text} &nbsp; ` : '') + `<b>{vehicle}</b> get ${founder.vehicle?.kind === 'moto' ? 'off' : 'out'}`;
     if (service && Input.take('interact')) service.act();
     // Milestone 5: at the end of a highway, the road goes on to another town
     const c = founder.car, edge = c.x < 16 && World.isRoad(0, Math.floor(c.z / TM)) ? 'west' : c.z < 16 && World.isRoad(Math.floor(c.x / TM), 0) ? 'north' : null;
     const away = edge ? travel.roadTrip(edge) : null;
     if (away && !service && !founder.hijacked && !founder.work && wanted.stars === 0) {
-      text = `<b>E</b> drive on to ${away.name} (${hoursLabel(away.modes.road!.hours)}) &nbsp; ${text}`;
+      text = `<b>{interact}</b> drive on to ${away.name} (${hoursLabel(away.modes.road!.hours)}) &nbsp; ${text}`;
       if (Input.take('interact')) travel.start(away, 'road', null, edge);
     }
     if (Input.take('vehicle')) founder.exitCar();
@@ -623,44 +659,58 @@ function interactions(): void {
     }
     if (near?.kind === 'car') {
       const v = founder.vehicle!;
-      text = v.damage >= 100 ? `The ${v.name} is wrecked — call a tow from the phone` : `<b>F</b> ${v.kind === 'moto' ? 'ride' : 'drive'} the ${v.name}`;
+      text = v.damage >= 100 ? `The ${v.name} is wrecked — call a tow from the phone` : `<b>{vehicle}</b> ${v.kind === 'moto' ? 'ride' : 'drive'} the ${v.name}`;
       if (Input.take('vehicle') && v.damage < 100) founder.enterCar();
     } else if (near?.kind === 'left') {
       // back to the Founder's own vehicle; the stolen one stays where it was left
       const v = founder.fleet.cur!;
-      text = `<b>F</b> ${v.kind === 'moto' ? 'ride' : 'drive'} the ${v.name} (leave the stolen car)`;
+      text = `<b>{vehicle}</b> ${v.kind === 'moto' ? 'ride' : 'drive'} the ${v.name} (leave the stolen car)`;
       if (Input.take('vehicle')) { founder.dropHijacked(); if (v.damage < 100) founder.enterCar(); }
     } else if (near?.kind === 'steal') {
-      text = `<b>F</b> steal the ${family(near.ref.b.residents[0]?.surname || 'neighbour')}' car`;
+      text = `<b>{vehicle}</b> steal the ${family(near.ref.b.residents[0]?.surname || 'neighbour')}' car`;
       if (Input.take('vehicle')) wanted.steal(near.ref);
     } else if (near?.kind === 'person') {
-      text = `<b>E</b> talk to ${near.ref.name} ${near.ref.surname}`;
+      text = `<b>{interact}</b> talk to ${near.ref.name} ${near.ref.surname}`;
       if (Input.take('interact')) dialogue.start(near.ref);
     } else if (near?.kind === 'building') {
       // through the door if it's open to the Founder; otherwise the building's card
       const b = near.ref, d = CAT[b.type], why = doorState(b, householdView(b));
+      // (the eldest at home comes to the door)
+      const knock = why === 'They won\'t ask you in' ? (b.residents || []).filter((r: any) => r.state === 'in' && r.at === b).sort((p: any, q: any) => (q.age || 0) - (p.age || 0))[0] : null;
       if (why === null) {
-        text = `<b>E</b> go into ${b.type === 'lodge' ? 'the Lodge, your home' : `the ${d.name}`}`;
+        text = `<b>{interact}</b> go into ${b.type === 'lodge' ? 'the Lodge, your home' : `the ${d.name}`}`;
         if (Input.take('interact')) goIn(b);
+      } else if (knock) {
+        // Milestone 7: a home that won't ask you in yet still answers the door (that's how neighbours meet)
+        text = `<b>{interact}</b> knock at the ${family(knock.surname)}' door`;
+        if (Input.take('interact')) {
+          personalToast(`🚪 ${knock.name} ${knock.surname} comes to the door`);
+          dialogue.start(knock, { building: b });
+        }
       } else {
-        text = `<b>E</b> ${d.emoji} ${d.name}${why !== 'outdoor' ? ` — ${why}` : ''}`;
+        text = `<b>{interact}</b> ${d.emoji} ${d.name}${why !== 'outdoor' ? ` — ${why}` : ''}`;
         if (Input.take('interact')) panels.showInfo(b);
       }
       // Milestone 5: what leaves from here
       if (GATEWAYS.includes(b.type) && !b.construction && !b.ruined) {
-        text += ` &nbsp; <b>F</b> departures`;
+        text += ` &nbsp; <b>{vehicle}</b> departures`;
         if (Input.take('vehicle')) openDepartures(b);
       }
     }
   }
-  prompt.innerHTML = text;
-  prompt.style.display = text ? 'block' : 'none';
+  showPrompt(prompt, text);
 }
 
 function frame(now: number): void {
+  // Milestone 7: a 30 fps cap saves a phone's battery (the frame waits for its turn)
+  const cap = Settings.get('fpsCap') || 0;
+  if (cap && now - last < 1000 / cap - 3) { requestAnimationFrame(frame); return; }
   const dt = Math.min(0.1, (now - last) / 1000 || 0.016);
   last = now;
+  Input.padMenu = padNav.wants();
+  Input.padLayer = Input.padMenu || padNav.any();
   Input.poll();
+  padNav.update(dt);
 
   // behind the curtain (busted, wasted) the hours pass and nothing else happens
   if (scene) {
@@ -706,7 +756,15 @@ function frame(now: number): void {
     else if (!panels.closeAll() && planner.active && !planner.leaving) planner.exit();
   }
   if (Input.take('undo') && planner.active) Game.undo();
-  if (planner.active && !planner.leaving && Input.take('jump')) Game.setSpeed(Game.speedIdx === 0 ? 1 : 0);
+  if (planner.active && !planner.leaving) {
+    // a gamepad aims with the ring at the centre: A places or picks, X pauses, LB the next palette tab
+    if (Input.device === 'pad') {
+      planner.padAim();
+      if (Input.take('jump')) planner.padPress();
+      if (Input.take('interact')) Game.setSpeed(Game.speedIdx === 0 ? 1 : 0);
+      if (Input.take('photo')) hud.nextCategory();
+    } else if (Input.take('jump')) Game.setSpeed(Game.speedIdx === 0 ? 1 : 0);
+  }
   for (const [k, i] of [['Digit1', 0], ['Digit2', 1], ['Digit3', 2], ['Digit4', 3], ['Digit5', 4]] as [string, number][])
     if (planner.active && Input.keys.has(k)) Game.setSpeed(i);
 
@@ -783,6 +841,7 @@ function frame(now: number): void {
 
   const range = planner.active ? Math.min(700, planner.dist * 1.6 + 120) : 240;
   syncPowerMap(Game.mapVersion); // V2: blacked-out districts go dark in every window, sign and lantern
+  stage.autoRes(dt); // Milestone 7: the resolution setting (auto keeps the frame rate up)
   stage.update(dt, focus, terrain.lampSpots);
   if (!inside) {
     terrain.frame(stage.night, stage.camera.position);
@@ -807,6 +866,7 @@ function frame(now: number): void {
     lastHud = now;
     hud.update();
     shiftPanel.sync();
+    tour.update();
     const w = planner.active ? planner.dist * 1.6 : 0;
     hud.drawMinimap({ x: planner.active ? planner.target.x : fx, z: planner.active ? planner.target.z : fz, yaw: founder.driving ? founder.car.yaw : founder.yaw, planner: planner.active, w, h: w * 0.7, route: gps.route, dest: gps.dest });
     $('wallet').textContent = `$${Math.round(founder.wallet)}`;
@@ -852,10 +912,11 @@ function frame(now: number): void {
     }
     if (planner.active) hud.markTool(planner.tool);
     else {
-      const hint = Input.usingTouch ? 'Left thumb moves · right thumb looks'
-        : indoors.active ? `${Input.locked ? '' : 'Drag to look · '}${WASD} walk · <kbd>E</kbd> use or talk · <kbd>Tab</kbd> phone`
-        : Input.locked ? `${WASD} move · <kbd>Shift</kbd> run · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>F2</kbd> photo · <kbd>P</kbd> Planner · <kbd>Esc</kbd> frees the mouse`
-          : `Drag to look · ${WASD} move · <kbd>F</kbd> drive · <kbd>Tab</kbd> phone · <kbd>F2</kbd> photo · <kbd>P</kbd> Planner`;
+      const hint = keys(Input.device === 'touch' ? 'Left thumb moves · right thumb looks'
+        : Input.device === 'pad' ? 'L stick move · R stick look · <kbd>X</kbd> use · <kbd>Y</kbd> vehicle · <kbd>View</kbd> phone · <kbd>LB</kbd> photo · <kbd>Menu</kbd> Planner'
+        : indoors.active ? `${Input.locked ? '' : 'Drag to look · '}${WASD} walk · <kbd>{interact}</kbd> use or talk · <kbd>{phone}</kbd> phone`
+        : Input.locked ? `${WASD} move · <kbd>{run}</kbd> run · <kbd>{vehicle}</kbd> drive · <kbd>{phone}</kbd> phone · <kbd>{photo}</kbd> photo · <kbd>{planner}</kbd> Planner · <kbd>Esc</kbd> frees the mouse`
+          : `Drag to look · ${WASD} move · <kbd>{vehicle}</kbd> drive · <kbd>{phone}</kbd> phone · <kbd>{photo}</kbd> photo · <kbd>{planner}</kbd> Planner`);
       if ($('hint').innerHTML !== hint) $('hint').innerHTML = hint;
     }
   }
@@ -957,11 +1018,13 @@ async function boot(): Promise<void> {
     const l = $('loading');
     l.style.opacity = '0';
     setTimeout(() => l.remove(), 700);
-    if (resumed) hud.toast(`👋 Welcome back to ${World.name} — day ${Sim.day}, ${Sim.people.length} villagers`);
+    // Milestone 7: someone new gets the first-day guide (picked up where the village is, after a reload)
+    if (!Settings.get('tourDone')) tour.start();
+    else if (resumed) hud.toast(`👋 Welcome back to ${World.name} — day ${Sim.day}, ${Sim.people.length} villagers`);
     else panels.show('help');
   });
 }
 void boot();
 
 // debugging handle for the console
-(window as unknown as Record<string, unknown>).PV = { Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures, shifts, JOBS, Weather };
+(window as unknown as Record<string, unknown>).PV = { tour, padNav, applyAccess, Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures, shifts, JOBS, Weather };

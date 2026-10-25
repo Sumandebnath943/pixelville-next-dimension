@@ -8,6 +8,7 @@ import { Sim } from '../sim/agents';
 import { Rep } from '../sim/reputation';
 import type { Founder } from './founder';
 import type { Wanted } from './wanted';
+import { Subs } from '../ui/access';
 
 type Toast = (msg: string, at?: { x: number; y: number }, news?: boolean) => void;
 /** how close a villager has to be to notice the Founder (metres) */
@@ -40,11 +41,14 @@ export class Street {
       if (op >= 3) {
         p.bubble = op >= 7 ? '😄' : '👋';
         p.bubbleUntil = now + 2600;
-        this.say(`👋 “${this.hello()}, Founder!” — ${p.name} ${p.surname}`);
+        const hi = this.hello();
+        Subs.say(`${p.name} ${p.surname}`, `“${hi}, Founder!”`); // (Milestone 7: every word, for subtitles)
+        this.say(`👋 “${hi}, Founder!” — ${p.name} ${p.surname}`);
       } else if (op <= -3) {
         p.bubble = op <= -6 ? '😠' : '😒';
         p.bubbleUntil = now + 2600;
         p.trip.hurryT = 5; // and walks on quickly
+        if (op <= -6) Subs.say(`${p.name} ${p.surname}`, '“Hmph.”');
         this.say(op <= -6 ? `😠 ${p.name} ${p.surname} glares at you and hurries past` : `😒 ${p.name} ${p.surname} looks away and walks on quickly`);
       }
     }

@@ -115,11 +115,9 @@ const hoursText = (h: number): string => (h < 1 ? `${Math.round(h * 60)} min` : 
 /** throttle, brake, steering and the plane's pitch (E up, Q down; the right stick on a pad) */
 function readControls(): Controls {
   const { gas, brake } = Input.pedals();
-  const k = Input.keys;
-  let pitch = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
+  let pitch = Input.rise();
   const ay = Input.pad?.axes[3] || 0;
   if (Math.abs(ay) > 0.15) pitch -= ay;
-  pitch += Input.touchPitch;
   return { gas, brake, steer: Input.steer(), pitch: Math.max(-1, Math.min(1, pitch)) };
 }
 
@@ -191,7 +189,7 @@ export class Shifts {
     this.cur = { def, b, job: null as unknown as Job, v, t0: t, until: t + def.hours * 60, earned: 0, stars: 3, tasks: 0, fails: 0 };
     this.booked = null;
     this.cur.job = def.make(this.ctx(this.cur));
-    this.toast(`${def.emoji} On shift: ${def.title.toLowerCase()} at the ${CAT[b.type].name}${v ? ` — the ${v.name} is at the kerb (F)` : ''}. The phone's Jobs app clocks you off`);
+    this.toast(`${def.emoji} On shift: ${def.title.toLowerCase()} at the ${CAT[b.type].name}${v ? ` — the ${v.name} is at the kerb ({vehicle})` : ''}. The phone's Jobs app clocks you off`);
     return true;
   }
   private ctx(s: Shift): ShiftCtx {

@@ -113,7 +113,7 @@ export class Transit {
   /* ---------- waiting and boarding ---------- */
   wait(kind: Waiting['kind'], at: any, to: any | null): void {
     this.waiting = { kind, at, to };
-    this.toast(`${kind === 'bus' ? '🚏' : kind === 'train' ? '🚉' : '⚓'} Waiting at ${placeName(at)} for the ${kind === 'train' ? 'next train' : kind}${to ? ` to ${placeName(to)}` : ''} — F to stop waiting`);
+    this.toast(`${kind === 'bus' ? '🚏' : kind === 'train' ? '🚉' : '⚓'} Waiting at ${placeName(at)} for the ${kind === 'train' ? 'next train' : kind}${to ? ` to ${placeName(to)}` : ''} — {vehicle} to stop waiting`);
   }
   /** the vehicle standing at `at` right now that we can board */
   private arrived(w: Waiting): any {
@@ -167,7 +167,7 @@ export class Transit {
   private getInCab(): void {
     const c = this.cab!;
     const d = this.gps.dest;
-    if (!d) { this.toast('🧭 Where to? Pick a place on the phone\'s Map, then F to get in'); this.openMap(); return; }
+    if (!d) { this.toast('🧭 Where to? Pick a place on the phone\'s Map, then {vehicle} to get in'); this.openMap(); return; }
     const cab = c.v;
     const at = World.nearestRoad(Math.floor(cab.x / T), Math.floor(cab.y / T), 3);
     const to = World.nearestRoad(Math.floor(d.x / TM), Math.floor(d.z / TM), 6);
@@ -266,7 +266,7 @@ export class Transit {
       cab.prog += step;
       Life.followPath(cab, cab.route, Math.min(cab.prog, cab.route.length - 1), Traffic.lanePx(cab), 1);
       if (nearlyThere(cab, cab.route, step, dt)) {
-        if (c.phase === 'coming') { c.phase = 'waiting'; cab.v = 0; this.toast('🚕 Your cab is here — F to get in'); }
+        if (c.phase === 'coming') { c.phase = 'waiting'; cab.v = 0; this.toast('🚕 Your cab is here — {vehicle} to get in'); }
         else this.dropOff();
       }
     }
@@ -350,18 +350,18 @@ export class Transit {
     const c = this.cab;
     if (c && c.phase === 'waiting' && !this.aboard) {
       const d = Math.hypot(c.v.x * PX - this.founder.pos.x, c.v.y * PX - this.founder.pos.z);
-      if (d < 7) return { text: `<b>F</b> get in the cab${this.gps.dest ? ` to ${this.gps.dest.label}` : ''}`, act: () => this.getInCab() };
+      if (d < 7) return { text: `<b>{vehicle}</b> get in the cab${this.gps.dest ? ` to ${this.gps.dest.label}` : ''}`, act: () => this.getInCab() };
     }
     const a = this.aboard;
     if (a) {
       if (a.kind === 'tour') return { text: `🚁 Sightseeing over ${World.name} · drag to look around`, act: () => {} };
       if (a.kind === 'follow') return null;
       if (a.kind === 'taxi') return { text: `🚕 On the way to ${this.gps.dest?.label || 'your stop'} · about $${c?.fare ?? 0}`, act: () => {} };
-      if (a.stop) return { text: `<b>F</b> get off at ${placeName(a.stop)}`, act: () => this.alight(a.stop) };
+      if (a.stop) return { text: `<b>{vehicle}</b> get off at ${placeName(a.stop)}`, act: () => this.alight(a.stop) };
       return { text: `${a.kind === 'bus' ? '🚌 On the bus' : a.kind === 'train' ? '🚆 On the train' : '⛴️ On the ferry'}${a.to ? ` to ${placeName(a.to)}` : ' · F at a stop to get off'}`, act: () => {} };
     }
     const w = this.waiting;
-    if (w) return { text: `${w.kind === 'bus' ? '🚏' : w.kind === 'train' ? '🚉' : '⚓'} Waiting for the ${w.kind === 'train' ? 'train' : w.kind}${w.to ? ` to ${placeName(w.to)}` : ''} · <b>F</b> stop waiting`, act: () => { this.waiting = null; } };
+    if (w) return { text: `${w.kind === 'bus' ? '🚏' : w.kind === 'train' ? '🚉' : '⚓'} Waiting for the ${w.kind === 'train' ? 'train' : w.kind}${w.to ? ` to ${placeName(w.to)}` : ''} · <b>{vehicle}</b> stop waiting`, act: () => { this.waiting = null; } };
     return null;
   }
 

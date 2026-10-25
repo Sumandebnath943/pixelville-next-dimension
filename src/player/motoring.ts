@@ -146,14 +146,14 @@ export class Motoring {
     if (gas && v.fuel < 0.97 && this.within(gas, 7)) {
       const p = Rep.price(gas, Math.max(1, Math.ceil((1 - v.fuel) * sp.tank)));
       if (p.refused) return { text: "The staff at the gas station won't serve you", act: () => {} };
-      return { text: `<b>E</b> fill up · $${p.cost}${p.note ? ` (${p.note})` : ''}`, act: () => this.fillUp(v, gas, p.cost, p.rate) };
+      return { text: `<b>{interact}</b> fill up · $${p.cost}${p.note ? ` (${p.note})` : ''}`, act: () => this.fillUp(v, gas, p.cost, p.rate) };
     }
     const shop = this.nearest('autoshop', f.car.x, f.car.z);
     if (shop && (v.damage > 2 || v.flat) && this.within(shop, 8)) {
       if (!this.isOpen(shop)) return { text: 'The auto garage is closed (8:00–18:00)', act: () => {} };
       const p = Rep.price(shop, this.repairCost(v));
       if (p.refused) return { text: "The mechanics won't touch your car", act: () => {} };
-      return { text: `<b>E</b> repair the ${v.name} · $${p.cost}${p.note ? ` (${p.note})` : ''}`, act: () => this.repair(v, shop, p.cost, p.rate) };
+      return { text: `<b>{interact}</b> repair the ${v.name} · $${p.cost}${p.note ? ` (${p.note})` : ''}`, act: () => this.repair(v, shop, p.cost, p.rate) };
     }
     return null;
   }

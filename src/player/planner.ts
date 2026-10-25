@@ -169,6 +169,27 @@ export class Planner {
     return { x: tile.x - (fp.w >> 1), y: tile.y - (fp.h >> 1) };
   }
 
+  /* ---------- V2 (Milestone 7): a gamepad has no cursor: the ring at the screen's centre is it ---------- */
+  padAim(): void { this.mouse.set(0, 0); }
+  /** A on the pad: place the tool under the ring (a road or a bulldozer drag: first press starts, second finishes), or pick */
+  padPress(): void {
+    this.padAim();
+    const tile = this.groundTile();
+    const d = this.tool ? CAT[this.tool] : null;
+    if (d?.drag) {
+      if (!this.dragStart) { this.dragStart = tile; return; }
+      if (tile) Game.dragTool(this.tool!, this.dragStart.x, this.dragStart.y, tile.x, tile.y);
+      this.dragStart = null;
+      return;
+    }
+    if (this.tool && tile) {
+      const o = this.originFor(this.tool, tile);
+      Game.placeAt(this.tool, o.x, o.y, normFacing(this.tool, this.facing));
+      return;
+    }
+    this.pick();
+  }
+
   /** click with no tool: a villager (closest on screen) or a building */
   private pick(): void {
     const r = this.canvas.getBoundingClientRect();
@@ -210,15 +231,9 @@ export class Planner {
   update(dt: number): void {
     if (!this.active) return;
     // gliding pan with velocity easing, like V1's Age-of-Empires camera
-    const k = Input.keys;
-    let ax = 0, az = 0;
-    if (k.has('KeyW') || k.has('ArrowUp')) az -= 1;
-    if (k.has('KeyS') || k.has('ArrowDown')) az += 1;
-    if (k.has('KeyA') || k.has('ArrowLeft')) ax -= 1;
-    if (k.has('KeyD') || k.has('ArrowRight')) ax += 1;
-    const mv = Input.pad ? Input.move() : { x: 0, y: 0 };
-    ax += mv.x; az -= mv.y;
-    ax += Input.touchMove.x; az -= Input.touchMove.y;
+    // (Input.move() is the bound keys, the pad's left stick and the touch stick together)
+    const mv = Input.move();
+    const ax = mv.x, az = -mv.y;
     // world velocity = right·ax + forward·(−az), right = (cos, −sin), forward = (−sin, −cos)
     const sp = this.dist * 1.1;
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
@@ -228,9 +243,9 @@ export class Planner {
     this.target.x += this.vx * dt;
     this.target.z += this.vz * dt;
     this.clampTarget();
-    if (k.has('KeyQ')) this.yaw += dt * 1.4;
-    if (k.has('KeyE')) this.yaw -= dt * 1.4;
-    if (Input.pad) {
+    if (Input.held('descend')) this.yaw += dt * 1.4;
+    if (Input.held('climb')) this.yaw -= dt * 1.4;
+    if (Input.pad && !Input.padMenu) {
       this.yaw -= (Input.pad.axes[2] || 0) * dt * 1.6 * (Math.abs(Input.pad.axes[2] || 0) > 0.15 ? 1 : 0);
       const zy = Input.pad.axes[3] || 0;
       if (Math.abs(zy) > 0.15) this.dist = Math.max(40, Math.min(700, this.dist * (1 + zy * dt * 1.5)));

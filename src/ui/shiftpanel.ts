@@ -8,6 +8,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import type { Shifts } from '../player/shifts';
+import { keys } from '../input/input';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -32,8 +33,8 @@ export class ShiftPanel {
     $('sh-ico').textContent = p.emoji;
     $('sh-title').textContent = p.title;
     $('sh-place').textContent = `On shift at ${p.place}`;
-    $('sh-obj').textContent = p.text;
-    $('sh-sub').textContent = p.sub;
+    $('sh-obj').textContent = keys(p.text);
+    $('sh-sub').textContent = keys(p.sub);
     $('sh-left').textContent = p.left;
     $('sh-earned').textContent = `$${p.earned}`;
     $('sh-stars').innerHTML = `<b>${'★'.repeat(p.starsN)}</b>${'★'.repeat(5 - p.starsN)}`;

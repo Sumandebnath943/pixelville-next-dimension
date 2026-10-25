@@ -17,6 +17,7 @@ import { Tasks } from '../sim/tasks';
 import { News } from '../sim/news';
 import { Game } from '../sim/game';
 import { on } from '../sim/core';
+import { Input, keys } from '../input/input';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -141,6 +142,7 @@ export class Hud {
 
   /* ---------- toasts ---------- */
   toast(msg: string, at?: { x: number; y: number }, fromSim = false): void {
+    msg = keys(msg); // (Milestone 7: the controls named for the device in use)
     if (!fromSim) Tasks.log(msg);
     if (at) this.pins.push({ x: at.x, y: at.y, until: performance.now() + 15000 });
     const wrap = $('toasts');
@@ -179,7 +181,7 @@ export class Hud {
     }
     this.showCategory(this.palCat);
   }
-  private showCategory(cat: string): void {
+  showCategory(cat: string): void {
     this.palCat = cat;
     document.querySelectorAll<HTMLElement>('#pal-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.cat === cat));
     $('pal-title').textContent = CAT_GROUPS.find((g) => g[0] === cat)![2];
@@ -198,20 +200,30 @@ export class Hud {
     }
     grid.scrollTop = 0;
   }
+  /** the palette's next category (a gamepad's LB) */
+  nextCategory(): void {
+    const i = CAT_GROUPS.findIndex((g) => g[0] === this.palCat);
+    this.showCategory(CAT_GROUPS[(i + 1) % CAT_GROUPS.length][0]);
+  }
   private tool: string | null = null;
   markTool(key: string | null): void {
+    // a tool picked from elsewhere (a hotkey): show its category (only when it changes, so the
+    // other tabs can still be browsed with a tool in hand)
+    if (key !== this.tool && key && CAT[key] && CAT[key].cat !== this.palCat) this.showCategory(CAT[key].cat);
     this.tool = key;
-    // a tool picked from elsewhere (a hotkey): show its category
-    if (key && CAT[key] && CAT[key].cat !== this.palCat) this.showCategory(CAT[key].cat);
     document.querySelectorAll<HTMLElement>('.pal-item').forEach((i) => i.classList.toggle('active', !!key && i.dataset.key === key));
     const hint = $('hint');
     if (!this.api.isPlanner()) return;
     let h: string;
-    if (!key) h = 'Click a building or villager · drag to pan · wheel zoom · <kbd>Q</kbd><kbd>E</kbd> rotate · <kbd>P</kbd> back down';
+    const pad = Input.device === 'pad';
+    if (!key) h = pad ? '<kbd>A</kbd> pick what\'s under the ring · L stick glide · R stick turn and zoom · d-pad the palette · <kbd>Menu</kbd> back down'
+      : 'Click a building or villager · drag to pan · wheel zoom · <kbd>{descend}</kbd><kbd>{climb}</kbd> rotate · <kbd>{planner}</kbd> back down';
     else {
       const d = CAT[key];
-      h = d.drag ? `<b>${d.name}</b> · drag, release to apply · right-click cancels` : `<b>${d.name}</b> · click to place · <kbd>R</kbd> turns the door · right-click cancels`;
+      h = pad ? `<b>${d.name}</b> · <kbd>A</kbd> ${d.drag ? 'start, then <kbd>A</kbd> again to finish' : 'place it under the ring'} · <kbd>RB</kbd> turns the door · <kbd>B</kbd> cancels`
+        : d.drag ? `<b>${d.name}</b> · drag, release to apply · right-click cancels` : `<b>${d.name}</b> · click to place · <kbd>{rotate}</kbd> turns the door · right-click cancels`;
     }
+    h = keys(h);
     if (hint.innerHTML !== h) hint.innerHTML = h;
   }
 

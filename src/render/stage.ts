@@ -203,7 +203,7 @@ export class Stage {
     }
 
     // lightning: the whole town flashes
-    this.flashLight.intensity = Weather.flash * 6;
+    this.flashLight.intensity = Weather.flash * (Settings.get('calm') ? 1.5 : 6); // (gentler with reduced motion)
 
     // interiors, lamps, signs
     interiorDay.value = this.sky.ambient * 0.07;
@@ -303,7 +303,7 @@ export class Stage {
       this.indoorFresh = false;
       return;
     }
-    if (this.shake > 0 || Calamity.shakeT > 0) {
+    if ((this.shake > 0 || Calamity.shakeT > 0) && Settings.get('shake') !== false) {
       const k = Math.max(this.shake, Math.min(1, Calamity.shakeT)) * 0.6;
       this.camera.position.x += (Math.random() - 0.5) * k;
       this.camera.position.y += (Math.random() - 0.5) * k;
@@ -327,6 +327,23 @@ export class Stage {
       ENV.reflOn.value = 1;
     } else this.groundReady = false;
     this.pipe.render(this.sky.exposure * this.exposureBias, this.frozen ? 0 : 1 / 60, doShadow);
+  }
+
+  /* ---------- V2 (Milestone 7): resolution that keeps the frame rate ---------- */
+  private ftEma = 1 / 60;
+  private resT = 3;
+  /** the resolution setting: a fixed fraction, or 'auto', which steps down while frames run long (under ~30 fps)
+   *  and back up when there's room again, never below 70% */
+  autoRes(dt: number): void {
+    const want = Settings.get('resScale');
+    if (want !== 'auto' && want !== undefined) { this.pipe.setResScale(Number(want) || 1); return; }
+    // a stall, a hidden tab or a throttled pane says nothing about the GPU
+    if (dt > 0.2 || document.hidden) return;
+    this.ftEma += (dt - this.ftEma) * 0.04;
+    this.resT -= dt;
+    if (this.resT > 0) return;
+    if (this.ftEma > 1 / 28 && this.pipe.resScale > 0.7) { this.pipe.setResScale(this.pipe.resScale - 0.1); this.resT = 3; }
+    else if (this.ftEma < 1 / 50 && this.pipe.resScale < 1) { this.pipe.setResScale(this.pipe.resScale + 0.05); this.resT = 6; }
   }
 
   /** map bounds in metres (for clamping cameras) */

@@ -43,6 +43,8 @@ export function detectQuality(): Quality {
     const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
     gl.getExtension('WEBGL_lose_context')?.loseContext();
     if (/SwiftShader|llvmpipe|Software/i.test(name)) return 'low';
+    // V2 (Milestone 7): phones and tablets (a touch screen and no mouse) start on low (design §17.4)
+    if (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches) return 'low';
     if (/Intel(?!.*Arc)|UHD|Iris|Mali|Adreno|PowerVR|Apple GPU|Radeon\(TM\) Graphics|Vega \d+ Graphics/i.test(name)) return 'medium';
     return 'high';
   } catch {
@@ -117,6 +119,7 @@ export class Pipeline {
     const P = (this.profile = PROFILES[quality]);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
     const dpr = Math.min(window.devicePixelRatio, P.dpr);
+    this.baseDpr = dpr;
     this.renderer.setPixelRatio(dpr);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -162,6 +165,19 @@ export class Pipeline {
     this.onResize?.(w, h);
   }
   onResize?: (w: number, h: number) => void;
+
+  /** V2 (Milestone 7): draw the world at a fraction of the screen's resolution (the interface stays sharp) */
+  private baseDpr = 1;
+  resScale = 1;
+  setResScale(k: number): void {
+    k = Math.max(0.5, Math.min(1, Math.round(k * 100) / 100));
+    if (Math.abs(k - this.resScale) < 0.01) return;
+    this.resScale = k;
+    const dpr = this.baseDpr * k;
+    this.renderer.setPixelRatio(dpr);
+    this.composer.setPixelRatio(dpr);
+    this.resize();
+  }
 
   /** draw another scene through the same post (an interior); pass the world's scene to go back */
   setScene(scene: THREE.Scene): void {
