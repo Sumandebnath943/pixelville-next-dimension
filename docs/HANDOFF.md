@@ -20,10 +20,10 @@
 **Never modify the V1 repo.** It is the behavioural reference.
 
 ### Status (2026-10-25)
-- Milestones 1, 1.5, 2 (2a–2f), 3, 4, 5 and **6 are done**, merged into `main` and pushed (`3f529f9`).
-- **Next: Milestone 7 — launch polish** (see §9).
-- 113 tests pass (`npm test`), typecheck clean (`npm run typecheck`), lint has warnings only (`any` in ported code).
-- Not yet deployed anywhere.
+- Milestones 1, 1.5, 2 (2a–2f), 3, 4, 5 and 6 are done, merged into `main` and pushed (`3f529f9`).
+- **Milestone 7 (launch polish) is built** on branch `milestone-7`: Milestone 6 fixes, rebindable controls and gamepad menus, accessibility, the first-day guide, phones, performance, balance, chat guards, launch prep (details in MILESTONES.md).
+- 118 tests pass (`npm test`), typecheck clean (`npm run typecheck`), lint has warnings only (`any` in ported code).
+- **Not yet deployed**: the Vercel project, the Groq key in Vercel and the domain's DNS need the owner (step by step in [LAUNCH.md](LAUNCH.md)).
 
 ---
 
@@ -69,7 +69,7 @@ npx vite preview --port 4173 --strictPort   # serve the production build
 ```
 - `.claude/launch.json` has two configs: **`pixelville-nd`** (dev server, port 5173; moves to 5174 if taken) and **`pixelville-nd-build`** (production preview on 4173).
 - **AI chat:** `.env.local` (gitignored) holds `GROQ_API_KEY=` and optionally `GROQ_MODEL=`. The owner's local file has a key — never print it. `GET /api/chat` reports only whether a key is set. Chat requests send real villager context to Groq; keep test calls few. In dev, the proxy is served by the Vite config; in production by the Vercel function `api/chat.ts`.
-- **Debug handle:** `window.PV` exposes `Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures, shifts, JOBS, Weather`. (`News` is not on it: read `#tv-headline` instead.)
+- **Debug handle:** `window.PV` exposes `tour, padNav, applyAccess, Subs, Settings, Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures, shifts, JOBS, Weather`. (`News` is not on it: read `#tv-headline` instead.)
 
 ---
 
@@ -89,10 +89,11 @@ src/
               indoors, gps, transit (riding), travel (trips), tickets, shifts (Milestone 6)
   jobs/       the 13 job loops (Milestone 6): common.ts, emergency.ts, driving.ts, rails.ts, town.ts
   ui/         hud, panels (cards, modals), phone (apps), dialogue, counter, showroom, departures, travelui,
-              photopanel, shiftpanel, touch
+              photopanel, shiftpanel, touch, tour (the first-day guide), access (subtitles, interface size, colour vision)
   ai/         chat client, context builder, templates, effects, memory
   interiors/  plan.ts: room layouts as plain data (tested without WebGL)
-  audio/, input/ (one action map for all devices), save/ (IndexedDB slots + autosave)
+  audio/, input/ (one action map for all devices, rebindable; padnav = the gamepad through menus), save/ (IndexedDB slots + autosave)
+public/       manifest.webmanifest + icon.svg (installable on phones)
 api/          chat.ts (Vercel function) + _chat.ts (the Groq proxy, persona rules, limits)
 tests/        Vitest: one file per system; tests/town.ts builds a small finished town (build(), town(), run(), until())
 docs/         DESIGN.md, MILESTONES.md, HANDOFF.md (this file)
@@ -105,6 +106,7 @@ slice.html + src/slice/   the "look lab" vertical slice (Milestone 1.5)
 - **Sim ↔ client hooks**, set by the client, never imported by the sim: `Game.founderHooks` (the Founder in saves), `Traffic.guests` (the Founder in traffic), `Traffic.onHonk`, `Life.onEvent` (toasts), **`Life.claim`** (Milestone 6: a shift takes a fire / police / ambulance / power call before the village's crews; returns true if taken), `Life.runwayHeld`, `Supply.founderLoad`.
 - **V1 code** in `src/sim` is ported verbatim with `// @ts-nocheck`; V2 changes inside it are marked `V2:` / `V2 (Milestone N):`. A typing pass is still pending.
 - **Interactions:** `E` = interact/use/talk, `F` = vehicle (and departures at transit buildings). Modules return `{ text, act }` prompt lines; `main.ts` decides priority.
+- **Naming a control in text (Milestone 7):** never write `E` or `F` into a prompt or toast: write `{interact}`, `{vehicle}`, `{forward}`, `{climb}`… and it's filled in (`keys()` in `src/input/input.ts`) with the player's own key, the pad's button or the touch button. Gameplay reads `Input.held(action)`, `Input.move()`, `Input.rise()`, never raw key codes.
 - **Toasts:** `hud.toast(m, at?, fromSim?)`; "personal" toasts (the Founder's own business) stay out of the village news log.
 - **Rendering new things:** reuse the instanced pools (`actors.vehicle(type…)`, `actors.prop(k…)`, `actors.person(...)`) and existing materials. **Never introduce a new shader that first compiles on frame 1** (see §7).
 - **Saves:** `Game.buildSaveString()` / `Game.performLoad()`; the Founder's part is `FounderSave` (wallet, ledger, fleet, bag, jobs record…). Transient state (trips, shifts) is not saved; a load starts the Founder on the street, off shift.
@@ -122,6 +124,7 @@ slice.html + src/slice/   the "look lab" vertical slice (Milestone 1.5)
 | 4 | 2026-10-24 | Health & ambulances, power & blackouts, education, supply chain, rebalance |
 | 5 | 2026-10-25 | Riding buses/trains/ferry/cabs/heli tours, six off-map cities, flights, visitors & newcomers through gateways |
 | 6 | 2026-10-25 | **13 playable job shifts** + the 48×15 airfield |
+| 7 | 2026-10-25 | **Launch polish**: rebindable keys, gamepad menus, subtitles and accessibility, the first-day guide, phones, balance, chat guards (deploy pending) |
 
 ### Milestone 6 in a page (the newest code)
 - **`src/player/shifts.ts`** — `JOBS` table (title, workplaces, lent vehicle + handling, hourly pay, public or business, max hours, factory), `Shifts` manager: `placesFor`, `offers(b)`, `whyNot`, `start(id, b)`, `go(id, b?)` (phone booking: GPS to the workplace, starts at the door), `end()` (pays: hourly × hours + task pay, × (0.7 + 0.1 × stars); public services from `Gov.treasury`, which **owes** what it can't pay and settles when taxes arrive; businesses from their till, as far as it goes), `update`, `interaction`, `carrying` (train/plane cab), `overlay/frame` (pilot's journey screen), `draw`, `panel()`, `listing()`, `record` (saved in `FounderSave.jobs`).
@@ -175,6 +178,8 @@ outer: for (const p of sides(s1)) for (const q of sides(s2)) if (World.connectRa
 Game.afterMapEdit(); Life.busT = 0; Life.busSig = ''; Life.trainT = 0; Life.trainSig = '';
 const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Game.buildSaveString());
 ```
+**Milestone 7 test tricks:** a stand-in gamepad: `navigator.getGamepads = () => [pad]` with `pad = { connected: true, mapping: 'standard', axes: [0,0,0,0], buttons: [17 × { pressed, value }] }`; nudge an axis once so the device switches to "pad", then hold a button for two frames. A phone: the pane's `mobile` preset emulates touch (reload after switching); a landscape phone is a custom 812×375 plus `document.body.classList.add('touch')`. The guide: `PV.tour.start()` / `.finish()`; `Settings.set('tourDone', false)` brings it back on the next load. Subtitles: `PV.Subs.say(who, line)`, `PV.Subs.sound(kind, text, 0)`. Shader programs: `PV.stage.renderer.info.programs.length` should not grow during play (65 at boot on medium).
+
 **Handy calls by system** — shifts: `PV.shifts.start('fire', b)`, `.end('', true)`, `.cur.job`, `.controls = () => ({gas, brake, steer, pitch})` to script the train/plane, `.panel()`, `.listing()`. Crime: `PV.wanted.raise(n, why, true)`, `wanted.onBusted = () => {}` before visual checks. Rep: `PV.Rep.feel(p, delta, text, gist)`. Interiors: `PV.goIn(b)`, `PV.goOut()`, `PV.indoors`. Chat: `PV.dialogue.start(p)`. Health: `PV.Health.injure(p, sev, cause, {x,y})`. Power: `PV.Power.fault(d, cause)`, `districtOfB(b)`. Supply: `PV.Supply.report()`, `dispatch()`. Transit/trips: `PV.transit.wait(kind, at, to)`, `callCab()`, `PV.travel.start(city, mode, gate, edge)`, `PV.openDepartures(b)`. Photo: `PV.enterPhoto()`; stub `HTMLAnchorElement.prototype.click` before saving a photo (it downloads a file). Planner camera: `planner.enter(pos)`, then `planner.focus(x, z)`, `dist`, `pitch`, `yaw`. At night set `Sim.clock = 760` for a daylight look.
 
 ---
@@ -182,7 +187,10 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 ## 8. Known issues and polish backlog
 
 - **Real rigged people and cars** (still code-built stand-ins) — waiting on the owner's asset-licensing decision.
-- Milestone 6 polish: the fire hose's water jet is faint in daylight (small additive points); the train's follow camera can sit inside lineside trees; work vehicles aren't solid to the Founder on foot; touch controls have no climb/descend for the plane; the shift card hasn't been checked on the 1366×768 laptop (fine at 800 px wide in the pane; toasts move right of it below 1180 px).
+- **The deploy** ([LAUNCH.md](LAUNCH.md)): the owner's Vercel project, `GROQ_API_KEY` in its settings, the DNS record.
+- Not checked on real hardware: a gamepad (tested with a scripted stand-in pad), a real phone (tested in the pane's phone emulation at 812×375 and 375×812), iPhone full screen (Safari has no element full screen on iPhone; the Home Screen app is full screen).
+- Chat limits are per server instance (Vercel runs several): a shared store (Vercel KV) would make the daily cap exact.
+- With a very large interface size on a narrow window, the hint and the news can overlap.
 - The airport's runway is at game scale (372 m), not real scale; the pilot's auto-flare and touchdown zone are tuned to it.
 - Taxi fares depend on villagers' schedules: midday in a town where everyone works can be quiet (fares come from people leaving work within 40 min, leaving venues, or at home 09:00–21:30).
 - `src/sim` typing pass pending (`@ts-nocheck`); lint warnings for `any` throughout.
@@ -191,23 +199,19 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 
 ---
 
-## 9. What's next: Milestone 7 — launch polish (from MILESTONES.md)
+## 9. What's next
 
-- Mobile/touch tuning and performance presets; long-session stability.
-- Balance pass across economy, growth, crime, calamities, chat costs (include shift pay vs prices: cars $280–520, fines $15–360, a good 8 h shift pays roughly $40–120).
-- Accessibility: rebinding, subtitles for chat, colour-blind-safe HUD, motion-sickness options (FOV, head-bob, camera shake).
-- Onboarding: a short first-day tutorial that founds the village with you.
-- Launch at `pixelville.next.houseofnamus.com` (Vercel; the Groq key in Vercel's environment variables).
-- **Done when:** it plays well on a mid-range phone, a laptop and with a gamepad, and a new player can found a village without reading anything.
-
-Suggested order: deploy a preview first (so the owner can try builds), then performance presets on the Intel laptop, then onboarding, accessibility, balance; ask the owner about the asset-licensing decision early, since real character/car models would change performance budgets.
+- **Launch** (the owner's steps in [LAUNCH.md](LAUNCH.md)), then play-test on a real phone and a real gamepad.
+- **The asset-licensing decision** (CC0-only, CC-BY/Mixamo, or paid) for real rigged people and cars; they'll change the performance budgets (today: ~9 ms GPU a frame at medium on the Intel laptop).
+- The typing pass over `src/sim` (`@ts-nocheck`), positional sound everywhere.
+- New feature ideas go to the owner first (§3).
 
 ---
 
 ## 10. Git and handoff checklist for a new session
 
-1. `git pull` on `main` (latest: `3f529f9`, Milestone 6 + airfield).
-2. `npm install && npm test && npm run typecheck` — expect 113 passing tests.
+1. `git pull` on `main` (Milestone 7 is on `milestone-7` until the owner merges it).
+2. `npm install && npm test && npm run typecheck` — expect 118 passing tests.
 3. Start the dev server from `.claude/launch.json` (`pixelville-nd`), open a **fresh** `*.localhost` origin, build the test town (§7).
 4. Branch `milestone-7` for new work; merge and push when the owner asks.
 5. Update `docs/MILESTONES.md` (and this file's status) at the end of each milestone.

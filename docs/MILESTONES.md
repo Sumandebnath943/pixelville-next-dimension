@@ -11,7 +11,7 @@
 | 4 | **Deeper village** | Health, supply chain, education, power |
 | 5 | **Going places** | Ride every transit line; travel off-map |
 | 6 | **Work shifts** | All playable jobs (done) |
-| 7 | **Launch polish** | Mobile tuning, performance, balance, accessibility, launch |
+| 7 | **Launch polish** | Mobile tuning, performance, balance, accessibility, launch (built; the deploy waits on the owner) |
 
 ---
 
@@ -332,7 +332,7 @@ Playable shift loops with pay, performance and real effects on the sim:
 
 ---
 
-## Milestone 7 — Launch polish
+## Milestone 7 — Launch polish (built 2026-10-25: 7a–7f below; the deploy itself waits on the owner)
 
 - Mobile/touch tuning and performance presets; long-session stability.
 - Balance pass across economy, growth, crime, calamities, chat costs.
@@ -341,6 +341,52 @@ Playable shift loops with pay, performance and real effects on the sim:
 - Launch at `pixelville.next.houseofnamus.com`.
 
 **Done when:** it plays well on a mid-range phone, a laptop and with a gamepad, and a new player can found a village without reading anything.
+
+**Where it stands:** a new player is guided through founding the village (checked end to end on a fresh village in the game); the laptop runs medium at ~9 ms of GPU a frame; a gamepad drives the street, the Planner and every menu (checked with a scripted pad: no hardware to hand); the phone layout was checked at 812×375 and 375×812 in an emulated phone, not on a real handset. **Not done:** the deploy to Vercel and the domain (needs the owner's Vercel sign-in, the Groq key in Vercel's settings and a DNS record: see [LAUNCH.md](LAUNCH.md)).
+
+### Milestone 6 fixes (first)
+- The fire hose's jet is drawn as lit slugs of water with spray where it lands (the additive glints alone vanished in daylight).
+- Following a vehicle (the train's cab, a ride), the camera rises over a tree's crown rather than sitting in its leaves (`crownLift` in `founder.ts`).
+- On foot, the vehicle in hand (fire engine, bus, your own car…) and the owned one left standing are solid: a capsule along each.
+- Touch: ▲/▼ climb and descend on the flight deck.
+- At 1366 px the top bar keeps to one row and the controls hint moves clear of the news and the map.
+
+### 7a · Controls
+- **Rebinding** (`src/input/input.ts`): every action (move, run, jump, use, vehicle, camera, phone, Planner, task book, photo, turn the door, help, climb, descend) has default keys and can be rebound in Settings → Controls (click, press the key; Esc cancels). A key taken from another action in the same group leaves that one without (the note says so); the plane's climb and descend are their own group, so they can share E/Q. Kept in this browser (`Settings.keys`), not in the village save; "Reset to the defaults". Key names follow the keyboard's layout where the browser can tell (Z on AZERTY).
+- **Prompts name the controls in use**: strings carry `{interact}`, `{vehicle}`, `{forward}`… and `keys()` fills them in for the device last used: the bound key, the pad's button (X, Y, RT…) or the touch button (E, ▲…). Prompts, toasts, the shift card, the phone's Jobs and Ride apps, the Planner hint and the help screen all use it (83 strings converted).
+- **Gamepad through every menu** (`src/input/padnav.ts`): whenever the phone, a card, a conversation, a modal (settings, saves, counter, departures, showroom), the journey screen or the Planner's palette is up, the d-pad (or the left stick, repeating) moves a highlight to the nearest control in that direction, A presses it, B backs out, left/right turn sliders and lists. Nothing knows the menus: it reads what's on screen. In the Planner a ring at the centre is the cursor: A places (a road or bulldozer drag: A to start, A to finish), LB turns the palette's tabs, X pauses, RB turns the door, Menu goes back down. LB is photo mode on the street, d-pad up the task book. (The design table had the d-pad for game speed in the Planner; it moves through the palette instead, and X pauses.)
+
+### 7b · Accessibility
+- **Settings in four tabs** (Village, Graphics, Controls, Accessibility); the new ones apply at once.
+- **Subtitles** (`src/ui/access.ts`): what villagers say in the street (their greetings, every time, with their name) and, if chosen, captions for the sounds that matter: horns, sirens, thunder, church bells, a crash, fireworks, a fanfare. At the foot of the screen, at most three lines.
+- **Interface size**: compact, standard, large, extra large (CSS zoom over the whole interface).
+- **Colour vision**: standard, red–green safe (blue and orange) or blue–yellow safe (teal and pink): the good/bad colours everywhere come from two CSS variables. A struggling statistic is also underlined, so it's never colour alone.
+- **Motion**: camera shake on/off (earthquakes, crashes), head bob in first person (new, gentle, on by default), reduce motion (no slides, pops, blinks, the photo flash or the scrolling ticker; lightning flashes dimmer). With the field of view (already a setting), these are the motion-sickness options.
+
+### 7c · The first day
+- **A guide instead of a page of controls** (`src/ui/tour.ts`): a new player (no guide seen in this browser) gets nine short steps: look around, rise into the Planner, place the first house, watch the first family arrive (speed up), give them work, come back down, meet the neighbours, open the phone, and off you go. Each step rings what to press (the crane, the House in the palette, the speed buttons, the Work tab, the phone), is worded for the device in use, and moves on by itself when it's done. "Skip the guide" at any point; Settings → Village → "Show me around again". After a reload it picks up where the village is (a village with houses and work starts at "meet the neighbours").
+- **Knocking**: at a home that won't ask you in yet (the household hasn't warmed to you), E knocks and the eldest at home comes to the door to talk. That's how a newcomer meets the first family.
+- **A fair first morning**: a new village starts in clear weather (it used to open in rain and fog, which hid the first build).
+- Fixed on the way: with a tool picked, the palette snapped back to that tool's tab every 0.4 s, so other tabs couldn't be browsed.
+
+### 7d · Phones and performance
+- **Phones**: touch controls show from the start on a touch-only device (they used to wait for the first tap), the first tap goes full screen and holds landscape where the browser allows, and an upright phone gets a "turn your phone sideways" card. A compact landscape layout for short screens (≤ 520 px high): one-row top bar, the stick bottom left and the buttons bottom right, the minimap above them, the wallet and reputation up top, the hint and PVTV out of the way; in the Planner only the crane button stays and the palette narrows. A two-finger twist turns the Planner (pinch and drag already zoomed and panned). An install manifest and icon (`public/`): from the Home Screen it opens full screen, sideways.
+- **Quality**: phones and tablets start on Low (design §17.4); integrated GPUs on Medium as before. **Resolution**: auto (steps down 10% at a time while frames run under ~30 fps, back up when there's room, never below 70%), or full, 85%, 70%, 55%. **Frame rate**: uncapped or 30 fps (battery).
+- **Measured on the owner's Intel UHD laptop** (Browser pane, 1043×534, medium, the 81-villager test town): 9.3 ms median GPU time a frame (p90 13.1), frames every ~25 ms. Over several minutes at 8× the heap stayed between 208 and 246 MB, page elements flat at ~815, GPU geometries and textures growing only with new buildings.
+- **No shader compiles mid-game**: the thought bubbles' sprite shader was the one program still compiling the first time someone had a thought; it now compiles with everything else before the first frame (65 programs at boot, none added over 30 s at 8× through the evening).
+
+### 7e · Balance
+- **What the runs showed** (two villages grown for 36 days by a scripted player who builds what the village asks for): building sites stood idle for want of materials from day 5 on in both, and one village stopped growing at ~45 people from day 13. The village fund sat at $0–$400, and safety fell to 25–33%. The new player's very first house stalled the same way.
+- **The changes**: a young village's builders (under 30 villagers) bring 80% of a site's materials, and a small home's (up to 2×2) bring 70% after that (other sites 40%, as before); the county's daily import allowance grows with the village (+0.5 materials, +0.3 food, +0.2 products, +0.1 textiles a villager); imported site materials cost the village fund a quarter of their value, not half.
+- **After**: the same runs reached 148 and 173 villagers by day 25 (from 118 and 51), happiness 84–90 (78, 69), safety 68–91% (33%, 25%), the fund $950 in one and spending on the mayor's builds in the other, materials rarely short. The M4 rule still holds: a building boom with nothing made in town stalls (`tests/deeper.test.ts`).
+- **Shift pay vs prices** (checked, unchanged): a good 8-hour shift pays about $40–150 (cars $280–520, fines $15–360, a hospital bill up to $120), so a car is two to five good shifts.
+- **Chat costs** (`api/_chat.ts`): on top of 12 a minute and 400 a day per address (and the client's 150 a session), a server-wide budget (90 a minute; `CHAT_DAILY_CAP`, default 4,000 a day per server instance), and only this site's own pages (and localhost) may call the proxy (`CHAT_ORIGINS` adds others). Groq's free tier costs nothing; past its limits villagers fall back to template dialogue.
+
+### 7f · Launch prep
+- `vercel.json`: hashed assets cached for a year, the pages always revalidated, and basic security headers (`nosniff`, a referrer policy, same-origin framing, a permissions policy allowing only the gamepad and full screen).
+- The production build (`npm run build`, 1.8 MB, ~470 KB gzipped for the game) checked in the preview server: ready in 3.5 s on a fresh origin, the guide up, the manifest and icon served, no console errors.
+- **The deploy steps for the owner** are in [LAUNCH.md](LAUNCH.md).
+- Covered by `tests/controls.test.ts` (bindings, clashes, reset, labels per device, the young village's materials and imports) and `tests/chat.test.ts` (the budget and the origin check).
 
 ---
 

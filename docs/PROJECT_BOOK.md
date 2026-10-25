@@ -2,7 +2,7 @@
 
 > The A–Z of the project: every system, place, rule, file and idea, in one alphabetical book.
 > For getting started, read [HANDOFF.md](HANDOFF.md); for the design, [DESIGN.md](DESIGN.md); for what each milestone delivered, [MILESTONES.md](MILESTONES.md).
-> State as of 2026-10-25, Milestone 6 complete (`main` @ `117dd7b`).
+> State as of 2026-10-25, Milestone 7 built on `milestone-7` (the deploy waits on the owner).
 
 ---
 
@@ -13,7 +13,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## A
 
-**Accessibility** — Planned for **M7**: key rebinding, chat subtitles, a colour-blind-safe HUD, and motion-sickness options (FOV, head-bob, camera shake). Not built yet. FOV is already a setting.
+**Accessibility** — **M7**, Settings → Accessibility (`src/ui/access.ts`): interface size, **Subtitles** (street speech, and optionally sound captions), colour vision (red–green or blue–yellow safe: the `--ok`/`--bad` colours swap; struggling stats are underlined too), camera shake, first-person head bob, reduce motion. With the field of view (Graphics) these are the motion-sickness options. Keys are rebindable (**Controls**).
 
 **Actors** — `src/render/actors.ts`. Draws everything that moves: villagers (the nearest 32 are skinned **Person** models, the rest instanced), vehicles (the nearest 22 cars are full **Car** models, the rest instanced from `src/render/models.ts`), props, fires, sparks, bubbles, traffic-signal lenses, parked planes. The client adds its own things each frame via `actors.extra` (the dog, the wanted level's units, the sightseeing heli, shift vehicles). Public helpers: `vehicle()`, `prop()`, `person()`, `spray()`.
 
@@ -32,6 +32,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Arrest** — The Founder can be arrested (**Busted**) or, on a **Police** shift, arrest a burglar (`Life.resolve(true)`).
 
 **Assets** — Everything is procedural (no downloaded models or textures). Real rigged people and cars are waiting on the owner's licensing decision (CC0-only vs CC-BY/Mixamo vs paid). Any assets must be listed in `public/assets/LICENSES.md`.
+
+**Auto resolution** — M7: Settings → Graphics → Resolution "auto" (`Stage.autoRes`) drops the world's render resolution 10% at a time while frames run under ~30 fps, back up when there's room, never below 70%; or a fixed 100/85/70/55%. A 30 fps cap saves battery.
 
 **Autosave** — Every 2 or 5 minutes (setting), and when the tab is hidden; written to IndexedDB slot `AUTO` (`src/save/store.ts`). An empty map is not autosaved. Saves are per browser origin, port included.
 
@@ -75,7 +77,11 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Collision** — The Founder's custom circle-vs-box collision (`founder.collide`) against building solids, tree trunks, open water and the map edge. No Rapier.
 
+**Colour vision** — See **Accessibility**.
+
 **Commits** — One commit per milestone (plus fixes), on branch `milestone-N`, fast-forwarded into `main` when the owner asks.
+
+**Controls** — `src/input/input.ts` (M7): an action map with default keys (`DEFAULT_KEYS`), rebound in Settings → Controls and kept in this browser (`Settings.keys`); a key taken from another action leaves it without one. Text names controls with `{action}` tokens filled in by `keys()` for the device in use (keyboard, pad, touch). See **Gamepad**, **Input**.
 
 **Construction worker** — M6 job (any building site): carry loads from the pallet to the scaffold (each lays 18 minutes of work), fetch materials by van when the pallet is bare. Paid by the village fund.
 
@@ -131,6 +137,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Festivals** — Christmas, Diwali, Easter, New Year fireworks (`src/sim/festivals.ts`).
 
+**First-day guide** — See **Guide**.
+
 **Fines** — Paid to the village fund; what the wallet can't cover is owed (`fleet.owed`) and taken as money comes in.
 
 **Fire** — Buildings ignite at random (factories ×3, restaurants/bakeries ×2; ×0.35 if inspected this week), burn for 5–7 game hours, spread to neighbours unless a hose is on them, and are saved by an engine dousing or a bucket brigade; otherwise they become ruins and get rebuilt.
@@ -151,9 +159,13 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## G
 
+**Gamepad** — Standard layout: sticks move and look, A jump, B back, X use, Y vehicle, triggers drive, LB photo mode, RB turn the door, View phone, Menu Planner, R3 camera, L3 run, d-pad up the task book. In any menu the d-pad (or left stick) moves a highlight and A presses (`src/input/padnav.ts`, M7). In the Planner a ring at the centre is the cursor: A places or picks, LB the next palette tab, X pauses. Tested with a scripted pad, not yet on hardware.
+
 **Game** — `src/sim/game.ts`: boot, new maps and scenarios, ticking at the chosen speed, undo, save/load (`buildSaveString`, `performLoad`), `founderHooks`.
 
 **Gateways** — `src/sim/gateways.ts`: the national railway (a branch line from the village station to the map edge) and the **Intercity Express**, visitors arriving by train, plane and ferry, newcomers arriving, and the Founder's trips (`Gateways.away`).
+
+**Guide (the first day)** — `src/ui/tour.ts` (M7): nine steps that found the village with a new player (look around, rise, place a house, the first family, work, come down, meet the neighbours, the phone, off you go), ringing what to press, worded for the device, advancing when done, resuming after a reload. Shown once per browser (`Settings.tourDone`); "Skip the guide"; Settings → Village → "Show me around again". Replaced the help page on first load.
 
 **Gov** — `src/sim/gov.ts`: the mayor, elections, campaigns, tax policy, the treasury (the **Village fund**), the government's road and rail builders, the mayor's needs list.
 
@@ -185,6 +197,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Intercity Express** — Every three hours 07:00–22:00 on the national line; ride it to Westmere, Northbridge, Avalon City or Harbourton.
 
+**Knocking** — M7: at a home whose household won't ask you in yet, `E` knocks and the eldest at home comes to the door to talk.
+
 **Interiors** — `src/interiors/plan.ts`: 12 templates (home, shop, food, office, workshop, classroom, hospital, police, fire, terminal, venue, civic), themed per type, laid out from the building's seed as plain data.
 
 ---
@@ -209,7 +223,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## L
 
-**Launch** — **M7**: deploy at `pixelville.next.houseofnamus.com` on Vercel.
+**Launch** — **M7**: everything's ready in the repo (`vercel.json` caching and headers, the chat guards, the manifest); the owner's steps (Vercel project, `GROQ_API_KEY`, DNS) are in `docs/LAUNCH.md`. Host: `pixelville.next.houseofnamus.com`.
 
 **Life** — `src/sim/life.ts` (V1 "ambient life & justice"): hikers, birds, tourists, fireworks, crime and police, fires and the brigade, buses, taxis, queues, trains, boats and the ferry, helicopters, planes, campaigns, trials, road works, disasters, riots, incidents, the press.
 
@@ -225,7 +239,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Mayor's report** — The civic card: needs list, tax policy, grid, hospital, graduates, goods.
 
-**Milestones** — 1 Living town · 1.5 New look · 2 Street life · 3 Doors open · 4 Deeper village · 5 Going places · 6 Work shifts · 7 Launch polish (next). Details in `docs/MILESTONES.md`.
+**Milestones** — 1 Living town · 1.5 New look · 2 Street life · 3 Doors open · 4 Deeper village · 5 Going places · 6 Work shifts · 7 Launch polish (built; deploy pending). Details in `docs/MILESTONES.md`.
 
 **Mind** — `src/sim/mind.ts`: each villager's traits, memories, friends, known and loved places, opinions; saved with them.
 
@@ -262,6 +276,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Paramedic** — M6 job (hospital): casualties come to you; treat them on foot, drive them in, hand them over to the ward; home visits to the sick between calls.
 
 **Performance** — Medium tier on the Intel laptop ≈ 27 ms/frame at 1016×550 with a 42-building town. Integrated GPUs get **medium** (no MSAA/AO, 2K shadows refreshed on alternate frames, half-resolution textures); discrete get high. Never compile a shader on frame 1.
+
+**Phones (playing on one)** — M7: touch controls from the start, full screen on the first tap (landscape where allowed), a "turn your phone sideways" card when upright, a compact layout for short screens, Low quality by default, two-finger twist to turn the Planner, installable (manifest + icon in `public/`).
 
 **Phone** — `Tab` (`src/ui/phone.ts`): Map/GPS, Jobs, Ride, Contacts, Wallet, Garage, PVTV, Tasks, Camera, Planner, Settings.
 
@@ -309,7 +325,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Seasons** — See **Clock**; trees, crops, snow cover, ice, festivals follow them.
 
-**Settings** — `src/sim/settings.ts`: village name, growth pace, Christmas lock, autosave, quality, FOV, look sensitivity, invert, volume.
+**Settings** — `src/sim/settings.ts` (kept in this browser): village name, growth pace, Christmas lock, autosave, volume; quality, resolution, frame cap, FOV; look sensitivity, invert, key bindings; interface size, subtitles, colour vision, shake, head bob, reduce motion; whether the guide was seen. Four tabs in the modal (M7).
 
 **Shifts** — `src/player/shifts.ts`: start at the workplace or from the phone; the workplace lends its vehicle at the kerb; the job loop runs; tasks pay into the shift; stars 1–5; up to 8 hours (14 for the pilot) with a little overtime to finish; clock off for pay = (hourly × hours + task pay) × (0.7 + 0.1 × stars). See **Jobs (Founder)**, **Claims**, **Money rule**.
 
@@ -322,6 +338,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Sim** — `src/sim/agents.ts` (`Sim`): the people: families, schedules, trips, commuting, wages, savings, ambitions, businesses, weddings, births, ageing; plus stats.
 
 **Sounds** — `src/audio/sounds.ts`: V1's procedural audio (horns positional by distance).
+
+**Subtitles** — M7 (`Subs` in `src/ui/access.ts`): villagers' street lines with their names (every greeting) and, if chosen, captions for horns, sirens, thunder, bells, crashes, fireworks; lower centre (lower left on narrower windows).
 
 **Spec** — A vehicle's handling (`src/player/fleet.ts`): top speed, acceleration, range, tank, contact circles, repair cost, turn rate, length in traffic; `specOf(v)` covers work vehicles.
 
@@ -343,7 +361,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Terrain** — `src/render/terrain.ts`: textured grass/sand/rock, kerbed roads, bridges, ballasted rails, lamps, animated water with foam and ice, trees in two LODs (32k), streamed grass, hills and the sea beyond the map.
 
-**Tests** — Vitest in `tests/`, one file per system (sim, traffic, founder, wanted, reputation, photo, interiors, chat, health, power, education, supply, deeper, travel, shifts, V1 import); `tests/town.ts` builds towns. 113 tests at M6.
+**Tests** — Vitest in `tests/`, one file per system (sim, traffic, founder, wanted, reputation, photo, interiors, chat, health, power, education, supply, deeper, travel, shifts, V1 import); `tests/town.ts` builds towns. 118 tests at M7 (`controls.test.ts` added).
 
 **Tickets** — Machine tickets kept in the bag (`src/player/tickets.ts`): singles, day returns, week rovers, ferry, island day trip, flights, the air taxi, the sightseeing flight.
 
