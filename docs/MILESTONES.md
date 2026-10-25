@@ -1,6 +1,6 @@
 # PixelVille — Next Dimension · Milestone Plan
 
-> Companion to [DESIGN.md](DESIGN.md). Each milestone ends with a playable, deployable build.
+> Companion to [DESIGN.md](DESIGN.md). New to the project? Start with [HANDOFF.md](HANDOFF.md). Each milestone ends with a playable, deployable build.
 > Order follows dependencies: later jobs need the systems they run on (paramedics need health, electricians need power, train drivers need rideable trains).
 
 | # | Milestone | Headline |
