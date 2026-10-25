@@ -1,6 +1,7 @@
-// @ts-nocheck — ported from PixelVille V1 js/weather.js (see docs/DESIGN.md §3).
+// Ported from PixelVille V1 js/weather.js (see docs/DESIGN.md §3), typed against src/sim/types.ts.
 // V2: only the simulation half lives here; rain, snow, leaves, lightning and
 // cloud visuals are drawn by src/render/weatherfx.ts from this state.
+import type { Person } from './types';
 import { G_WATER, GH, GW, World } from './world';
 import { MIN_PER_SEC, T, emit } from './core';
 import { Sim } from './agents';
@@ -40,12 +41,12 @@ export const Weather: any = {
     this.intensity = this.target;
   },
 
-  seasonOf(day) { return Math.floor(((day - 1) % (SEASON_LEN * 4)) / SEASON_LEN); },
+  seasonOf(day: number) { return Math.floor(((day - 1) % (SEASON_LEN * 4)) / SEASON_LEN); },
   isRaining() { return (this.kind === 'rain' || this.kind === 'heavy') && this.intensity > 0.25; },
   isSnowing() { return this.kind === 'snow' && this.intensity > 0.2; },
   label() { return `${SEASON_EMOJI[this.season]} ${SEASONS[this.season]}`; },
   weatherLabel() {
-    return { clear: '☀️ Clear', clouds: '⛅ Cloudy', rain: '🌧️ Rain', heavy: '⛈️ Heavy rain', snow: '🌨️ Snow' }[this.kind];
+    return ({ clear: '☀️ Clear', clouds: '⛅ Cloudy', rain: '🌧️ Rain', heavy: '⛈️ Heavy rain', snow: '🌨️ Snow' } as Record<string, string>)[this.kind];
   },
   /* extra darkness added to daylight by bad weather */
   gloom() {
@@ -57,7 +58,7 @@ export const Weather: any = {
   },
 
   roll() {
-    const tables = [
+    const tables: [string, number][][] = [
       [['clear', 30], ['clouds', 28], ['rain', 30], ['heavy', 12]],   // spring
       [['clear', 56], ['clouds', 24], ['rain', 14], ['heavy', 6]],    // summer
       [['clear', 22], ['clouds', 32], ['rain', 30], ['heavy', 16]],   // autumn
@@ -74,14 +75,14 @@ export const Weather: any = {
     // is rolled ahead of time so the HUD can whisper what's coming
     this.kind = this.next || pick();
     this.next = pick();
-    this.target = { clear: 0, clouds: 0.15, rain: 0.55, heavy: 1, snow: 0.75 }[this.kind];
+    this.target = ({ clear: 0, clouds: 0.15, rain: 0.55, heavy: 1, snow: 0.75 } as Record<string, number>)[this.kind];
     this.nextChange = 100 + Math.random() * 260; // game-minutes
   },
   forecastEmoji() {
-    return { clear: '☀️', clouds: '⛅', rain: '🌧️', heavy: '⛈️', snow: '🌨️' }[this.next] || '';
+    return ({ clear: '☀️', clouds: '⛅', rain: '🌧️', heavy: '⛈️', snow: '🌨️' } as Record<string, string>)[this.next] || '';
   },
 
-  tick(dtSim, dtReal) {
+  tick(dtSim: number, dtReal: number) {
     const s = this.seasonOf(Sim.day);
     if (s !== this.season) {
       this.season = s;
@@ -132,6 +133,6 @@ export const Weather: any = {
       const goal = (this.kind === 'heavy' && this.intensity > 0.5) ? p.max : (raining ? p.r : 0);
       p.r += (goal - p.r) * Math.min(1, dtReal * (raining ? 0.5 : 0.06));
     }
-    if (!raining) this.puddles = this.puddles.filter(p => p.r > 0.06);
+    if (!raining) this.puddles = this.puddles.filter((p: Person) => p.r > 0.06);
   },
 };

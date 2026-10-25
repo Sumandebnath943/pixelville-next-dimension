@@ -1,5 +1,5 @@
-// @ts-nocheck — ported verbatim from PixelVille V1 js/calamity.js (see docs/DESIGN.md §3);
-// typing pass pending. Behaviour changes for 3D are marked "V2:".
+// Ported from PixelVille V1 js/calamity.js (see docs/DESIGN.md §3), typed against src/sim/types.ts. Behaviour changes for 3D are marked "V2:".
+import type { Building, Person } from './types';
 import { GH, GW, G_ROCK, G_WATER, World } from './world';
 import { Life } from './life';
 import { News } from './news';
@@ -41,10 +41,10 @@ export const Calamity: any = {
     for (const b of World.buildings) { b.flooded = false; b.quakeDamage = false; }
   },
 
-  say(m, at) { Life.say(m, at); },
-  news(m) { News.breaking(m); },
+  say(m: string, at: any) { Life.say(m, at); },
+  news(m: string) { News.breaking(m); },
 
-  tick(dtSim) {
+  tick(dtSim: number) {
     const gm = dtSim * MIN_PER_SEC;
     if (this.shakeT > 0) this.shakeT -= dtSim;
     this.tickDrought(gm);
@@ -81,7 +81,7 @@ export const Calamity: any = {
     Tasks.add('drought', '🌵', 'Survive the drought — hold on for the monsoon');
     Weather.kind = 'clear'; Weather.target = 0; Weather.nextChange = 500;
   },
-  tickDrought(gm) {
+  tickDrought(gm: number) {
     const A = this.active;
     if (A && A.type === 'drought') {
       this.droughtLevel = Math.min(1, this.droughtLevel + gm / 2200);
@@ -94,9 +94,9 @@ export const Calamity: any = {
       if (A.hurt > 720) { // twice a day the drought bites
         A.hurt = 0;
         for (const p of Sim.people) if (Math.random() < 0.5) p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 5);
-        const pump = World.buildings.some(b => b.type === 'watertower' && !b.ruined && !b.construction);
+        const pump = World.buildings.some((b: Building) => b.type === 'watertower' && !b.ruined && !b.construction);
         if (!pump && Math.random() < 0.4) {
-          const frail = Sim.people.filter(p => p.age >= 60);
+          const frail = Sim.people.filter((p: Person) => p.age >= 60);
           if (frail.length && Math.random() < 0.5) {
             const v = frail[(Math.random() * frail.length) | 0];
             this.say(`🤒 The drought takes its toll: ${Sim.fullName(v)} fell gravely ill from bad water and passed away. Neighbours carry water for the family.`);
@@ -130,12 +130,12 @@ export const Calamity: any = {
   /* ---------------- flood: streets under water, rafts, then a shared drain ---------------- */
   startFlood() {
     const rings = 2 + ((Math.random() * 3) | 0); // how far the water swells
-    const flood = new Set();
-    let frontier = [];
+    const flood = new Set<number>();
+    let frontier: number[] = [];
     for (let i = 0; i < World.ground.length; i++) if (World.ground[i] === G_WATER) frontier.push(i);
     if (frontier.length < 20) return;
     for (let r = 0; r < rings; r++) {
-      const next = [];
+      const next: number[] = [];
       for (const i of frontier) {
         const x = i % GW, y = (i / GW) | 0;
         for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
@@ -175,7 +175,7 @@ export const Calamity: any = {
       Life.coverStory((t0 % GW) * T + 8, ((t0 / GW) | 0) * T + 8, this.active);
     }
   },
-  tickFlood(gm, dtSim) {
+  tickFlood(gm: number, dtSim: number) {
     const F = this.active && this.active.type === 'flood' ? this.active : null;
     if (!F) return;
     const tiles = this._floodTiles || [];
@@ -225,7 +225,7 @@ export const Calamity: any = {
         this.flooded.clear(); this._floodTiles = null; this.rafts = [];
         for (const b of World.buildings) b.flooded = false;
         // the receding water leaves scars: a few streets washed out for good
-        const wash = (F.washout || []).filter(i => World.roadMap[i]);
+        const wash = (F.washout || []).filter((i: number) => World.roadMap[i]);
         const n = Math.min(3, wash.length);
         for (let k = 0; k < n; k++) {
           const i = wash.splice((Math.random() * wash.length) | 0, 1)[0];
@@ -249,7 +249,7 @@ export const Calamity: any = {
   startQuake() {
     this.shakeT = 5;
     this.active = { type: 'quake', t: 500 };
-    const cands = World.buildings.filter(b => !b.ruined && !b.construction);
+    const cands = World.buildings.filter((b: Building) => !b.ruined && !b.construction);
     const n = Math.min(cands.length, 2 + ((Math.random() * 3) | 0));
     let collapsed = 0, cracked = 0;
     for (let k = 0; k < n; k++) {
@@ -269,14 +269,14 @@ export const Calamity: any = {
     Sim.safety = Math.max(15, Sim.safety - 6);
     // a ruptured gas line can turn one cracked building into a blaze
     if (cracked && Math.random() < 0.5) {
-      const damaged = World.buildings.find(b => b.quakeDamage && !b.fire && !b.ruined);
+      const damaged = World.buildings.find((b: Building) => b.quakeDamage && !b.fire && !b.ruined);
       if (damaged) Life.igniteBuilding(damaged, `🔥 A gas line ruptured in the quake — the ${CAT[damaged.type].name} is on fire!`);
     }
     this.say(`🫨 EARTHQUAKE! The ground heaved${collapsed ? ` — ${collapsed} building${collapsed > 1 ? 's' : ''} collapsed` : ''}${cracked ? `, ${cracked} more cracked` : ''}. Everyone is out in the streets digging and helping.`);
     this.news('Earthquake rocks the village — neighbours dig through the rubble side by side');
     Tasks.add('quake', '🫨', 'Shore up, dig out and rebuild after the earthquake');
   },
-  tickQuake(gm) {
+  tickQuake(gm: number) {
     const A = this.active && this.active.type === 'quake' ? this.active : null;
     if (!A) return;
     A.t -= gm;
@@ -310,7 +310,7 @@ export const Calamity: any = {
     Tasks.add('tornado', '🌪️', 'Shelter from the tornado, then rebuild together');
     Snd.siren();
   },
-  tickTornado(gm, dtSim) {
+  tickTornado(_gm: number, dtSim: number) {
     const tn = this.tornado;
     if (!tn) return;
     tn.ph += dtSim * 9;

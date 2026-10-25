@@ -1,4 +1,4 @@
-// @ts-nocheck — ported from PixelVille V1 js/tasks.js (see docs/DESIGN.md §3).
+// Ported from PixelVille V1 js/tasks.js (see docs/DESIGN.md §3), typed against src/sim/types.ts.
 // V2: data only; the journal panel lives in src/ui/journal.ts.
 import { Sim } from './agents';
 /* ============================================================
@@ -17,8 +17,8 @@ export const Tasks: any = {
 
   reset() { this.items = []; this.news = []; this.unread = 0; this._dirty = true; },
 
-  add(id, icon, text) {
-    if (id && this.items.some(t => t.id === id && !t.done)) return;
+  add(id: number, icon: string, text: string) {
+    if (id && this.items.some((t: any) => t.id === id && !t.done)) return;
     this.items.push({
       id: id || ('t' + Math.random().toString(36).slice(2)),
       icon: icon || '📌', text,
@@ -27,7 +27,7 @@ export const Tasks: any = {
     });
     if (this.items.length > 120) {
       // drop the oldest finished entries first
-      const doneIdx = this.items.findIndex(t => t.done);
+      const doneIdx = this.items.findIndex((t: any) => t.done);
       this.items.splice(doneIdx >= 0 ? doneIdx : 0, 1);
     }
     if (!this.open) this.unread++;
@@ -35,8 +35,8 @@ export const Tasks: any = {
   },
 
   /* mark a task finished; ok=false crosses it off as failed (✗) */
-  done(id, ok, note) {
-    const t = this.items.find(t => t.id === id && !t.done);
+  done(id: number, ok: boolean, note: string) {
+    const t = this.items.find((t: any) => t.id === id && !t.done);
     if (!t) return;
     t.done = true; t.ok = ok !== false;
     t.doneDay = Sim.day;
@@ -44,11 +44,11 @@ export const Tasks: any = {
     this._dirty = true;
   },
 
-  log(text) {
+  log(text: string) {
     this.news.push({ day: Sim.day, time: Sim.timeStr(), text });
     if (this.news.length > 250) this.news.shift();
     this._dirty = true;
   },
 
-  activeCount() { return this.items.filter(t => !t.done).length; },
+  activeCount() { return this.items.filter((t: any) => !t.done).length; },
 };

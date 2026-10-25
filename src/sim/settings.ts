@@ -1,5 +1,4 @@
-// @ts-nocheck — ported verbatim from PixelVille V1 js/settings.js (see docs/DESIGN.md §3);
-// typing pass pending. Behaviour changes for 3D are marked "V2:".
+// Ported from PixelVille V1 js/settings.js (see docs/DESIGN.md §3), typed against src/sim/types.ts. Behaviour changes for 3D are marked "V2:".
 import { Sim } from './agents';
 /* ============================================================
    PixelVille — player settings.
@@ -43,8 +42,8 @@ export const Settings: any = {
   save() {
     try { localStorage.setItem('pixelville-nd-settings', JSON.stringify(this.data)); } catch { /* private mode: settings just won't persist */ }
   },
-  get(k) { return this.data[k]; },
-  set(k, v) { this.data[k] = v; this.save(); },
+  get(k: string) { return this.data[k]; },
+  set(k: string, v: any) { this.data[k] = v; this.save(); },
 
   /* how eagerly the town grows: scales move-ins, speculative housing and
      pioneer treks. Cozy is the intended pace — lively while the village is

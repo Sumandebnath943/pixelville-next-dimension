@@ -1,5 +1,5 @@
-// @ts-nocheck — ported verbatim from PixelVille V1 js/mind.js (see docs/DESIGN.md §3);
-// typing pass pending. Behaviour changes for 3D are marked "V2:".
+// Ported from PixelVille V1 js/mind.js (see docs/DESIGN.md §3), typed against src/sim/types.ts. Behaviour changes for 3D are marked "V2:".
+import type { Building, Person } from './types';
 import { mulberry32 } from './core';
 import { World } from './world';
 import { AGE_RETIRE, Sim, WAGES } from './agents';
@@ -25,7 +25,7 @@ import { Edu } from './education';
 
 export const Mind: any = {
   /* every villager gets a personality (from their seed) and an empty head */
-  init(p) {
+  init(p: Person) {
     const R = mulberry32(p.seed * 7 + 11);
     p.mind = {
       knows: new Set(),      // building ids this person has heard of
@@ -46,32 +46,32 @@ export const Mind: any = {
     for (const b of World.buildings)
       if (Math.abs(b.x - p.home.x) + Math.abs(b.y - p.home.y) < 18) p.mind.knows.add(b.id);
   },
-  ensure(p) { if (!p.mind) this.init(p); return p.mind; },
+  ensure(p: Person) { if (!p.mind) this.init(p); return p.mind; },
 
   /* ---------- memory ---------- */
-  remember(p, kind, text, feel, venueId) {
+  remember(p: Person, kind: string, text: string, feel: number, venueId: number) {
     const m = this.ensure(p);
     m.memories.push({ day: Sim.day, kind, text, feel, venueId: venueId || 0 });
     if (m.memories.length > 14) m.memories.shift();
   },
   /* net feeling of the last few days' memories — colours the mood */
-  recentFeel(p, days) {
+  recentFeel(p: Person, days: number) {
     const m = this.ensure(p);
     let s = 0;
     for (const mem of m.memories) if (Sim.day - mem.day <= (days || 5)) s += mem.feel;
     return s;
   },
   /* a fresh bad memory tied to a place keeps a cautious soul away */
-  fears(p, venueId) {
+  fears(p: Person, venueId: number) {
     const m = this.ensure(p);
     if (!m.memories.length) return false;
-    return m.memories.some(mem => mem.venueId === venueId && mem.feel < 0 &&
+    return m.memories.some((mem: any) => mem.venueId === venueId && mem.feel < 0 &&
       Sim.day - mem.day < 6 + m.traits.caution * 10);
   },
   /* memories fade overnight; only the strong ones stay for good */
-  reflect(p) {
+  reflect(p: Person) {
     const m = this.ensure(p);
-    if (m.memories.length) m.memories = m.memories.filter(mm => Sim.day - mm.day < 20 || Math.abs(mm.feel) >= 2);
+    if (m.memories.length) m.memories = m.memories.filter((mm: any) => Sim.day - mm.day < 20 || Math.abs(mm.feel) >= 2);
     for (const [id, v] of m.friends) { // friendships cool without contact
       const nv = v - 0.008;
       if (nv <= 0) m.friends.delete(id); else m.friends.set(id, nv);
@@ -80,11 +80,11 @@ export const Mind: any = {
   },
 
   /* ---------- knowledge ---------- */
-  learnPlace(p, b) { this.ensure(p).knows.add(b.id); },
-  knowsPlace(p, b) { return this.ensure(p).knows.has(b.id); },
+  learnPlace(p: Person, b: Building) { this.ensure(p).knows.add(b.id); },
+  knowsPlace(p: Person, b: Building) { return this.ensure(p).knows.has(b.id); },
   /* a new building opens: neighbours learn of it; PVTV tells the whole town */
-  announcePlace(b) {
-    const tv = World.buildings.some(q => q.type === 'tvstation' && q.connected && !q.construction && !q.ruined);
+  announcePlace(b: Building) {
+    const tv = World.buildings.some((q: Building) => q.type === 'tvstation' && q.connected && !q.construction && !q.ruined);
     for (const p of Sim.people) {
       if (tv || Math.abs(p.home.x - b.x) + Math.abs(p.home.y - b.y) < 24 || Math.random() < 0.15)
         this.ensure(p).knows.add(b.id);
@@ -92,7 +92,7 @@ export const Mind: any = {
   },
 
   /* ---------- taste & friendship ---------- */
-  enjoy(p, b, amt) {
+  enjoy(p: Person, b: Building, amt: number) {
     const m = this.ensure(p);
     m.favorites.set(b.id, Math.min(6, (m.favorites.get(b.id) || 0) + amt));
     if ((m.favorites.get(b.id) || 0) >= 4 && !m.flags['fav' + b.id]) {
@@ -101,7 +101,7 @@ export const Mind: any = {
         Life.say(`💚 ${Sim.fullName(p)} has become a regular at the ${CAT[b.type].name} — "my usual spot"`);
     }
   },
-  bond(a, b, amt) {
+  bond(a: any, b: Building, amt: number) {
     const ma = this.ensure(a), mb = this.ensure(b);
     const na = Math.min(1, (ma.friends.get(b.id) || 0) + amt);
     ma.friends.set(b.id, na);
@@ -112,39 +112,39 @@ export const Mind: any = {
         Life.say(`🤝 ${Sim.fullName(a)} and ${Sim.fullName(b)} have become firm friends`);
     }
   },
-  friendCount(p) {
+  friendCount(p: Person) {
     let n = 0;
     for (const v of this.ensure(p).friends.values()) if (v >= 0.5) n++;
     return n;
   },
-  friendsOf(p) {
+  friendsOf(p: Person) {
     const out = [];
     for (const [id, v] of this.ensure(p).friends) {
       if (v < 0.5) continue;
-      const q = Sim.people.find(o => o.id === id);
+      const q = Sim.people.find((o: Person) => o.id === id);
       if (q) out.push(q);
     }
     return out;
   },
 
   /* two villagers meet in the street: bonds deepen, tips and news change hands */
-  gossip(a, b) {
+  gossip(a: any, b: Building) {
     this.bond(a, b, a.kind === 'kid' || b.kind === 'kid' ? 0.05 : 0.12);
     // V2: "did you hear what the Founder did?"
     Rep.hearsay(a, b); Rep.hearsay(b, a);
     if (a.kind === 'kid' || b.kind === 'kid') return;
-    const share = (from, to) => {
+    const share = (from: Building, to: Building) => {
       const mf = this.ensure(from), mt = this.ensure(to);
       for (const id of mf.knows) { // "have you tried the new place?"
         if (mt.knows.has(id) || Math.random() < 0.5) continue;
         mt.knows.add(id);
-        const bld = World.buildings.find(q => q.id === id);
+        const bld = World.buildings.find((q: Building) => q.id === id);
         if (bld && Math.random() < 0.03)
           Life.say(`🗣️ ${Sim.fullName(from)} told ${Sim.fullName(to)} about the ${CAT[bld.type].name}`);
         break;
       }
       // strong recent stories travel as hearsay and colour the listener's day
-      const strong = mf.memories.find(mm => Math.abs(mm.feel) >= 2 && Sim.day - mm.day <= 3);
+      const strong = mf.memories.find((mm: any) => Math.abs(mm.feel) >= 2 && Sim.day - mm.day <= 3);
       if (strong && Math.random() < 0.4)
         to.mood = Math.max(5, Math.min(98, (to.mood === undefined ? 60 : to.mood) + strong.feel));
     };
@@ -168,7 +168,7 @@ export const Mind: any = {
       }
       if (best) {
         const oldName = CAT[p.work.type].name;
-        p.work.workers = p.work.workers.filter(q => q !== p);
+        p.work.workers = p.work.workers.filter((q: Person) => q !== p);
         p.work = best; best.workers.push(p);
         p.wageMult = 1; p.jobDays = 0;
         p.mood = Math.min(98, (p.mood === undefined ? 60 : p.mood) + 6);
@@ -180,7 +180,7 @@ export const Mind: any = {
   },
 
   /* ---------- save / load: a mind travels with its owner ---------- */
-  pack(p) {
+  pack(p: Person) {
     const m = this.ensure(p);
     return {
       t: m.traits,
@@ -192,7 +192,7 @@ export const Mind: any = {
       o: m.fo || 0,
     };
   },
-  unpack(p, s) {
+  unpack(p: Person, s: any) {
     p.mind = {
       knows: new Set(s.k || []),
       memories: s.m || [],
@@ -205,7 +205,7 @@ export const Mind: any = {
   },
 
   /* the single most vivid recent memory in a household — for the inspector */
-  householdStory(b) {
+  householdStory(b: Building) {
     let latest = null, who = null;
     for (const r of b.residents) {
       if (!r.mind || !r.mind.memories.length) continue;

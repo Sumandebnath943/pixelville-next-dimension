@@ -1,5 +1,5 @@
-// @ts-nocheck — ported verbatim from PixelVille V1 js/festivals.js (see docs/DESIGN.md §3);
-// typing pass pending. Behaviour changes for 3D are marked "V2:".
+// Ported from PixelVille V1 js/festivals.js (see docs/DESIGN.md §3), typed against src/sim/types.ts. Behaviour changes for 3D are marked "V2:".
+import type { Building, XY } from './types';
 import { GH, GW, G_GRASS, World } from './world';
 import { Life } from './life';
 import { Sim } from './agents';
@@ -53,7 +53,7 @@ export const Festivals: any = {
     if (this.tree && (this.tree.phase === 'raising' || this.tree.phase === 'lit'))
       World.reserveRect(this.tree.x - 1, this.tree.y - 1, 4, 4);
   },
-  say(m) { Life.say(m); },
+  say(m: string) { Life.say(m); },
 
   yearDay() { return ((Sim.day - 1) % 28) + 1; },
   year() { return Math.floor((Sim.day - 1) / 28); },
@@ -80,7 +80,7 @@ export const Festivals: any = {
            (d === 1 && Sim.clock < 90);       // …and past midnight
   },
 
-  tick(dtSim) {
+  tick(dtSim: number) {
     const gm = dtSim * MIN_PER_SEC;
     this.tickTree(gm);
     this.tickSeason(gm);
@@ -88,7 +88,7 @@ export const Festivals: any = {
   },
 
   /* ---------- the Christmas month: markets, carolers, Santa ---------- */
-  tickSeason(gm) {
+  tickSeason(gm: number) {
     const on = this.isChristmasSeason() && Sim.people.length >= 8;
     if (on && !this._seasonOn) { this._seasonOn = true; this.setupMarkets(); this.reserveGround(); }
     if (!on) {
@@ -103,7 +103,7 @@ export const Festivals: any = {
     if (this.carolT <= 0) {
       this.carolT = 90 + Math.random() * 70;
       this.carolers = [];
-      const spots = World.buildings.filter(b => b.connected && !b.ruined && !b.construction &&
+      const spots = World.buildings.filter((b: Building) => b.connected && !b.ruined && !b.construction &&
         (CAT[b.type].res && b.residents.length || b.type === 'church'));
       for (let k = 0; k < Math.min(4, 1 + (spots.length / 8 | 0)); k++) {
         const b = spots[(Math.random() * spots.length) | 0];
@@ -165,7 +165,7 @@ export const Festivals: any = {
         if (World.ground[k] !== G_GRASS || World.bmap[k] || World.roadMap[k] || World.railMap[k]) { ok = false; break; }
       }
       if (!ok) continue;
-      if (this.markets.some(m => Math.abs(m.x - x) + Math.abs(m.y - y) < 30)) continue;
+      if (this.markets.some((m: XY) => Math.abs(m.x - x) + Math.abs(m.y - y) < 30)) continue;
       if (this.tree && Math.abs(this.tree.x - x) + Math.abs(this.tree.y - y) < 9) continue;
       this.markets.push({ x, y, seed: (Math.random() * 1e6) | 0 });
     }
@@ -181,7 +181,7 @@ export const Festivals: any = {
     if (this.lastAnnounce === key) return;
     this.lastAnnounce = key;
     if (Sim.people.length < 4) return;
-    const boost = n => { for (const p of Sim.people) p.mood = Math.min(98, (p.mood === undefined ? 60 : p.mood) + n); };
+    const boost = (n: number) => { for (const p of Sim.people) p.mood = Math.min(98, (p.mood === undefined ? 60 : p.mood) + n); };
     if (yd === 1) {
       this.say('🎆 HAPPY NEW YEAR, PixelVille! Confetti in the streets and resolutions all round.');
       boost(6);
@@ -213,7 +213,7 @@ export const Festivals: any = {
      comes down in the new year. */
   findTreeSpot() {
     const c = Gov.townCenter();
-    const plaza = World.buildings.find(b => (b.type === 'plaza' || b.type === 'grandpark') && !b.ruined);
+    const plaza = World.buildings.find((b: Building) => (b.type === 'plaza' || b.type === 'grandpark') && !b.ruined);
     const cx = plaza ? plaza.x + (plaza.w >> 1) : c.x, cy = plaza ? Math.max(2, plaza.y - 2) : c.y;
     for (let r = 0; r < 24; r++) for (let t = 0; t < Math.max(1, r * 8); t++) {
       const a = (t / Math.max(1, r * 8)) * 6.283;
@@ -229,7 +229,7 @@ export const Festivals: any = {
     return null;
   },
 
-  tickTree(gm) {
+  tickTree(gm: number) {
     const yd = this.yearDay(), yr = this.year();
     if (Sim.people.length < 8) { this.tree = null; return; } // traditions need a village
     if (yd >= 15) {

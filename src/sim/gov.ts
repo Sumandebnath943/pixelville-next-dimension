@@ -1,5 +1,5 @@
-// @ts-nocheck — ported verbatim from PixelVille V1 js/gov.js (see docs/DESIGN.md §3);
-// typing pass pending. Behaviour changes for 3D are marked "V2:".
+// Ported from PixelVille V1 js/gov.js (see docs/DESIGN.md §3), typed against src/sim/types.ts. Behaviour changes for 3D are marked "V2:".
+import type { Building, Person, XY } from './types';
 import { Life } from './life';
 import { GH, GW, G_GRASS, G_WATER, World } from './world';
 import { CAT } from './catalog';
@@ -51,7 +51,7 @@ export const LEADER_TYPES = [
   },
 ];
 
-export const CIVIC_COSTS = {
+export const CIVIC_COSTS: Record<string, number> = {
   fire: 260, police: 260, school: 320, hospital: 420, park: 140, library: 200,
   playground: 100, pool: 180, townhall: 380, shop: 160, market: 220, office: 300,
   factory: 340, mall: 480, bank: 300, house: 190, apartment: 430,
@@ -65,9 +65,9 @@ export const CIVIC_COSTS = {
 
 /* how far one station's protection reaches (manhattan tiles); a town that
    outgrows the radius needs a second station in the new district */
-export const COVERAGE_RADIUS = { police: 32, fire: 30, school: 36 };
+export const COVERAGE_RADIUS: Record<string, number> = { police: 32, fire: 30, school: 36 };
 
-export const civicClamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+export const civicClamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 export const CAMPAIGN_DAYS = 7;      // a full week of banners, rallies and promises
 export const CAND_COLORS = ['#e05a5a', '#4f8ede', '#4fae5c', '#d09a3a'];
@@ -105,24 +105,24 @@ export const Gov: any = {
     this.nextBusDay = 0;
   },
 
-  say(message) { Life.say(message); },
+  say(message: string) { Life.say(message); },
 
   /* ---------- government land office ----------
      All undeveloped land belongs to the village. Prices per tile follow
      the market: central plots near the town hall cost several times what
      an edge-of-map field does, and waterfront carries a premium. */
   townCenter() {
-    const hall = World.buildings.find(b => b.type === 'townhall' && !b.ruined);
+    const hall = World.buildings.find((b: Building) => b.type === 'townhall' && !b.ruined);
     if (hall) return { x: hall.x + (hall.w >> 1), y: hall.y + (hall.h >> 1) };
     // otherwise: the centroid of the built village
-    const built = World.buildings.filter(b => !b.ruined);
+    const built = World.buildings.filter((b: Building) => !b.ruined);
     if (!built.length) return { x: GW >> 1, y: GH >> 1 };
     let sx = 0, sy = 0;
     for (const b of built) { sx += b.x; sy += b.y; }
     return { x: Math.round(sx / built.length), y: Math.round(sy / built.length) };
   },
 
-  landPrice(x, y) {
+  landPrice(x: number, y: number) {
     const c = this.townCenter();
     const dist = Math.abs(x - c.x) + Math.abs(y - c.y);
     const centrality = Math.max(0, 1 - dist / 70);
@@ -133,12 +133,13 @@ export const Gov: any = {
     return Math.round(price);
   },
 
-  landCostFor(key, x, y) {
+  landCostFor(key: string, x: number, y: number) {
     const d = CAT[key];
-    return this.landPrice(x + (d.w >> 1), y + (d.h >> 1)) * d.w * d.h;
+    const w = d.w ?? 1, h = d.h ?? 1;
+    return this.landPrice(x + (w >> 1), y + (h >> 1)) * w * h;
   },
 
-  districtName(x, y) {
+  districtName(x: number, y: number) {
     const c = this.townCenter();
     const dist = Math.abs(x - c.x) + Math.abs(y - c.y);
     if (dist < 14) return 'town centre';
@@ -150,10 +151,10 @@ export const Gov: any = {
   /* ---------- service coverage: one station cannot police a whole city ----------
      Returns {x, y, count} for the centre of the largest cluster of buildings
      that no active station of this type reaches, or null if covered. */
-  coverageGap(type) {
+  coverageGap(type: string) {
     const radius = COVERAGE_RADIUS[type];
     if (!radius) return null;
-    const stations = World.buildings.filter(b => b.type === type && !b.ruined);
+    const stations = World.buildings.filter((b: Building) => b.type === type && !b.ruined);
     if (!stations.length) return null; // "no station at all" is handled separately
     const uncovered = [];
     for (const b of World.buildings) {
@@ -176,21 +177,21 @@ export const Gov: any = {
     return { x: best.x, y: best.y, count: uncovered.length };
   },
 
-  activeBuildings(type) {
-    return World.buildings.filter(b => (!type || b.type === type) && b.connected && !b.construction && !b.ruined);
+  activeBuildings(type: string) {
+    return World.buildings.filter((b: Building) => (!type || b.type === type) && b.connected && !b.construction && !b.ruined);
   },
 
-  has(type) { return this.activeBuildings(type).length > 0; },
+  has(type: string) { return this.activeBuildings(type).length > 0; },
 
-  hasPlanned(type) {
-    return World.buildings.some(b => b.type === type && !b.ruined);
+  hasPlanned(type: string) {
+    return World.buildings.some((b: Building) => b.type === type && !b.ruined);
   },
 
   voters() {
-    return Sim.people.filter(p => p.kind !== 'kid' && p.home && !p.home.ruined);
+    return Sim.people.filter((p: Person) => p.kind !== 'kid' && p.home && !p.home.ruined);
   },
 
-  candidateName(person, index) {
+  candidateName(person: Person, index: number) {
     if (person) return `${VILLAGER_GIVEN_NAMES[person.seed % VILLAGER_GIVEN_NAMES.length]} ${person.surname}`;
     return LEADER_NAMES[index % LEADER_NAMES.length];
   },
@@ -198,16 +199,16 @@ export const Gov: any = {
   /* A personal, lightweight quality-of-life score. It makes voting feel
      local: an unemployed resident without services does not vote like a
      secure, well-connected neighbour. */
-  voterQuality(person) {
+  voterQuality(person: Person) {
     const home = person.home;
-    const active = type => this.has(type);
+    const active = (type: string) => this.has(type);
     let score = 11;
     score += person.work ? 27 : 3;
     score += civicClamp((home && home.funds ? home.funds : 0) / 12, 0, 18);
     score += Sim.safety * 0.19;
     if (active('shop') || active('market') || active('mall')) score += 8;
-    if (this.activeBuildings().some(b => CAT[b.type].visit === 'leisure')) score += 7;
-    if (person.kind === 'kid' || Sim.people.some(p => p.home === home && p.kind === 'kid'))
+    if (this.activeBuildings().some((b: Building) => CAT[b.type].visit === 'leisure')) score += 7;
+    if (person.kind === 'kid' || Sim.people.some((p: Person) => p.home === home && p.kind === 'kid'))
       score += active('school') ? 6 : -5;
     if (Sim.people.length >= 42) score += active('hospital') ? 4 : -5;
     {
@@ -218,7 +219,7 @@ export const Gov: any = {
     // V2: the lights, the ward, the shelves
     if (home && Power.isDark(home)) score -= 6;
     if (Power.recent >= 2) score -= Math.min(8, Power.recent * 2);
-    if (!active('hospital') && home && home.residents.some(r => r.cond && r.cond.sev >= 35)) score -= 8;
+    if (!active('hospital') && home && home.residents.some((r: Person) => r.cond && r.cond.sev >= 35)) score -= 8;
     if (Supply.wanting.has('food')) score -= 5;
     score += ((person.mood === undefined ? 60 : person.mood) - 55) * 0.22; // feelings colour the ballot
     return civicClamp(score, 2, 98);
@@ -227,7 +228,7 @@ export const Gov: any = {
   civicQuality() {
     const voters = this.voters();
     if (!voters.length) return 100;
-    return Math.round(voters.reduce((sum, p) => sum + this.voterQuality(p), 0) / voters.length);
+    return Math.round(voters.reduce((sum: number, p: Person) => sum + this.voterQuality(p), 0) / voters.length);
   },
 
   /* The major, concrete reasons people are entitled to be angry. Life.js
@@ -253,7 +254,7 @@ export const Gov: any = {
     if (Supply.wanting.has('food')) { severity += 12; issues.push('empty shelves'); }
     if (this.scandals >= 2) { severity += this.scandals * 8; issues.push('missing public money'); }
     if (this.leader && this.approval < 30) { severity += (30 - this.approval) * 0.55; issues.push('lost trust in town hall'); }
-    for (const days of Object.values(this.unmetNeeds)) {
+    for (const days of Object.values(this.unmetNeeds) as number[]) {
       if (days >= 5) severity += Math.min(12, days * 1.4);
     }
     if (this.leader && this.leader.type.kind === 'corrupt') severity += 8;
@@ -271,8 +272,8 @@ export const Gov: any = {
   },
 
   /* ---------- the campaign: a visible week of banners, rallies & promises ---------- */
-  promiseFor(c) {
-    const needs = this.assessNeedsList().filter(n => n !== 'townhall');
+  promiseFor(c: any) {
+    const needs = this.assessNeedsList().filter((n: string) => n !== 'townhall');
     const concrete = needs.length ? `a new ${CAT[needs[0]].name.toLowerCase()}` : null;
     switch (c.type.kind) {
       case 'visionary': return (concrete ? concrete + ' and ' : '') + 'a better life for every family';
@@ -282,9 +283,9 @@ export const Gov: any = {
     }
   },
 
-  startCampaign(electionDay, includeIncumbent, reason) {
+  startCampaign(electionDay: number, includeIncumbent: boolean, reason: string) {
     const candidates = this.makeCandidates(includeIncumbent);
-    candidates.forEach((c, i) => {
+    candidates.forEach((c: any, i: number) => {
       c.color = CAND_COLORS[i % CAND_COLORS.length];
       c.promise = this.promiseFor(c);
     });
@@ -292,7 +293,7 @@ export const Gov: any = {
     // itself (the road is for people and cars only)
     const roads = [];
     for (let i = 0; i < World.roadMap.length; i++) if (World.roadMap[i]) roads.push(i);
-    const banners = [];
+    const banners: (XY & { ci?: number })[] = [];
     const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
     for (let k = 0; k < 160 && banners.length < 12 && roads.length; k++) {
       const r = roads[(Math.random() * roads.length) | 0];
@@ -309,7 +310,7 @@ export const Gov: any = {
       banners.push({ x: spot.x, y: spot.y, ci: banners.length % candidates.length });
     }
     // each candidate pitches a campaign camp — a tent with volunteers beside a road
-    const camps = [];
+    const camps: (XY & { ci?: number })[] = [];
     for (let ci = 0; ci < candidates.length; ci++) {
       for (let k = 0; k < 60; k++) {
         const r = roads[(Math.random() * roads.length) | 0];
@@ -326,7 +327,7 @@ export const Gov: any = {
       }
     }
     this.campaign = { candidates, electionDay, banners, camps, nextRally: 0, reason, votingDay: false };
-    this.say(`🗳️ Election season! ${candidates.map(c => `${c.name} ${c.type.emoji}`).join(' vs ')} — voting in ${electionDay - Sim.day} days. Banners, camps and campaign cars are everywhere.`);
+    this.say(`🗳️ Election season! ${candidates.map((c: any) => `${c.name} ${c.type.emoji}`).join(' vs ')} — voting in ${electionDay - Sim.day} days. Banners, camps and campaign cars are everywhere.`);
       Tasks.add('election' + electionDay, '🗳️', `Hold the ${reason || 'election'} — polls open day ${electionDay}`);
   },
 
@@ -373,9 +374,9 @@ export const Gov: any = {
     return types;
   },
 
-  makeCandidates(includeIncumbent) {
+  makeCandidates(includeIncumbent: boolean) {
     const voters = this.voters();
-    const candidates = [];
+    const candidates: any[] = [];
     const used = new Set();
     if (includeIncumbent && this.leader) {
       candidates.push({
@@ -407,7 +408,7 @@ export const Gov: any = {
     return candidates;
   },
 
-  candidateScore(voter, candidate, candidateIndex) {
+  candidateScore(voter: Person, candidate: any, candidateIndex: number) {
     const quality = this.voterQuality(voter);
     const struggling = civicClamp((55 - quality) / 45, 0, 1);
     const secure = civicClamp((quality - 45) / 45, 0, 1);
@@ -445,7 +446,7 @@ export const Gov: any = {
     return score;
   },
 
-  elect(options = {}) {
+  elect(options: { candidates?: any[]; includeIncumbent?: boolean; reason?: string } = {}) {
     const voters = this.voters();
     if (voters.length < 3) return null;
     const former = this.leader;
@@ -479,9 +480,9 @@ export const Gov: any = {
     this.scandals = reelected ? Math.max(0, this.scandals - 1) : 0;
     // a voted-out mayor clears their desk at the town hall
     if (former && former.personId && former.personId !== winner.personId) {
-      const oldP = Sim.people.find(q => q.id === former.personId);
+      const oldP = Sim.people.find((q: Person) => q.id === former.personId);
       if (oldP && oldP.work && oldP.work.type === 'townhall') {
-        oldP.work.workers = oldP.work.workers.filter(w => w !== oldP);
+        oldP.work.workers = oldP.work.workers.filter((w: Person) => w !== oldP);
         oldP.work = null;
         Sim.assignJobs();
       }
@@ -493,7 +494,7 @@ export const Gov: any = {
       total: voters.length,
       winner: winner.name,
       share,
-      candidates: candidates.map((c, i) => ({ name: c.name, kind: c.type.kind, votes: votes[i] })),
+      candidates: candidates.map((c: any, i: number) => ({ name: c.name, kind: c.type.kind, votes: votes[i] })),
     };
     Snd.fanfare();
     if (!former) this.say(`🗳️ ${winner.name} was elected mayor with ${share}% of the village vote — ${winner.type.label} ${winner.type.emoji}`);
@@ -501,8 +502,8 @@ export const Gov: any = {
     else this.say(`🗳️ Election day: ${former.name} was voted out. ${winner.name} won with ${share}% of votes.`);
     // victory celebration outside the town hall
     {
-      const hall = World.buildings.find(b => b.type === 'townhall' && !b.ruined) ||
-                   World.buildings.find(b => b.connected && !b.ruined);
+      const hall = World.buildings.find((b: Building) => b.type === 'townhall' && !b.ruined) ||
+                   World.buildings.find((b: Building) => b.connected && !b.ruined);
       if (hall) Life.celebrate(hall.x * T + hall.w * 8, hall.y * T + hall.h * 16, winner.color);
     }
     return { winner, share, reelected, candidates, votes };
@@ -510,14 +511,14 @@ export const Gov: any = {
 
   leaderStillLivesHere() {
     if (!this.leader || !this.leader.personId) return true;
-    return this.voters().some(p => p.id === this.leader.personId);
+    return this.voters().some((p: Person) => p.id === this.leader.personId);
   },
 
   collectTaxes() {
     // the player sets the pressure: light taxes please people but starve the
     // treasury; heavy taxes fund the mayor's plans and sour the streets
-    const perHome = { low: 1, normal: 2, high: 3.5 }[this.taxRate] || 2;
-    const bizCut = { low: 0, normal: 0.02, high: 0.05 }[this.taxRate] || 0.02;
+    const perHome = ({ low: 1, normal: 2, high: 3.5 } as Record<string, number>)[this.taxRate] || 2;
+    const bizCut = ({ low: 0, normal: 0.02, high: 0.05 } as Record<string, number>)[this.taxRate] || 0.02;
     let tax = 0;
     for (const b of World.buildings) {
       if (!CAT[b.type].res || b.ruined || !b.residents.length || b.funds <= 12) continue;
@@ -579,7 +580,7 @@ export const Gov: any = {
     const L = this.leader;
     // an emergency (fire, crime wave) forces an emergency session; otherwise
     // how often the mayor acts depends on their personality
-    const urgentNow = this.assessNeedsList().some(n => n === 'fire' || n === 'police');
+    const urgentNow = this.assessNeedsList().some((n: string) => n === 'fire' || n === 'police');
     // once the town is big enough for a railway the treasury REALLY saves for
     // it: only emergencies may spend until the programme is funded (the old
     // leaky 65% gate meant the railway never happened — pop 235, zero rail)
@@ -604,15 +605,15 @@ export const Gov: any = {
     this.nextBusDay = Sim.day + 2;
     const MIN_STOP_DIST = 12;   // shelters shouldn't crowd one another
     const REACH = 16;           // how far a home will walk to catch the bus
-    const stops = World.buildings.filter(b => b.type === 'busstop' && !b.ruined);
+    const stops = World.buildings.filter((b: Building) => b.type === 'busstop' && !b.ruined);
     const maxStops = Math.min(8, 2 + ((pop / 30) | 0));
     if (stops.length >= maxStops) return;
     const cost = CIVIC_COSTS.busstop;
     if (this.treasury < cost * 2 + 100) return;
     // homes & places people go to that no existing stop is within walking reach of
-    const riders = World.buildings.filter(b => b.connected && !b.ruined && !b.construction &&
+    const riders = World.buildings.filter((b: Building) => b.connected && !b.ruined && !b.construction &&
       (CAT[b.type].res || CAT[b.type].visit) && b.type !== 'busstop');
-    const farFromStop = b => stops.every(s => Math.abs(s.x - b.x) + Math.abs(s.y - b.y) > REACH);
+    const farFromStop = (b: Building) => stops.every((s: Building) => Math.abs(s.x - b.x) + Math.abs(s.y - b.y) > REACH);
     const uncovered = riders.filter(farFromStop);
     if (uncovered.length < (stops.length === 0 ? 4 : 6)) return;
     // aim the shelter at the densest cluster of un-served buildings
@@ -623,10 +624,10 @@ export const Gov: any = {
       if (n > bestN) { bestN = n; best = b; }
     }
     if (!best) return;
-    const tooClose = (x, y) => World.buildings.some(b => b.type === 'busstop' && !b.ruined &&
+    const tooClose = (x: number, y: number) => World.buildings.some((b: Building) => b.type === 'busstop' && !b.ruined &&
       Math.abs(b.x - x) + Math.abs(b.y - y) < MIN_STOP_DIST);
     // keep shelters (and their queues) clear of the railway
-    const nearRail = (x, y) => {
+    const nearRail = (x: number, y: number) => {
       for (let j = -1; j <= 2; j++) for (let i = -1; i <= 2; i++) if (World.isRail(x + i, y + j)) return true;
       return false;
     };
@@ -660,8 +661,8 @@ export const Gov: any = {
     if (pop < 40 || Sim.day < (this.nextRailDay || 0)) return;
     this.nextRailDay = Sim.day + 3;
     const cost = CIVIC_COSTS.trainstation;
-    const stations = World.buildings.filter(b => b.type === 'trainstation' && !b.ruined);
-    const anchor = st => { // a free (or already-railed) tile beside the station
+    const stations = World.buildings.filter((b: Building) => b.type === 'trainstation' && !b.ruined);
+    const anchor = (st: any) => { // a free (or already-railed) tile beside the station
       for (let j = -1; j <= st.h; j++) for (let i = -1; i <= st.w; i++) {
         if (i >= 0 && i < st.w && j >= 0 && j < st.h) continue;
         const x = st.x + i, y = st.y + j;
@@ -674,7 +675,7 @@ export const Gov: any = {
     if (stations.length < 2) {
       if (this.treasury < cost * (2 - stations.length) + 300) return;
       const c = this.townCenter();
-      const far = World.buildings.reduce((best, b) => {
+      const far = World.buildings.reduce((best: any, b: Building) => {
         if (b.ruined || !b.connected || b.type === 'trainstation') return best;
         const d = Math.abs(b.x - c.x) + Math.abs(b.y - c.y);
         return (!best || d > best.d) ? { b, d } : best;
@@ -707,15 +708,15 @@ export const Gov: any = {
       return;
     }
     // phase 2: any station standing without track gets connected to the line
-    const hasRail = st => {
+    const hasRail = (st: any) => {
       for (let j = -1; j <= st.h; j++) for (let i = -1; i <= st.w; i++) {
         if (i >= 0 && i < st.w && j >= 0 && j < st.h) continue;
         if (World.isRail(st.x + i, st.y + j)) return true;
       }
       return false;
     };
-    const railless = stations.filter(st => !hasRail(st));
-    const railed = stations.filter(st => hasRail(st));
+    const railless = stations.filter((st: Building) => !hasRail(st));
+    const railed = stations.filter((st: Building) => hasRail(st));
     if (railless.length && railed.length) {
       const st = railless[0], other = railed[0];
       const aA = anchor(st), aB = anchor(other);
@@ -772,10 +773,10 @@ export const Gov: any = {
   assessNeedsList() {
     const stats = Sim.stats();
     const pop = Sim.people.length;
-    const kids = Sim.people.filter(p => p.kind === 'kid').length;
-    const parks = World.buildings.filter(b => ['park', 'playground', 'grandpark', 'plaza'].includes(b.type) && !b.ruined).length;
+    const kids = Sim.people.filter((p: Person) => p.kind === 'kid').length;
+    const parks = World.buildings.filter((b: Building) => ['park', 'playground', 'grandpark', 'plaza'].includes(b.type) && !b.ruined).length;
     const needs = [];
-    const underCon = t => World.buildings.some(b => b.type === t && b.construction > 0 && !b.ruined);
+    const underCon = (t: string) => World.buildings.some((b: Building) => b.type === t && b.construction > 0 && !b.ruined);
     // a single fire is remembered long enough for the village to act on it
     if (Life.firesRecent >= 0.5 && !this.hasPlanned('fire')) needs.push('fire');
     if (Life.crimes >= 2 && !this.hasPlanned('police')) needs.push('police');
@@ -797,18 +798,18 @@ export const Gov: any = {
       const hr = Health.report();
       if (hr.beds && hr.ward >= hr.beds) needs.push('hospital'); // a full ward: a second hospital
     }
-    if (pop >= 30 && !this.hasPlanned('college') && Sim.workplaces().reduce((n, w) => n + Edu.open(w), 0) >= 3) needs.push('college');
+    if (pop >= 30 && !this.hasPlanned('college') && Sim.workplaces().reduce((n: number, w: number) => n + Edu.open(w), 0) >= 3) needs.push('college');
     if (Health.wave && !this.hasPlanned('pharmacy')) needs.push('pharmacy');
     if (this.leader && !this.hasPlanned('townhall')) needs.push('townhall');
     if (kids >= 4 && !this.hasPlanned('school')) needs.push('school');
     // crowded classrooms → a second school across town
-    const schools = World.buildings.filter(b => b.type === 'school' && !b.ruined).length;
+    const schools = World.buildings.filter((b: Building) => b.type === 'school' && !b.ruined).length;
     if (schools >= 1 && kids > schools * 14 && !underCon('school')) needs.push('school');
     // serious crime demands a courthouse
     if ((Life.arrests >= 3 || Life.graveCases > 0) && !this.hasPlanned('courthouse'))
       needs.push('courthouse');
     // housing pressure: no vacancies while jobs go begging → build homes
-    const resUnderCon = World.buildings.some(b => CAT[b.type].res && b.construction > 0 && !b.ruined);
+    const resUnderCon = World.buildings.some((b: Building) => CAT[b.type].res && b.construction > 0 && !b.ruined);
     if (!resUnderCon && stats.vacant === 0 && stats.demand.r > 0.4)
       needs.push(pop >= 30 ? 'apartment' : 'house');
     if (pop >= 8 && !['shop', 'market', 'mall', 'deptstore'].some(t => this.hasPlanned(t))) needs.push('shop');
@@ -816,7 +817,7 @@ export const Gov: any = {
     if (pop >= 55 && !this.hasPlanned('market')) needs.push('market');
     if (pop >= 70 && !this.hasPlanned('deptstore')) needs.push('deptstore');
     // public transport grows with the town
-    const stops = World.buildings.filter(b => b.type === 'busstop' && !b.ruined).length;
+    const stops = World.buildings.filter((b: Building) => b.type === 'busstop' && !b.ruined).length;
     if (pop >= 16 && stops < Math.min(6, Math.floor(pop / 18)) && !underCon('busstop')) needs.push('busstop');
     if (pop >= 32 && !this.hasPlanned('taxistand')) needs.push('taxistand');
     if (pop >= 28 && !this.hasPlanned('postoffice')) needs.push('postoffice');
@@ -827,7 +828,7 @@ export const Gov: any = {
     if (pop >= 40 && !this.hasPlanned('plaza')) needs.push('plaza');
     if (pop >= 55 && !this.hasPlanned('grandpark')) needs.push('grandpark');
     // food security: the village must grow what it eats
-    const farms = World.buildings.filter(b => b.type === 'farm' && !b.ruined).length;
+    const farms = World.buildings.filter((b: Building) => b.type === 'farm' && !b.ruined).length;
     if (pop >= 18 && farms < Math.max(1, Math.ceil(pop / 40)) && !underCon('farm')) needs.push('farm');
     // utilities: running water, then electric light
     if (pop >= 26 && !this.hasPlanned('watertower')) needs.push('watertower');
@@ -854,7 +855,7 @@ export const Gov: any = {
     if (Supply.wanting.has('food') && !underCon('farm') && farms < this.civicCap('farm') + 1) needs.push(farms < this.civicCap('farm') ? 'farm' : 'cannery');
     if (Supply.wanting.has('prod') && !this.hasPlanned('factory')) needs.push('factory');
     if (Supply.wanting.has('tex') && !this.hasPlanned('textilemill')) needs.push('textilemill');
-    if (!this.hasPlanned('warehouse') && World.buildings.filter(b => b.stock >= 60 && ['farm', 'cannery', 'sawmill', 'brickworks', 'glassworks', 'steelworks', 'textilemill', 'factory'].includes(b.type)).length >= 2) needs.push('warehouse');
+    if (!this.hasPlanned('warehouse') && World.buildings.filter((b: Building) => b.stock >= 60 && ['farm', 'cannery', 'sawmill', 'brickworks', 'glassworks', 'steelworks', 'textilemill', 'factory'].includes(b.type)).length >= 2) needs.push('warehouse');
     // a JOBS PROGRAMME: idle hands demand industry — and always a KIND the
     // town doesn't have yet, so work & industry fills out over time
     const jobless = Math.max(0, stats.adults - stats.employed);
@@ -884,10 +885,10 @@ export const Gov: any = {
     const ignoresNeed = L.type.kind === 'corrupt' ? Math.random() < 0.74 :
       L.type.kind === 'business' ? Math.random() < 0.25 : false;
     if (!key || ignoresNeed) {
-      const choices = L.type.builds.filter(k =>
+      const choices = L.type.builds.filter((k: string) =>
         this.countOf(k) < Math.min(this.civicCap(k), CAT[k].jobs ? 2 : 99));
       // variety IS strategy: strongly prefer giving the town something it has none of
-      const fresh = choices.filter(k => this.countOf(k) === 0);
+      const fresh = choices.filter((k: string) => this.countOf(k) === 0);
       const pool = fresh.length && Math.random() < 0.7 ? fresh : choices;
       key = pool.length ? pool[(Math.random() * pool.length) | 0] : null;
     }
@@ -912,12 +913,12 @@ export const Gov: any = {
     return true;
   },
 
-  countOf(type) { return World.buildings.filter(b => b.type === type && !b.ruined).length; },
+  countOf(type: string) { return World.buildings.filter((b: Building) => b.type === type && !b.ruined).length; },
 
   /* HARD RULE: how many of each civic building this town may ever run.
      Landmarks stay unique, services scale with population, private
      commerce may multiply freely. Every public build path checks this. */
-  civicCap(key) {
+  civicCap(key: string) {
     const pop = Sim.people.length;
     const UNIQUE = ['townhall', 'courthouse', 'airport', 'stadium', 'amusement', 'zoo', 'grandpark',
       'college', 'exchange', 'tvstation', 'museum', 'theater', 'heliport', 'casino', 'mall'];
@@ -945,9 +946,9 @@ export const Gov: any = {
   consolidateServices() {
     for (const key of ['police', 'fire', 'school', 'hospital', 'watertower']) {
       const cap = this.civicCap(key); // at the cap is fine; over it is not
-      const list = World.buildings.filter(b => b.type === key && !b.ruined);
+      const list = World.buildings.filter((b: Building) => b.type === key && !b.ruined);
       if (list.length <= cap) continue;
-      const surplus = list.sort((a, b) => b.id - a.id)[0]; // the newest closes first
+      const surplus = list.sort((a: any, b: Building) => b.id - a.id)[0]; // the newest closes first
       World.removeBuilding(surplus);
       Sim.onBuildingRemoved(surplus);
       World.refreshConnections();
@@ -981,11 +982,11 @@ export const Gov: any = {
     }
   },
 
-  assignLeaderOffice(hall) {
+  assignLeaderOffice(hall: Building) {
     if (!this.leader || !this.leader.personId) return;
-    const p = Sim.people.find(q => q.id === this.leader.personId);
+    const p = Sim.people.find((q: Person) => q.id === this.leader.personId);
     if (!p || p.work === hall) return;
-    if (p.work) p.work.workers = p.work.workers.filter(w => w !== p);
+    if (p.work) p.work.workers = p.work.workers.filter((w: Person) => w !== p);
     p.work = hall;
     hall.workers.push(p);
     this.say(`🎩 Mayor ${this.leader.name} moved into the office at the Town Hall.`);
@@ -1003,7 +1004,7 @@ export const Gov: any = {
         this.needTimers[key] = 0; this.unmetNeeds[key] = 0;
       }
     for (const need of needs) {
-      if (World.buildings.some(b => b.type === need && b.construction > 0)) {
+      if (World.buildings.some((b: Building) => b.type === need && b.construction > 0)) {
         if (this.needTimers[need] >= 2)
           Tasks.done('need-' + need, true, `Village need met: ${CAT[need].name} under construction`);
         this.needTimers[need] = 0; this.unmetNeeds[need] = 0;
@@ -1017,9 +1018,9 @@ export const Gov: any = {
     // one community project a day. Emergencies first, then the need that has
     // WAITED LONGEST — list order used to let repeatable needs (parks, farms,
     // housing) starve churches, cinemas and colleges forever
-    const isUrgent = n => n === 'fire' || n === 'police';
-    const ripe = needs.filter(n => (this.needTimers[n] || 0) >= (isUrgent(n) ? 2 : 3));
-    ripe.sort((a, b) => ((isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0)) ||
+    const isUrgent = (n: string) => n === 'fire' || n === 'police';
+    const ripe = needs.filter((n: string) => (this.needTimers[n] || 0) >= (isUrgent(n) ? 2 : 3));
+    ripe.sort((a: string, b: string) => ((isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0)) ||
       (this.needTimers[b] || 0) - (this.needTimers[a] || 0));
     for (const need of ripe) {
       if (this.communityBuild(need, isUrgent(need))) return true;
@@ -1044,7 +1045,7 @@ export const Gov: any = {
     }
   },
 
-  communityBuild(need, urgent) {
+  communityBuild(need: string, urgent: boolean) {
     if (this.countOf(need) >= this.civicCap(need)) return false; // the hard rule
     const cost = CIVIC_COSTS[need] || STARTUP_COSTS[need] || 220;
     // town hall chips in first when it can — an endless whip-round used to
@@ -1053,8 +1054,8 @@ export const Gov: any = {
     // treasury is saving for the railway, the community pays its own way.
     const railSaving = this.leader && Sim.people.length >= 45 && this.countOf('trainstation') === 0;
     const fromTreasury = this.leader && !railSaving ? Math.min(this.treasury, cost * 0.5) : 0;
-    const homes = World.buildings.filter(b => CAT[b.type].res && b.residents.length && b.funds > 25 && !b.ruined);
-    const pool = homes.reduce((sum, b) => sum + Math.max(0, (b.funds - 20) * 0.25), 0);
+    const homes = World.buildings.filter((b: Building) => CAT[b.type].res && b.residents.length && b.funds > 25 && !b.ruined);
+    const pool = homes.reduce((sum: number, b: Building) => sum + Math.max(0, (b.funds - 20) * 0.25), 0);
     if (fromTreasury + pool < cost * (urgent ? 1.0 : 1.1)) return false; // a poor village needs time to save
     const target = COVERAGE_RADIUS[need] && this.hasPlanned(need) ? this.coverageGap(need) : null;
     const spot = World.findPlannedSpot(need, target);
@@ -1092,7 +1093,7 @@ export const Gov: any = {
     return true;
   },
 
-  forceResign(reason) {
+  forceResign(reason: string) {
     if (!this.leader) return;
     const former = this.leader;
     this.leader = null;
@@ -1127,7 +1128,7 @@ export const Gov: any = {
     };
   },
 
-  restore(saved) {
+  restore(saved: any) {
     if (!saved) return;
     // Accept the short-lived pre-integration save shape as well.
     const g = saved.leader === undefined && saved.kind ? { leader: saved, ...saved } : saved;

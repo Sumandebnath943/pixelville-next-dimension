@@ -1,5 +1,5 @@
-// @ts-nocheck — ported verbatim from PixelVille V1 js/agents.js (see docs/DESIGN.md §3);
-// typing pass pending. Behaviour changes for 3D are marked "V2:".
+// Ported from PixelVille V1 js/agents.js (see docs/DESIGN.md §3), typed against src/sim/types.ts. Behaviour changes for 3D are marked "V2:".
+import type { Building, Person, Car, XY } from './types';
 import { Life } from './life';
 import { World } from './world';
 import { CAT } from './catalog';
@@ -37,13 +37,13 @@ export const CAR_SPEED = 1.6; // V2: ~46 km/h in town
 export const CAR_MIN_DIST = 10; // trips longer than this use the family car (V2: 14 → 10)
 
 /* ---------------- economy tables ---------------- */
-export const WAGES = { office: 22, skyscraper: 28, factory: 18, farm: 12, shop: 13, market: 14, mall: 16, restaurant: 14, cafe: 12, bakery: 12, hotel: 15, bank: 24, gas: 12, school: 18, college: 20, hospital: 22, police: 19, fire: 19, townhall: 20, courthouse: 22, temple: 10, library: 14, amusement: 15, stadium: 16, cinema: 14, theater: 14, museum: 15, gym: 13, pool: 12, airport: 20,
+export const WAGES: Record<string, number> = { office: 22, skyscraper: 28, factory: 18, farm: 12, shop: 13, market: 14, mall: 16, restaurant: 14, cafe: 12, bakery: 12, hotel: 15, bank: 24, gas: 12, school: 18, college: 20, hospital: 22, police: 19, fire: 19, townhall: 20, courthouse: 22, temple: 10, library: 14, amusement: 15, stadium: 16, cinema: 14, theater: 14, museum: 15, gym: 13, pool: 12, airport: 20,
   deptstore: 16, pharmacy: 16, barber: 12, florist: 12, bookshop: 13, butcher: 14, tailor: 13, electronics: 16, toyshop: 13, jeweler: 18, petshop: 12, hardware: 14, furniture: 15, icecream: 11, pizzeria: 13, arcade: 13, laundry: 11, autoshop: 15,
   steelworks: 22, sawmill: 16, brickworks: 16, textilemill: 14, cannery: 15, glassworks: 17, warehouse: 14, powerplant: 24,
   taxistand: 13, trainstation: 16, dock: 15, heliport: 20, postoffice: 14, zoo: 14,
   casino: 16, burgerpalace: 12, goldenarches: 12, crispycluck: 12, tacobelle: 12, pizzapalace: 13,
   carshowroom: 18, motoshowroom: 15, teastall: 8, fishmarket: 13, boatclub: 12, tvstation: 18, exchange: 26, watertower: 12, church: 10 };
-export const PRICES = { shop: 5, market: 7, mall: 10, bakery: 4, cafe: 5, restaurant: 12, cinema: 8, theater: 9, museum: 6, amusement: 13, stadium: 10, gym: 5, pool: 4, hotel: 15, library: 0, temple: 0, park: 0, playground: 0,
+export const PRICES: Record<string, number> = { shop: 5, market: 7, mall: 10, bakery: 4, cafe: 5, restaurant: 12, cinema: 8, theater: 9, museum: 6, amusement: 13, stadium: 10, gym: 5, pool: 4, hotel: 15, library: 0, temple: 0, park: 0, playground: 0,
   deptstore: 9, pharmacy: 6, barber: 7, florist: 6, bookshop: 7, butcher: 8, tailor: 9, electronics: 14, toyshop: 8, jeweler: 20, petshop: 7, hardware: 9, furniture: 15, icecream: 4, pizzeria: 7, arcade: 6, laundry: 4, autoshop: 12,
   zoo: 9, plaza: 0, grandpark: 0,
   casino: 5, burgerpalace: 7, goldenarches: 7, crispycluck: 7, tacobelle: 6, pizzapalace: 8,
@@ -65,7 +65,7 @@ export const ADULT_LIFESTYLES = [
   { id: 'neighbor', weight: 8, aspiration: 'community', saveRate: 0.26, funding: 'wages' },
   { id: 'risk-taker', weight: 6, aspiration: 'business', saveRate: 0.38, funding: 'risk', kinds: ['shop', 'cafe', 'market', 'arcade', 'pizzeria', 'teastall'] },
 ];
-export const STARTUP_COSTS = {
+export const STARTUP_COSTS: Record<string, number> = {
   shop: 210, cafe: 230, bakery: 220, market: 320,
   florist: 190, barber: 180, bookshop: 220, butcher: 240, icecream: 170, laundry: 200, petshop: 240, toyshop: 260,
   pharmacy: 300, tailor: 200, hardware: 300, electronics: 380, pizzeria: 260, furniture: 400, autoshop: 350, arcade: 380, gym: 320, jeweler: 420,
@@ -113,7 +113,9 @@ export const GIVEN_NAMES = ['Asha', 'Maya', 'Ishan', 'Noor', 'Dev', 'Elena', 'Fa
 export const AGE_ADULT = 18, AGE_RETIRE = 65, AGE_FRAIL = 70;
 
 /* optional scenario goals for a new map — sandbox remains the default */
-export const SCENARIOS = {
+/** a new map's goal: done when `check()`, failed if `failIf()` */
+export interface Scenario { name: string; emoji: string; desc: string; check: () => boolean; failIf?: () => boolean; [k: string]: any }
+export const SCENARIOS: Record<string, Scenario> = {
   first100: {
     name: 'The First Hundred', emoji: '💯',
     desc: 'Grow the village to 100 residents',
@@ -128,7 +130,7 @@ export const SCENARIOS = {
     name: 'A Year Without Loss', emoji: '🕯️',
     desc: 'Survive one full year (28 days) without a single building lost',
     check: () => Sim.scenario && Sim.day - Sim.scenario.startDay >= 28,
-    failIf: () => World.buildings.some(b => b.ruined),
+    failIf: () => World.buildings.some((b: Building) => b.ruined),
   },
 };
 
@@ -151,7 +153,7 @@ export function chooseLifestyle() {
 }
 
 /* thought bubble shown when someone sets off */
-export const DEST_EMOJI = {
+export const DEST_EMOJI: Record<string, string> = {
   shop: '🛍️', market: '🛒', bakery: '🥐', cafe: '☕', restaurant: '🍽️', mall: '🛍️',
   cinema: '🎬', theater: '🎭', park: '🌳', playground: '⚽', stadium: '⚽', amusement: '🎡',
   library: '📚', gym: '🏋️', pool: '🏊', museum: '🖼️', temple: '⛪',
@@ -191,13 +193,13 @@ export const Sim: any = {
   },
 
   /* ---------- building lifecycle ---------- */
-  onBuildingAdded(b) {
+  onBuildingAdded(b: Building) {
     const d = CAT[b.type];
-    const msgs = [];
+    const msgs: string[] = [];
     if (b.ruined) return msgs;
     if (d.res === 'family') {
-      const weds = b.newlywedIds ? this.people.filter(p => b.newlywedIds.includes(p.id)) : [];
-      const oldHome = b.pendingMoveFrom ? World.buildings.find(o => o.id === b.pendingMoveFrom) : null;
+      const weds = b.newlywedIds ? this.people.filter((p: Person) => b.newlywedIds.includes(p.id)) : [];
+      const oldHome = b.pendingMoveFrom ? World.buildings.find((o: Building) => o.id === b.pendingMoveFrom) : null;
       if (weds.length) { // a couple built this house for themselves
         for (const p of weds) this.moveHomes(p, b);
         b.funds = 40 + Math.random() * 40;
@@ -241,9 +243,9 @@ export const Sim: any = {
       msgs.push(`${d.name} opened — ${d.jobs} jobs 💼`);
       // a founder runs their own place
       if (b.founderId) {
-        const f = this.people.find(p => p.id === b.founderId);
+        const f = this.people.find((p: Person) => p.id === b.founderId);
         if (f) {
-          if (f.work) f.work.workers = f.work.workers.filter(w => w !== f);
+          if (f.work) f.work.workers = f.work.workers.filter((w: Person) => w !== f);
           f.work = b; b.workers.push(f);
           msgs.push(`💼 ${f.surname} quit the day job to run the family business!`);
         }
@@ -267,10 +269,10 @@ export const Sim: any = {
     return msgs;
   },
 
-  onBuildingRemoved(b) {
+  onBuildingRemoved(b: Building) {
     // a lost home is a story, not a deletion: families seek shelter in vacant
     // homes (surname group by group); only those with nowhere to go leave town
-    const displaced = this.people.filter(p => p.home === b);
+    const displaced = this.people.filter((p: Person) => p.home === b);
     if (displaced.length) {
       const groups = new Map();
       for (const p of displaced) {
@@ -278,12 +280,12 @@ export const Sim: any = {
         groups.get(p.surname).push(p);
       }
       for (const [surname, fam] of groups) {
-        const shelter = World.buildings.find(o => o !== b && CAT[o.type].res && !o.ruined &&
+        const shelter = World.buildings.find((o: Building) => o !== b && CAT[o.type].res && !o.ruined &&
           !o.construction && o.connected && o.residents.length === 0);
         for (const p of fam) { // whatever happens, wheels come home first
           if (p.trip && p.trip.car) p.trip.car.free = true;
           if (p.carHeld) { p.carHeld.free = true; p.carHeld = null; }
-          if (p.at && p.at !== b && p.at !== p.home && p.state === 'in') p.at.inside = Math.max(0, p.at.inside - 1);
+          if (p.at && p.at !== b && p.at !== p.home && p.state === 'in') p.at!.inside = Math.max(0, p.at!.inside - 1);
         }
         if (shelter) {
           for (const p of fam) {
@@ -301,7 +303,7 @@ export const Sim: any = {
         }
       }
     }
-    this.people = this.people.filter(p => p.home !== b);
+    this.people = this.people.filter((p: Person) => p.home !== b);
     for (const p of this.people) {
       if (p.work === b) p.work = null;
       if (p.school === b) p.school = null;
@@ -316,7 +318,7 @@ export const Sim: any = {
   },
 
   /* create one villager; used by move-ins, births and grown-up kids */
-  makePerson(kind, surname, home, age) {
+  makePerson(kind: string, surname: string, home: Building, age: number) {
     const style = kind === 'kid' ? null : chooseLifestyle();
     const businessKinds = style && style.kinds;
     const seed = (Math.random() * 1e6) | 0;
@@ -347,9 +349,9 @@ export const Sim: any = {
     return p;
   },
 
-  fullName(p) { return `${p.name} ${p.surname}`; },
+  fullName(p: Person) { return `${p.name} ${p.surname}`; },
 
-  spawnFamily(b) {
+  spawnFamily(b: Building) {
     const surname = SURNAMES[(Math.random() * SURNAMES.length) | 0];
     let n = 0;
     const a = this.makePerson('man', surname, b); n++;
@@ -362,10 +364,10 @@ export const Sim: any = {
   },
 
   /* ---------- assignments ---------- */
-  workplaces() { return World.buildings.filter(b => (CAT[b.type].jobs || 0) > 0 && b.connected && !b.construction && !b.ruined); },
+  workplaces() { return World.buildings.filter((b: Building) => (CAT[b.type].jobs || 0) > 0 && b.connected && !b.construction && !b.ruined); },
 
   assignJobs() {
-    const seekers = this.people.filter(p => p.kind !== 'kid' && !p.work && p.home.connected &&
+    const seekers = this.people.filter((p: Person) => p.kind !== 'kid' && !p.work && p.home.connected &&
       (p.age === undefined || p.age < AGE_RETIRE));
     for (const p of seekers) {
       let best = null, bd = 1e9;
@@ -380,7 +382,7 @@ export const Sim: any = {
   },
 
   assignSchools() {
-    const schools = World.buildings.filter(b => CAT[b.type].school && b.connected && !b.construction && !b.ruined);
+    const schools = World.buildings.filter((b: Building) => CAT[b.type].school && b.connected && !b.construction && !b.ruined);
     for (const p of this.people) {
       if (p.kind !== 'kid' || p.school) continue;
       let best = null, bd = 1e9;
@@ -394,13 +396,13 @@ export const Sim: any = {
 
   /* ---------- daily planning ----------
      Builds today's event list for one person: {t, dest, until} */
-  planDay(p) {
+  planDay(p: Person) {
     p.events = [];
     if (p.kind !== 'kid' && p.heldUntil > this.day) return; // behind bars — no plans today
     if (Health.resting(p)) { Health.sickPlan(p); return; }   // V2: too unwell for work or school
     const wkend = this.isWeekend();
     const jit = () => (Math.random() * 40 - 20) | 0;
-    const add = (t, dest, until) => {
+    const add = (t: any, dest: Building, until: number) => {
       if (dest && dest.connected) p.events.push({ t: Math.max(5, t), dest, until: Math.min(1435, until) });
     };
 
@@ -431,20 +433,20 @@ export const Sim: any = {
       }
     } else {
       const wd = p.work ? CAT[p.work.type] : null;
-      let worksToday = p.work && (!wkend || wd.wkd);
+      let worksToday = p.work && (!wkend || wd!.wkd);
       // V2: an enrolled worker takes some weekdays off to study at the college
-      const college = World.buildings.find(b => CAT[b.type].college && b.connected && !b.construction && !b.ruined);
+      const college = World.buildings.find((b: Building) => CAT[b.type].college && b.connected && !b.construction && !b.ruined);
       if (worksToday && !wkend && college && Edu.studyDay(p)) {
         worksToday = false;
         add(530 + jit(), college, 900 + jit());
       } else if (worksToday) {
-        add(wd.hours.s - 40 + jit(), p.work, wd.hours.e + jit());
+        add(wd!.hours!.s - 40 + jit(), p.work!, wd!.hours!.e + jit());
         // lunch break at a nearby café or restaurant
-        const food = World.buildings.filter(v =>
+        const food = World.buildings.filter((v: Building) =>
           ['cafe', 'restaurant', 'bakery'].includes(v.type) && v.connected && !v.construction &&
-          Math.abs(v.x - p.work.x) + Math.abs(v.y - p.work.y) < 26);
-        if (food.length && Math.random() < 0.45 && wd.hours.s < 700) {
-          const lt = wd.hours.s + 230 + jit();
+          Math.abs(v.x - p.work!.x) + Math.abs(v.y - p.work!.y) < 26);
+        if (food.length && Math.random() < 0.45 && wd!.hours!.s < 700) {
+          const lt = wd!.hours!.s + 230 + jit();
           p.events.push({ t: lt, dest: food[(Math.random() * food.length) | 0], until: lt + 40, back: 'work' });
         }
       } else if (!p.work) {
@@ -464,7 +466,7 @@ export const Sim: any = {
       }
       // a quick tea (and for some, a smoke) at the corner stall
       if (Math.random() < 0.3) {
-        const stall = World.buildings.find(v => v.type === 'teastall' && v.connected && !v.construction && !v.ruined);
+        const stall = World.buildings.find((v: Building) => v.type === 'teastall' && v.connected && !v.construction && !v.ruined);
         if (stall) {
           const tt = worksToday ? 430 + jit() : 560 + Math.random() * 300;
           p.events.push({ t: tt, dest: stall, until: tt + 15 });
@@ -486,12 +488,12 @@ export const Sim: any = {
         // the sociable don't go alone — they call a friend to come along
         if (venue && venue.connected &&
             Mind.ensure(p).traits.social > 0.55 && Math.random() < 0.5) {
-          const pals = Mind.friendsOf(p).filter(q =>
+          const pals = Mind.friendsOf(p).filter((q: Person) =>
             q.state === 'in' && q.at === q.home && q.kind !== 'kid' && q.heldUntil <= this.day);
           if (pals.length) {
             const pal = pals[(Math.random() * pals.length) | 0];
             pal.events.push({ t: t + 3, dest: venue, until: t + 50 + Math.random() * 40 });
-            pal.events.sort((x, y) => x.t - y.t);
+            pal.events.sort((x: any, y: any) => x.t - y.t);
             Mind.bond(p, pal, 0.08);
             if (Math.random() < 0.05)
               Life.say(`👥 ${this.fullName(p)} invited ${this.fullName(pal)} for an evening at the ${CAT[venue.type].name}`);
@@ -504,27 +506,27 @@ export const Sim: any = {
         p.events.push({ t, stroll: true, until: t + 60 });
       }
     }
-    p.events.sort((a, b) => a.t - b.t);
+    p.events.sort((a: any, b: Building) => a.t - b.t);
     // drop overlaps (lunch breaks are nested inside the work day, keep them)
     let end = -1;
-    p.events = p.events.filter(e => {
+    p.events = p.events.filter((e: any) => {
       if (e.back) return true;
       if (e.t < end) return false;
       end = e.until + 30; return true;
     });
   },
 
-  pickVenue(kind, p, preferTypes) {
+  pickVenue(kind: string, p: Person, preferTypes: any) {
     // a freshly opened venue draws the crowds all day
     const go = this.grandOpening;
     if (go && go.day === this.day && CAT[go.b.type].visit === kind &&
         go.b.connected && Math.random() < 0.5 && World.buildings.includes(go.b))
       return go.b;
-    let opts = World.buildings.filter(b => CAT[b.type].visit === kind && b.connected && !b.construction && !b.ruined && b !== p.home &&
+    let opts = World.buildings.filter((b: Building) => CAT[b.type].visit === kind && b.connected && !b.construction && !b.ruined && b !== p.home &&
       !Power.closed(b)); // V2: a shop in a blacked-out district shuts its doors
     if (!preferTypes && kind === 'leisure' && p.home.funds < 30) preferTypes = ['park', 'playground', 'library', 'temple']; // broke week: free fun
     if (preferTypes) {
-      const pref = opts.filter(b => preferTypes.includes(b.type));
+      const pref = opts.filter((b: Building) => preferTypes.includes(b.type));
       if (pref.length) opts = pref;
     }
     if (!opts.length) return null;
@@ -551,7 +553,7 @@ export const Sim: any = {
   },
 
   /* ---------- tick ---------- */
-  tick(dtSim) { // dtSim = real seconds * speed multiplier
+  tick(dtSim: number) { // dtSim = real seconds * speed multiplier
     this.clock += dtSim * MIN_PER_SEC;
     if (this.clock >= 1440) {
       this.clock -= 1440;
@@ -575,8 +577,8 @@ export const Sim: any = {
     // builders, so many simultaneous projects all move more slowly
     const gm = dtSim * MIN_PER_SEC;
     // V2: a site waiting for materials stands idle, and its builders help elsewhere
-    const sites = World.buildings.filter(b => b.construction > 0 && !b.stalled).length;
-    const builders = 3 + Math.floor(this.people.filter(p => p.kind !== 'kid').length / 8);
+    const sites = World.buildings.filter((b: Building) => b.construction > 0 && !b.stalled).length;
+    const builders = 3 + Math.floor(this.people.filter((p: Person) => p.kind !== 'kid').length / 8);
     const crewRate = sites > 0 ? Math.min(1, builders / sites) : 1;
     for (const b of World.buildings) {
       if (b.construction > 0) {
@@ -633,29 +635,29 @@ export const Sim: any = {
      A year passes each in-game day. Kids grow up, sweethearts find each
      other, couples move in together and marry, babies arrive, elders
      retire, and in time the village buries its own and carries on. */
-  removePerson(p, quiet) {
-    p.home.residents = p.home.residents.filter(r => r !== p);
-    if (p.work) p.work.workers = p.work.workers.filter(w => w !== p);
+  removePerson(p: Person, quiet: boolean) {
+    p.home.residents = p.home.residents.filter((r: Person) => r !== p);
+    if (p.work) p.work.workers = p.work.workers.filter((w: Person) => w !== p);
     if (p.trip && p.trip.car) p.trip.car.free = true;
     if (p.carHeld) { p.carHeld.free = true; p.carHeld = null; } // a car parked at a venue comes home too
-    if (p.at && p.at !== p.home && p.state === 'in') p.at.inside = Math.max(0, p.at.inside - 1);
-    const partner = p.partnerId ? this.people.find(q => q.id === p.partnerId) : null;
+    if (p.at && p.at !== p.home && p.state === 'in') p.at!.inside = Math.max(0, p.at!.inside - 1);
+    const partner = p.partnerId ? this.people.find((q: Person) => q.id === p.partnerId) : null;
     if (partner) {
       partner.partnerId = null;
       if (!quiet) partner.mood = Math.max(5, (partner.mood === undefined ? 60 : partner.mood) - 25);
     }
-    this.people = this.people.filter(q => q !== p);
+    this.people = this.people.filter((q: Person) => q !== p);
   },
 
-  moveHomes(p, to) {
-    p.home.residents = p.home.residents.filter(r => r !== p);
+  moveHomes(p: Person, to: Building) {
+    p.home.residents = p.home.residents.filter((r: Person) => r !== p);
     p.home = to;
     to.residents.push(p);
     if (p.state === 'in') p.at = to;
   },
 
   lifeCycle() {
-    const say = m => { Life.say(m); };
+    const say = (m: string) => { Life.say(m); };
     const toRemove = [];
     for (const p of this.people) {
       if (p.age === undefined) p.age = p.kind === 'kid' ? 9 : 30;
@@ -681,7 +683,7 @@ export const Sim: any = {
       // retirement
       if (p.age === AGE_RETIRE && p.work) {
         say(`🪑 ${this.fullName(p)} retired after a long working life at the ${CAT[p.work.type].name}`);
-        p.work.workers = p.work.workers.filter(w => w !== p);
+        p.work.workers = p.work.workers.filter((w: Person) => w !== p);
         p.work = null;
         this.assignJobs();
       }
@@ -704,13 +706,13 @@ export const Sim: any = {
     this.tickBirths(say);
   },
 
-  tickRomance(say) {
+  tickRomance(say: (m: string, at?: XY) => void) {
     // singles notice each other around town
-    const singles = this.people.filter(p => p.kind !== 'kid' && !p.partnerId &&
+    const singles = this.people.filter((p: Person) => p.kind !== 'kid' && !p.partnerId &&
       p.age >= AGE_ADULT && p.age < 58 && !p.home.ruined);
     if (singles.length >= 2 && Math.random() < Math.min(0.5, singles.length * 0.07)) {
-      const men = singles.filter(p => p.kind === 'man');
-      const women = singles.filter(p => p.kind === 'woman');
+      const men = singles.filter((p: Person) => p.kind === 'man');
+      const women = singles.filter((p: Person) => p.kind === 'woman');
       if (men.length && women.length) {
         const a = men[(Math.random() * men.length) | 0];
         const b = women[(Math.random() * women.length) | 0];
@@ -725,7 +727,7 @@ export const Sim: any = {
     // couples move in together, then marry
     for (const p of this.people) {
       if (!p.partnerId || p.married || p.kind === 'kid') continue;
-      const q = this.people.find(o => o.id === p.partnerId);
+      const q = this.people.find((o: Person) => o.id === p.partnerId);
       if (!q || q.id < p.id) continue; // handle each couple once
       const days = this.day - (p.datingSince || this.day);
       if (p.home !== q.home && days >= 3 + (p.seed % 4)) {
@@ -733,14 +735,14 @@ export const Sim: any = {
         const dest = (p.home.residents.length <= q.home.residents.length) ? p.home : q.home;
         const mover = dest === p.home ? q : p;
         this.moveHomes(mover, dest);
-        mover.surname = dest.residents.find(r => r !== mover) ? dest.residents.find(r => r !== mover).surname : mover.surname;
+        mover.surname = dest.residents.find((r: Person) => r !== mover) ? dest.residents.find((r: Person) => r !== mover).surname : mover.surname;
         say(`📦 ${this.fullName(mover)} moved in with ${this.fullName(mover === p ? q : p)} — young love under one roof`);
       } else if (p.home === q.home && days >= 6 + (p.seed % 5)) {
         p.married = q.married = true;
-        const venue = World.buildings.find(b => b.type === 'church' && b.connected && !b.ruined) ||
-                      World.buildings.find(b => b.type === 'temple' && b.connected && !b.ruined) ||
-                      World.buildings.find(b => b.type === 'townhall' && b.connected && !b.ruined) ||
-                      World.buildings.find(b => (b.type === 'park' || b.type === 'grandpark') && b.connected && !b.ruined);
+        const venue = World.buildings.find((b: Building) => b.type === 'church' && b.connected && !b.ruined) ||
+                      World.buildings.find((b: Building) => b.type === 'temple' && b.connected && !b.ruined) ||
+                      World.buildings.find((b: Building) => b.type === 'townhall' && b.connected && !b.ruined) ||
+                      World.buildings.find((b: Building) => (b.type === 'park' || b.type === 'grandpark') && b.connected && !b.ruined);
         say(`💍 Wedding bells! ${this.fullName(p)} and ${this.fullName(q)} got married${venue ? ` at the ${CAT[venue.type].name}` : ''} 🎉`);
         Snd.bell();
         p.home.funds = Math.max(0, p.home.funds - 25); // the party isn't free
@@ -759,10 +761,10 @@ export const Sim: any = {
   },
 
   /* love can fray: a couple both miserable for days on end may part ways */
-  tickSeparations(say) {
+  tickSeparations(say: (m: string, at?: XY) => void) {
     for (const p of this.people) {
       if (!p.married || !p.partnerId || p.kind === 'kid') continue;
-      const q = this.people.find(o => o.id === p.partnerId);
+      const q = this.people.find((o: Person) => o.id === p.partnerId);
       if (!q || q.id < p.id) continue; // handle each couple once
       const rocky = (p.mood !== undefined && p.mood < 28) && (q.mood !== undefined && q.mood < 28);
       p.rockyDays = rocky ? (p.rockyDays || 0) + 1 : 0;
@@ -775,7 +777,7 @@ export const Sim: any = {
           Mind.remember(q, 'heartbreak', `separated from ${this.fullName(p)}`, -2);
         }
         const mover = Math.random() < 0.5 ? p : q;
-        const vacant = World.buildings.find(b => CAT[b.type].res === 'family' && !b.ruined &&
+        const vacant = World.buildings.find((b: Building) => CAT[b.type].res === 'family' && !b.ruined &&
           !b.construction && b.connected && b.residents.length === 0);
         if (vacant) {
           this.moveHomes(mover, vacant);
@@ -789,8 +791,8 @@ export const Sim: any = {
     }
   },
 
-  seekNewHome(p, q, say) {
-    const vacant = World.buildings.find(b => CAT[b.type].res === 'family' && !b.ruined && !b.construction &&
+  seekNewHome(p: Person, q: Person, say: (m: string, at?: XY) => void) {
+    const vacant = World.buildings.find((b: Building) => CAT[b.type].res === 'family' && !b.ruined && !b.construction &&
       b.connected && b.residents.length === 0);
     if (vacant) {
       this.moveHomes(p, vacant); this.moveHomes(q, vacant);
@@ -812,7 +814,7 @@ export const Sim: any = {
     }
   },
 
-  tickBirths(say) {
+  tickBirths(say: (m: string, at?: XY) => void) {
     for (const p of this.people) {
       if (p.kind !== 'woman' || !p.married || !p.partnerId) continue;
       if (p.age < 20 || p.age > 42) continue;
@@ -847,10 +849,10 @@ export const Sim: any = {
       if (d.res !== 'family' || !b.residents.length) continue;
       // rent flows to the landlord
       if (b.ownerId) {
-        const owner = World.buildings.find(o => o.id === b.ownerId);
+        const owner = World.buildings.find((o: Building) => o.id === b.ownerId);
         if (owner && owner.residents.length && b.funds > 4) { b.funds -= 4; owner.funds += 4; }
       }
-      const say = m => { Life.say(m); };
+      const say = (m: string) => { Life.say(m); };
       const name = b.residents[0].surname;
       if (Math.random() < 0.0012) { b.funds += 400; say(`🎉 The ${family(name)} won the lottery! (+$400)`); }
       // home improvements
@@ -872,8 +874,8 @@ export const Sim: any = {
       }
       // more cars as the family prospers (a third for the truly comfortable)
       // a car showroom in town makes buying easier (and pays the dealer)
-      const showroom = World.buildings.find(o => o.type === 'carshowroom' && o.connected && !o.ruined && !o.construction);
-      const adults = b.residents.filter(r => r.kind !== 'kid').length;
+      const showroom = World.buildings.find((o: Building) => o.type === 'carshowroom' && o.connected && !o.ruined && !o.construction);
+      const adults = b.residents.filter((r: Person) => r.kind !== 'kid').length;
       const carCap = b.level >= 3 ? 3 : Math.min(2, adults);
       if (b.cars.length < carCap && b.funds >= (b.cars.length >= 2 ? 550 : 350)) {
         const price = (b.cars.length >= 2 ? 420 : 250) * (showroom ? 0.9 : 1);
@@ -884,7 +886,7 @@ export const Sim: any = {
           : `🚗 The ${family(name)} bought a new car${showroom ? ' from the showroom' : ''}`);
       }
       // a motorcycle: the working family's first set of wheels
-      const motoShop = World.buildings.find(o => o.type === 'motoshowroom' && o.connected && !o.ruined && !o.construction);
+      const motoShop = World.buildings.find((o: Building) => o.type === 'motoshowroom' && o.connected && !o.ruined && !o.construction);
       if ((b.bikes || 0) < 1 && adults >= 1 && b.funds >= 170 && Math.random() < (motoShop ? 0.3 : 0.12)) {
         const price = motoShop ? 120 : 145;
         b.funds -= price; b.bikes = (b.bikes || 0) + 1;
@@ -892,7 +894,7 @@ export const Sim: any = {
         say(`🏍️ The ${family(name)} bought a motorcycle${motoShop ? ' from the showroom' : ''} — beats walking!`);
       }
       // a fishing boat, when the village has a working waterfront
-      const wharf = World.buildings.find(o => ['dock', 'boatclub', 'fishmarket'].includes(o.type) && o.connected && !o.ruined && !o.construction);
+      const wharf = World.buildings.find((o: Building) => ['dock', 'boatclub', 'fishmarket'].includes(o.type) && o.connected && !o.ruined && !o.construction);
       if (wharf && !b.boat && b.funds >= 300 && Math.random() < 0.05) {
         b.funds -= 190; b.boat = true;
         say(`🛶 The ${family(name)} bought a fishing boat — fresh catch and a little extra income`);
@@ -960,7 +962,7 @@ export const Sim: any = {
         }
         if (!best) break;
         const old = best.work;
-        old.workers = old.workers.filter(q => q !== best);
+        old.workers = old.workers.filter((q: Person) => q !== best);
         best.work = w; w.workers.push(best);
         best.wageMult = 1; best.jobDays = 0;
         if (best.state === 'in' && best.at === best.home) this.planDay(best); // today's shift is at the new place
@@ -974,8 +976,8 @@ export const Sim: any = {
      Money flows from households to the plant, the pump and the treasury.
      A big town without utilities is an unhappy one. */
   payUtilities() {
-    const plant = World.buildings.find(b => b.type === 'powerplant' && b.connected && !b.ruined && !b.construction);
-    const pump = World.buildings.find(b => b.type === 'watertower' && b.connected && !b.ruined && !b.construction);
+    const plant = World.buildings.find((b: Building) => b.type === 'powerplant' && b.connected && !b.ruined && !b.construction);
+    const pump = World.buildings.find((b: Building) => b.type === 'watertower' && b.connected && !b.ruined && !b.construction);
     for (const b of World.buildings) {
       if (!CAT[b.type].res || b.ruined || b.construction || !b.residents.length) continue;
       if (plant && b.funds > 6) { b.funds -= 2.5; plant.funds += 1.5; Gov.treasury += 1; }
@@ -989,13 +991,13 @@ export const Sim: any = {
 
   /* ---------- families can go under: broke households leave town ---------- */
   tickHardship() {
-    const say = m => { Life.say(m); };
+    const say = (m: string) => { Life.say(m); };
     for (const b of World.buildings.slice()) {
       const d = CAT[b.type];
       if (d.res !== 'family' || b.ruined || b.construction || !b.residents.length) continue;
-      const adults = b.residents.filter(r => r.kind !== 'kid');
-      const working = adults.filter(r => r.work).length;
-      const savings = adults.reduce((s, r) => s + (r.savings || 0), 0);
+      const adults = b.residents.filter((r: Person) => r.kind !== 'kid');
+      const working = adults.filter((r: Person) => r.work).length;
+      const savings = adults.reduce((s: number, r: Person) => s + (r.savings || 0), 0);
       if (b.funds <= 3 && savings < 10 && !working) b.brokeDays = (b.brokeDays || 0) + 1;
       else b.brokeDays = 0;
       if (b.brokeDays === 2) say(`💸 The ${family(b.residents[0].surname)} can't pay their bills — the cupboard is bare`);
@@ -1018,7 +1020,7 @@ export const Sim: any = {
      may leave to start over; the darkest outcome is possible but rare, and
      it changes the town — grief turns into looking out for one another. */
   tickWellbeing() {
-    const say = m => { Life.say(m); };
+    const say = (m: string) => { Life.say(m); };
     for (const p of this.people.slice()) {
       if (p.kind === 'kid') continue;
       const m = p.mood === undefined ? 60 : p.mood;
@@ -1026,8 +1028,8 @@ export const Sim: any = {
       if (p.lowDays === 3) say(`💭 ${this.fullName(p)} has been withdrawn for days — the neighbours are starting to worry`);
       if (p.lowDays >= 5) {
         p.lowDays = 0;
-        const support = World.buildings.some(b => ['hospital', 'temple'].includes(b.type) && b.connected && !b.ruined && !b.construction);
-        const partner = p.partnerId && this.people.some(q => q.id === p.partnerId);
+        const support = World.buildings.some((b: Building) => ['hospital', 'temple'].includes(b.type) && b.connected && !b.ruined && !b.construction);
+        const partner = p.partnerId && this.people.some((q: Person) => q.id === p.partnerId);
         const pals = Mind.friendCount(p) > 0; // real friends notice first
         if (support || partner || pals || Math.random() < 0.45) {
           p.mood = 58; p.funDay = this.day;
@@ -1052,11 +1054,11 @@ export const Sim: any = {
   },
 
   /* ---------- casino: the house usually wins ---------- */
-  gamble(p, casino) {
+  gamble(p: Person, casino: Building) {
     const stake = Math.min(p.home.funds * 0.25, 4 + Math.random() * 18 + (p.seed % 9 === 0 ? 20 : 0));
     if (stake < 2 || p.home.funds <= stake) return;
     p.home.funds -= stake;
-    const say = m => { Life.say(m); };
+    const say = (m: string) => { Life.say(m); };
     if (Math.random() < 0.05) { // jackpot
       const win = stake * (6 + Math.random() * 10);
       p.home.funds += win;
@@ -1091,13 +1093,13 @@ export const Sim: any = {
   },
   tickStocks() {
     if (!this.stocks) this.initStocks();
-    const count = pred => World.buildings.filter(b => !b.ruined && !b.construction && pred(b)).length;
-    const health = {
-      AGRI: count(b => b.type === 'farm'),
-      INDL: count(b => ['factory', 'steelworks', 'sawmill', 'brickworks', 'textilemill', 'cannery', 'glassworks', 'warehouse', 'powerplant'].includes(b.type)),
-      RETL: count(b => CAT[b.type].visit === 'shop'),
-      RAIL: count(b => ['trainstation', 'busstop', 'taxistand', 'airport', 'dock'].includes(b.type)),
-      BYTE: count(b => ['office', 'skyscraper', 'electronics', 'exchange'].includes(b.type)),
+    const count = (pred: any) => World.buildings.filter((b: Building) => !b.ruined && !b.construction && pred(b)).length;
+    const health: Record<string, number> = {
+      AGRI: count((b: Building) => b.type === 'farm'),
+      INDL: count((b: Building) => ['factory', 'steelworks', 'sawmill', 'brickworks', 'textilemill', 'cannery', 'glassworks', 'warehouse', 'powerplant'].includes(b.type)),
+      RETL: count((b: Building) => CAT[b.type].visit === 'shop'),
+      RAIL: count((b: Building) => ['trainstation', 'busstop', 'taxistand', 'airport', 'dock'].includes(b.type)),
+      BYTE: count((b: Building) => ['office', 'skyscraper', 'electronics', 'exchange'].includes(b.type)),
     };
     let shock = null;
     for (const s of this.stocks) {
@@ -1113,7 +1115,7 @@ export const Sim: any = {
       Life.say(`${up ? '📈' : '📉'} Market ${up ? 'rally' : 'shock'}: ${shock.name} (${shock.sym}) ${up ? 'soars' : 'tumbles'} to $${shock.price.toFixed(0)}`);
     }
     // villagers with spare savings trade; a stock exchange makes it popular
-    const exchange = World.buildings.find(b => b.type === 'exchange' && b.connected && !b.ruined && !b.construction);
+    const exchange = World.buildings.find((b: Building) => b.type === 'exchange' && b.connected && !b.ruined && !b.construction);
     for (const p of this.people) {
       if (p.kind === 'kid') continue;
       if (!((p.seed % 5 === 0) || (exchange && p.seed % 3 === 0))) continue;
@@ -1127,7 +1129,7 @@ export const Sim: any = {
       }
       for (const sym of Object.keys(p.portfolio)) {
         if (Math.random() > 0.12) continue;
-        const s = this.stocks.find(q => q.sym === sym);
+        const s = this.stocks.find((q: Person) => q.sym === sym);
         const qty = p.portfolio[sym];
         if (!s || !qty) continue;
         delete p.portfolio[sym];
@@ -1140,7 +1142,7 @@ export const Sim: any = {
   },
   stockIndex() {
     if (!this.stocks) return 100;
-    return Math.round(this.stocks.reduce((s, q) => s + q.price, 0));
+    return Math.round(this.stocks.reduce((s: number, q: Person) => s + q.price, 0));
   },
 
   /* ---------- pioneers: some hearts belong to the far countryside ---------- */
@@ -1149,7 +1151,7 @@ export const Sim: any = {
     this.nextPioneerDay = this.day + 6 + ((Math.random() * 6) | 0);
     const paceMult = Settings.growthMult();
     if (Math.random() > 0.45 * paceMult + 0.15) return; // not every season produces a dreamer
-    const say = m => { Life.say(m); };
+    const say = (m: string) => { Life.say(m); };
     const c = Gov.townCenter();
     const key = Math.random() < 0.5 ? 'house' : 'cottage';
     const spot = World.findRemoteSpot(key, c.x, c.y, 64); // V2: 42 → 64 on the 256² map
@@ -1157,7 +1159,7 @@ export const Sim: any = {
     const nb = World.placeBuilding(key, spot.x, spot.y, false, spot.f);
     if (!nb) return;
     const district = Gov.districtName(spot.x, spot.y);
-    const homes = World.buildings.filter(b => CAT[b.type].res === 'family' && b.residents.length >= 2 && !b.ruined && b !== nb && b.funds > 120);
+    const homes = World.buildings.filter((b: Building) => CAT[b.type].res === 'family' && b.residents.length >= 2 && !b.ruined && b !== nb && b.funds > 120);
     if (homes.length && Math.random() < 0.7) { // an existing family strikes out
       const from = homes[(Math.random() * homes.length) | 0];
       const movers = from.residents.slice();
@@ -1179,7 +1181,7 @@ export const Sim: any = {
         if (!World.canPlace(bizKey, bx, by)) continue;
         const biz = World.placeBuilding(bizKey, bx, by);
         if (biz) {
-          const owner = nb.residents.find(r => r.kind !== 'kid');
+          const owner = nb.residents.find((r: Person) => r.kind !== 'kid');
           if (owner) { biz.founderId = owner.id; biz.ownerId = nb.id; owner.ownsBusiness = true; }
           say(`🏞️ …and they're putting up a ${CAT[bizKey].name.toLowerCase()} out there. The outskirts are coming alive!`);
         }
@@ -1191,7 +1193,7 @@ export const Sim: any = {
 
   /* ---------- side gigs: everyone can hustle a little ---------- */
   sideGigs() {
-    const hasType = t => World.buildings.some(b => b.type === t && !b.ruined && !b.construction);
+    const hasType = (t: string) => World.buildings.some((b: Building) => b.type === t && !b.ruined && !b.construction);
     const season = Weather.season;
     const options = SIDE_GIGS.filter(g =>
       (!g.winter || season === 3) &&
@@ -1218,7 +1220,7 @@ export const Sim: any = {
 
   /* ---------- bank loans: borrowed dreams, daily repayments ---------- */
   tickLoans() {
-    const bank = World.buildings.find(b => b.type === 'bank' && b.connected && !b.ruined && !b.construction);
+    const bank = World.buildings.find((b: Building) => b.type === 'bank' && b.connected && !b.ruined && !b.construction);
     for (const p of this.people) {
       if (!p.loan) continue;
       const install = Math.max(4, p.loan.balance * 0.06);
@@ -1243,7 +1245,7 @@ export const Sim: any = {
         p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 4);
         if (p.loan.missed >= 10) {
           // foreclosure: the bank seizes the business
-          const biz = World.buildings.find(b => b.founderId === p.id && !b.ruined);
+          const biz = World.buildings.find((b: Building) => b.founderId === p.id && !b.ruined);
           p.loan = null;
           p.ownsBusiness = false;
           if (biz) {
@@ -1266,7 +1268,7 @@ export const Sim: any = {
       if (!b.founderId || b.ruined || b.construction) continue;
       const d = CAT[b.type];
       if (!d.visit) continue;
-      const founder = this.people.find(p => p.id === b.founderId);
+      const founder = this.people.find((p: Person) => p.id === b.founderId);
       if (!founder) { b.founderId = null; continue; }
       // judge on YESTERDAY'S completed footfall, not the just-reset counter
       const footfall = b.lastVisitors === undefined ? b.visitors : b.lastVisitors;
@@ -1297,7 +1299,7 @@ export const Sim: any = {
   },
 
   /* ---------- personal ambitions and small business ---------- */
-  startupCapital(p) {
+  startupCapital(p: Person) {
     const personal = p.savings || 0;
     const reserve = CAT[p.home.type].res ? 45 : 0;
     // Families can back a venture, but retain an emergency reserve.
@@ -1316,14 +1318,14 @@ export const Sim: any = {
     }
 
     if (this.day < this.nextEnterpriseDay) return;
-    const kindCount = k => World.buildings.filter(q => q.type === k && !q.ruined).length;
+    const kindCount = (k: string) => World.buildings.filter((q: Building) => q.type === k && !q.ruined).length;
     const founders = this.people
-      .filter(p => p.kind !== 'kid' && p.aspiration === 'business' && !p.ownsBusiness && !p.loan &&
+      .filter((p: Person) => p.kind !== 'kid' && p.aspiration === 'business' && !p.ownsBusiness && !p.loan &&
         p.businessKind && p.home.connected && p.heldUntil <= this.day &&
         (p.age === undefined || (p.age >= AGE_ADULT && p.age < AGE_RETIRE)))
-      .sort((a, b) => {
+      .sort((a: Person, b: Person) => {
         // capital counts — but bringing the town a trade it has NONE of counts more
-        const score = p => {
+        const score = (p: Person) => {
           const n = kindCount(p.businessKind);
           return this.startupCapital(p) / (STARTUP_COSTS[p.businessKind] || 300) +
             (n === 0 ? 0.8 : n >= 3 ? -0.6 : 0);
@@ -1347,7 +1349,7 @@ export const Sim: any = {
     const landCost = Gov.landCostFor(kind, spot.x, spot.y);
     const total = (STARTUP_COSTS[kind] || 300) + landCost;
     const capital = this.startupCapital(founder);
-    const bank = World.buildings.find(b => b.type === 'bank' && b.connected && !b.ruined && !b.construction);
+    const bank = World.buildings.find((b: Building) => b.type === 'bank' && b.connected && !b.ruined && !b.construction);
     let loanAmount = 0;
     if (capital < total) {
       // a bank can lend the shortfall — if the founder brings real equity
@@ -1382,9 +1384,9 @@ export const Sim: any = {
     }
   },
 
-  tryPettyTheft(p) {
+  tryPettyTheft(p: Person) {
     if (this.day - (p.lastIllegalDay === undefined ? -99 : p.lastIllegalDay) < 5 || Math.random() >= 0.12) return false;
-    const targets = World.buildings.filter(b =>
+    const targets = World.buildings.filter((b: Building) =>
       !b.ruined && !b.construction && b.connected && b !== p.home && b.ownerId !== p.home.id &&
       ['shop', 'market', 'bakery', 'cafe', 'restaurant', 'mall'].includes(b.type) && b.funds >= 18);
     if (!targets.length) return false;
@@ -1398,13 +1400,13 @@ export const Sim: any = {
     // the alarm rings and a patrol car visibly answers the call
     target.alarm = true; target.alarmT = 30;
     Life.dispatchTo(target.door.x, target.door.y);
-    const ownerHome = target.ownerId ? World.buildings.find(o => o.id === target.ownerId) : null;
+    const ownerHome = target.ownerId ? World.buildings.find((o: Building) => o.id === target.ownerId) : null;
     if (ownerHome) for (const r of ownerHome.residents) {
       r.mood = Math.max(5, (r.mood === undefined ? 60 : r.mood) - 8);
       Mind.remember(r, 'crime', `the family ${CAT[target.type].name.toLowerCase()} was robbed`, -2, target.id);
     }
 
-    const policePresent = World.buildings.some(b => b.type === 'police' && b.connected && !b.construction && !b.ruined);
+    const policePresent = World.buildings.some((b: Building) => b.type === 'police' && b.connected && !b.construction && !b.ruined);
     const caught = Math.random() < (policePresent ? 0.7 : 0.24);
     if (caught) {
       const fine = Math.min(p.savings, 10 + Math.round(Math.random() * 15));
@@ -1431,7 +1433,7 @@ export const Sim: any = {
     // pace the player chose (Cozy damps growth as the town fills out)
     const paceMult = Settings.growthMult();
     const s = this.stats();
-    const vacantHomes = World.buildings.filter(b => CAT[b.type].res && !b.construction && !b.ruined &&
+    const vacantHomes = World.buildings.filter((b: Building) => CAT[b.type].res && !b.construction && !b.ruined &&
       b.connected && b.residents.length === 0);
     // V2: graduate posts nobody here can fill draw a skilled family in
     if (Edu.migrate(vacantHomes)) return;
@@ -1446,7 +1448,7 @@ export const Sim: any = {
         : `🚚 The ${fam.surname} family moved to the village, drawn by the job market (${fam.n} newcomers)`);
     }
     if (this.day < this.nextGrowthDay) return;
-    const underCon = World.buildings.filter(b => b.construction > 0 && CAT[b.type].res).length;
+    const underCon = World.buildings.filter((b: Building) => b.construction > 0 && CAT[b.type].res).length;
     if (underCon >= 3) return; // a few housing projects can run side by side now
     const vacant = vacantHomes.length;
     const unfilled = s.jobs - s.employed;
@@ -1463,12 +1465,12 @@ export const Sim: any = {
     }
   },
 
-  tickPerson(p, dt) {
+  tickPerson(p: Person, dt: number) {
     if (p.state === 'in') {
       // due to leave somewhere?
       if (p.at === p.home) {
-        p.events = p.events.filter(e => e.until > this.clock); // drop expired
-        const e = p.events.find(e => this.clock >= e.t && !e.back);
+        p.events = p.events.filter((e: any) => e.until > this.clock); // drop expired
+        const e = p.events.find((e: any) => this.clock >= e.t && !e.back);
         if (e) {
           p.events.splice(p.events.indexOf(e), 1);
           if (e.stroll) this.startStroll(p);
@@ -1477,7 +1479,7 @@ export const Sim: any = {
         }
       } else if (p.at === p.work && p.state === 'in') {
         // lunch break?
-        const e = p.events.find(e => e.back === 'work' && this.clock >= e.t && this.clock < e.until);
+        const e = p.events.find((e: any) => e.back === 'work' && this.clock >= e.t && this.clock < e.until);
         if (e) {
           p.events.splice(p.events.indexOf(e), 1);
           p.savedUntil = p.returnAt;
@@ -1542,7 +1544,7 @@ export const Sim: any = {
             const price = mult === null ? 0 : Math.round((PRICES[dest.type] || 0) * mult); // money changes hands
             if (price && p.home.funds > price) {
               p.home.funds -= price;
-              const owner = dest.ownerId ? World.buildings.find(o => o.id === dest.ownerId) : null;
+              const owner = dest.ownerId ? World.buildings.find((o: Building) => o.id === dest.ownerId) : null;
               if (owner && owner.residents.length) { owner.funds += price * 0.7; dest.funds += price * 0.3; }
               else dest.funds += price;
             }
@@ -1608,17 +1610,17 @@ export const Sim: any = {
     }
   },
 
-  startTrip(p, dest, until, backTo) {
+  startTrip(p: Person, dest: Building, until: number, backTo: Building) {
     if (!dest || !p.home.connected || !dest.connected || dest.construction || dest.ruined) { p.returnAt = undefined; return; }
-    const path = World.roadPath(p.at.door.x, p.at.door.y, dest.door.x, dest.door.y);
+    const path = World.roadPath(p.at!.door.x, p.at!.door.y, dest.door.x, dest.door.y);
     if (!path || path.length < 2) {
       // unreachable: if going out, skip; if going home, teleport — but check
       // out of the venue properly so head-counts and the family car survive
       if (dest === p.home) {
         if (p.at !== p.home) {
-          p.at.inside = Math.max(0, p.at.inside - 1);
+          p.at!.inside = Math.max(0, p.at!.inside - 1);
           if (p.carHeld) {
-            p.at.parked = Math.max(0, p.at.parked - 1);
+            p.at!.parked = Math.max(0, p.at!.parked - 1);
             p.carHeld.free = true; p.carHeld = null;
           }
         }
@@ -1627,8 +1629,8 @@ export const Sim: any = {
       return;
     }
     if (p.at !== p.home && p.at !== dest) { // leaving a venue/workplace
-      p.at.inside = Math.max(0, p.at.inside - 1);
-      if (p.carHeld) p.at.parked = Math.max(0, p.at.parked - 1);
+      p.at!.inside = Math.max(0, p.at!.inside - 1);
+      if (p.carHeld) p.at!.parked = Math.max(0, p.at!.parked - 1);
     }
     p.backTo = backTo || null;
     // family car for long trips (adults only); reuse the one parked at the venue.
@@ -1636,7 +1638,7 @@ export const Sim: any = {
     const carMin = ((Weather.isRaining() || Weather.isSnowing())) ? 8 : CAR_MIN_DIST;
     let car = p.carHeld || null;
     if (!car && p.kind !== 'kid' && path.length >= carMin) {
-      car = p.home.cars.find(c => c.free) || null;
+      car = p.home.cars.find((c: Car) => c.free) || null;
       if (car) car.free = false;
     }
     // no car free? the family motorcycle covers the middle distances
@@ -1645,7 +1647,7 @@ export const Sim: any = {
     // still on foot for a long haul? hail a cab (fare goes to the stand)
     let taxi = false;
     if (!car && !moto && p.kind !== 'kid' && path.length >= carMin) {
-      const stand = World.buildings.find(b => b.type === 'taxistand' && b.connected && !b.ruined && !b.construction);
+      const stand = World.buildings.find((b: Building) => b.type === 'taxistand' && b.connected && !b.ruined && !b.construction);
       if (stand && p.home.funds > 6) {
         taxi = true;
         p.home.funds -= 3;
@@ -1660,7 +1662,7 @@ export const Sim: any = {
     // travellers on foot re-route along the footpaths (kerb-hugging path)
     let usePath = path;
     if (!car && !taxi && !moto) {
-      const wp = World.walkPath(p.at.door.x, p.at.door.y, dest.door.x, dest.door.y);
+      const wp = World.walkPath(p.at!.door.x, p.at!.door.y, dest.door.x, dest.door.y);
       if (wp && wp.length > 1) usePath = wp;
     }
     p.trip = { path: usePath, prog: 0, car, taxi, moto };
@@ -1670,7 +1672,7 @@ export const Sim: any = {
       p.bubbleUntil = performance.now() + 2600;
     }
     // running costs: fuel for drives, a small fare for the bus
-    const gas = World.buildings.find(b => b.type === 'gas' && b.connected && !b.ruined && !b.construction);
+    const gas = World.buildings.find((b: Building) => b.type === 'gas' && b.connected && !b.ruined && !b.construction);
     if (gas && (car || moto) && Math.random() < 0.35 && p.home.funds > 4) {
       const fuel = car ? 1.5 : 0.7;
       p.home.funds -= fuel; gas.funds += fuel; gas.visitors++;
@@ -1678,7 +1680,7 @@ export const Sim: any = {
     if (!car && !moto && !taxi && path.length >= 10 && Life.buses.length &&
         p.home.funds > 3 && Math.random() < 0.5) {
       p.home.funds -= 1; // hops on the bus for part of the way
-      const stop = World.buildings.find(b => b.type === 'busstop' && b.connected && !b.ruined);
+      const stop = World.buildings.find((b: Building) => b.type === 'busstop' && b.connected && !b.ruined);
       if (stop) stop.funds += 1;
     }
     const [sx, sy] = path[0];
@@ -1686,11 +1688,11 @@ export const Sim: any = {
   },
 
   /* off to the Christmas market: walk there, browse the stalls, walk home */
-  startMarketTrip(p, mk) {
+  startMarketTrip(p: Person, mk: any) {
     if (!p.home.connected) return;
     const spot = World.nearestRoad(mk.x + 2, mk.y + 2, 7);
     if (!spot) return;
-    const out = World.walkPath(p.at.door.x, p.at.door.y, spot.x, spot.y);
+    const out = World.walkPath(p.at!.door.x, p.at!.door.y, spot.x, spot.y);
     if (!out || out.length < 3) return;
     p.state = 'walk';
     p.dest = p.home;
@@ -1705,7 +1707,7 @@ export const Sim: any = {
   },
 
   /* a wander to a nearby corner and back — pure flânerie */
-  startStroll(p) {
+  startStroll(p: Person) {
     if (!p.home.connected) return;
     const roads = [];
     for (let dy = -9; dy <= 9; dy++) for (let dx = -9; dx <= 9; dx++) {
@@ -1714,7 +1716,7 @@ export const Sim: any = {
     }
     if (!roads.length) return;
     const [tx, ty] = roads[(Math.random() * roads.length) | 0];
-    const out = World.walkPath(p.at.door.x, p.at.door.y, tx, ty);
+    const out = World.walkPath(p.at!.door.x, p.at!.door.y, tx, ty);
     if (!out || out.length < 3) return;
     p.state = 'walk';
     p.dest = p.home;
@@ -1766,7 +1768,7 @@ export const Sim: any = {
     if (!sc || sc.done || sc.failed) return;
     const def = SCENARIOS[sc.id];
     if (!def) { this.scenario = null; return; }
-    const say = m => { Life.say(m); };
+    const say = (m: string) => { Life.say(m); };
     // abandonment: a founded village with nobody left for a week is lost
     sc.zeroDays = (this.firstFamilyDone && this.people.length === 0) ? (sc.zeroDays || 0) + 1 : 0;
     if (sc.zeroDays >= 7) {
@@ -1799,7 +1801,7 @@ export const Sim: any = {
      family ties, career, savings, mood, record — and their entire mind.
      Transient state (trips, today's plans) resets to "at home, replanning". */
   serializePeople() {
-    return this.people.map(p => ({
+    return this.people.map((p: Person) => ({
       id: p.id, k: p.kind, sn: p.surname, n: p.name, s: p.seed, a: p.age,
       h: p.home ? p.home.id : 0, w: p.work ? p.work.id : 0, sc: p.school ? p.school.id : 0,
       pt: p.partnerId || 0, md: p.married ? 1 : 0, ds: p.datingSince || 0,
@@ -1814,13 +1816,13 @@ export const Sim: any = {
       ed: p.edu || 0, sd: p.schoolDays || 0, cl: Math.round((p.collegeDays || 0) * 10) / 10, en: p.enrolled ? 1 : 0,
     }));
   },
-  restorePeople(arr, nextPid) {
+  restorePeople(arr: any, nextPid: number) {
     this.people = [];
-    const byId = new Map(World.buildings.map(b => [b.id, b]));
+    const byId = new Map(World.buildings.map((b: Building) => [b.id, b]));
     for (const s of arr) {
-      const home = byId.get(s.h);
+      const home = byId.get(s.h) as Building | undefined;
       if (!home || !CAT[home.type].res) continue; // home didn't survive the load
-      const p = {
+      const p: Person = {
         id: s.id, kind: s.k, surname: s.sn, seed: s.s, name: s.n, age: s.a,
         home, work: null, school: null,
         partnerId: s.pt || null, married: !!s.md, datingSince: s.ds || undefined,
@@ -1838,18 +1840,18 @@ export const Sim: any = {
       Health.unpack(p, s);
       if (p.edu === undefined) Edu.init(p); // saves from before 4c: seeded schooling
       home.residents.push(p);
-      const work = byId.get(s.w);
+      const work = byId.get(s.w) as Building | undefined;
       if (work && (CAT[work.type].jobs || 0) > 0) { p.work = work; work.workers.push(p); }
-      const school = byId.get(s.sc);
+      const school = byId.get(s.sc) as Building | undefined;
       if (school && CAT[school.type].school) p.school = school;
       {
         if (s.mind) Mind.unpack(p, s.mind); else Mind.init(p);
       }
       this.people.push(p);
     }
-    this.nextPid = Math.max(nextPid || 1, this.people.reduce((m, p) => Math.max(m, p.id + 1), 1));
+    this.nextPid = Math.max(nextPid || 1, this.people.reduce((m: any, p: Person) => Math.max(m, p.id + 1), 1));
     // widowed by the load (partner's home didn't make it): clear dangling links
-    const ids = new Set(this.people.map(p => p.id));
+    const ids = new Set(this.people.map((p: Person) => p.id));
     for (const p of this.people) if (p.partnerId && !ids.has(p.partnerId)) p.partnerId = null;
     this.assignJobs(); this.assignSchools();
     Health.afterLoad(); // patients go back onto their ward
@@ -1860,16 +1862,16 @@ export const Sim: any = {
   /* ---------- stats ---------- */
   stats() {
     const pop = this.people.length;
-    const adults = this.people.filter(p => p.kind !== 'kid');
-    const employed = adults.filter(p => p.work).length;
-    const active = b => b.connected && !b.construction && !b.ruined;
-    const jobs = World.buildings.reduce((s, b) => s + (active(b) ? (CAT[b.type].jobs || 0) : 0), 0);
-    const leisureN = World.buildings.filter(b => CAT[b.type].visit === 'leisure' && active(b)).length;
-    const shopN = World.buildings.filter(b => CAT[b.type].visit === 'shop' && active(b)).length;
-    const wealth = Math.round(World.buildings.reduce((s, b) => s + (CAT[b.type].res ? b.funds : 0), 0));
-    const vacant = World.buildings.filter(b => CAT[b.type].res && active(b) && b.residents.length === 0).length;
+    const adults = this.people.filter((p: Person) => p.kind !== 'kid');
+    const employed = adults.filter((p: Person) => p.work).length;
+    const active = (b: Building) => b.connected && !b.construction && !b.ruined;
+    const jobs = World.buildings.reduce((s: number, b: Building) => s + (active(b) ? (CAT[b.type].jobs || 0) : 0), 0);
+    const leisureN = World.buildings.filter((b: Building) => CAT[b.type].visit === 'leisure' && active(b)).length;
+    const shopN = World.buildings.filter((b: Building) => CAT[b.type].visit === 'shop' && active(b)).length;
+    const wealth = Math.round(World.buildings.reduce((s: number, b: Building) => s + (CAT[b.type].res ? b.funds : 0), 0));
+    const vacant = World.buildings.filter((b: Building) => CAT[b.type].res && active(b) && b.residents.length === 0).length;
     const unfilled = Math.max(0, jobs - employed);
-    const clamp01 = v => Math.max(0, Math.min(1, v));
+    const clamp01 = (v: any) => Math.max(0, Math.min(1, v));
     const demand = {
       r: clamp01((unfilled - vacant * 3) / 12),
       c: clamp01((pop / 12 - shopN) / 4),
@@ -1882,11 +1884,11 @@ export const Sim: any = {
         20 * Math.min(1, leisureN / Math.max(1, pop / 14)) +
         15 * Math.min(1, shopN / Math.max(1, pop / 18)) +
         20 * (this.safety / 100);
-      const avgMood = this.people.reduce((s2, p) => s2 + (p.mood === undefined ? 60 : p.mood), 0) / this.people.length;
+      const avgMood = this.people.reduce((s2: any, p: Person) => s2 + (p.mood === undefined ? 60 : p.mood), 0) / this.people.length;
       hap = Math.round(base * 0.6 + avgMood * 0.4); // the town is as happy as its people feel
     }
     return { pop, employed, adults: adults.length, jobs, happiness: pop ? hap : 100, safety: Math.round(this.safety), wealth, demand, vacant };
   },
 
-  travelers() { return this.people.filter(p => p.state === 'walk' && p.trip); },
+  travelers() { return this.people.filter((p: Person) => p.state === 'walk' && p.trip); },
 };
