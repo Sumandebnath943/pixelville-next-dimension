@@ -440,6 +440,43 @@ describe('6d — the town\'s own work', () => {
   });
 });
 
+describe('the airfield', () => {
+  it('is long enough to land on, its stands keep parked airliners apart, and only one plane uses the runway at a time', () => {
+    town(751);
+    const ap = build('airport', C.x + 30, C.y + 20);
+    expect(ap.w).toBe(48);
+    const f = Life.airfield(ap);
+    expect(f.rx1 - f.rx0).toBeGreaterThan(350);
+    for (let k = 1; k < f.stands.length; k++) expect(f.stands[k].x - f.stands[k - 1].x).toBeGreaterThan(30 + 10); // 30 m wingspan, a gap
+    for (const s of f.stands) expect(s.z + 14).toBeLessThan(f.ty - 4); // (noses clear of the taxiway)
+    // the village's planes: never two on the runway at once
+    Life.planes = []; Life.planeT = 0;
+    let both = 0;
+    Game.streetMode = false; Game.setSpeed(4);
+    for (let i = 0; i < 6000; i++) { Game.tick(0.1); if (Life.planes.filter((p: any) => p.alt < 60).length > 1) both++; }
+    expect(both).toBe(0);
+  });
+
+  it('an airport from an old, smaller-airport save moves to where the airfield fits instead of vanishing', () => {
+    town(752);
+    const ap = build('airport', C.x + 30, C.y + 20);
+    const data = JSON.parse(Game.buildSaveString());
+    const old = data.buildings.find((b: any) => b.t === 'airport');
+    const house = data.buildings.find((b: any) => b.t === 'house');
+    old.x = house.x - 4; old.y = house.y - 2; // (where the old 13×8 airport stood, the airfield would cover a house)
+    expect(Game.performLoad(JSON.stringify(data)).ok).toBe(true);
+    const a = World.buildings.find((b: any) => b.type === 'airport');
+    expect(a).toBeTruthy();
+    // nothing else sits under it
+    for (const b of World.buildings) {
+      if (b === a) continue;
+      const overlap = b.x < a.x + a.w && b.x + b.w > a.x && b.y < a.y + a.h && b.y + b.h > a.y;
+      expect(overlap).toBe(false);
+    }
+    void ap;
+  });
+});
+
 describe('the shift itself', () => {
   it('books from the phone, starts at the door, and a business pays only what its till holds', () => {
     town(741);

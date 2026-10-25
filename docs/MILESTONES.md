@@ -10,7 +10,7 @@
 | 3 | **Doors open** | Interiors and villager AI chat |
 | 4 | **Deeper village** | Health, supply chain, education, power |
 | 5 | **Going places** | Ride every transit line; travel off-map |
-| 6 | **Work shifts** | All playable jobs |
+| 6 | **Work shifts** | All playable jobs (done) |
 | 7 | **Launch polish** | Mobile tuning, performance, balance, accessibility, launch |
 
 ---
@@ -304,7 +304,7 @@ The vertical slice is still at `slice.html` (the "look lab"):
 
 ---
 
-## Milestone 6 — Work shifts (built 2026-10-25 on branch milestone-6; see "Left to do" below)
+## Milestone 6 — Work shifts (done 2026-10-25)
 
 **What's in:** `src/player/shifts.ts` (the manager), `src/jobs/` (emergency, driving, rails, town), `src/ui/shiftpanel.ts`, the phone's **Jobs** app. Covered by `tests/shifts.test.ts` (16 tests, one per job plus booking and pay).
 - **Starting**: the phone's Jobs app (routes you there; the shift starts at the door) or "Start a shift" on a workplace's card or counter. The workplace lends its vehicle at the kerb (fire engine, patrol car, ambulance, cab, bus, delivery truck, power van, builders' van, PVTV van, tractor), driven like your own and drawn as the village's own; your car waits where you left it. Planner, rides and trips are locked while on shift.
@@ -313,12 +313,11 @@ The vertical slice is still at `slice.html` (the "look lab"):
 - **Pay**: hourly standby pay plus every task, ×(0.7 + 0.1 × stars), paid at clock-off by the village fund (public services; if it's empty it owes you and pays when taxes come in) or the workplace's till (as far as it can). Stars 1–5 move with good work and failures. Record kept in the save (`FounderSave.jobs`).
 - **Fixed on the way**: the travel overlay could stay stuck over the world after a trip home (a pending fade-in undid `hide()`; `src/ui/travelui.ts`).
 
-**Left to do (next session):**
-1. ~~Runway too short~~ **Done (later on 2026-10-25):** the airport is now 48×15 tiles: a 372 m runway along its south edge, a parallel taxiway with links at both ends, and an apron with four stands 45 m apart (airliners span 30 m), laid out once in `Life.airfield(a)` and used by the village's planes, the renderer, the passenger flights and the pilot. Only one plane uses the runway at a time (`Life.runwayHeld` while the Founder flies). Up to three airliners stand parked; the fourth stand is the Founder's. Still to check: an airport in an **old save** loads at the new size and may overlap its neighbours (none of the test towns had one); a hand-flown landing on the laptop.
-2. Browser checks not yet done in the game (all pass headless): police, paramedic, delivery, electrician, construction, shop/chef indoors, reporter and farmer shifts; the shift card/marker on the 1366×768 laptop; mobile/touch (no pitch control for the plane on touch yet).
-3. Checked in the browser: Jobs app listing, booking and auto-start at the door, firefighter (claim, hose, building saved, clock-off pay and the fund's IOU), taxi (real fare picked up and dropped, meter to the rank), bus (queue boards at the next stop), train (cab view, platform call on time), pilot (take-off, journey, city turnaround, approach, touchdown).
-4. Polish noticed: the hose jet is faint in daylight; the train's follow camera can sit in lineside trees; work vehicles aren't solid to the Founder on foot.
-5. Merge milestone-6 into main once the above are checked.
+**Checked in the game (2026-10-25):** all thirteen shifts, each through its loop: firefighter (claim, hose, building saved), police (dispute calmed), paramedic (treated, carried, on the ward), taxi (real fares, the meter), bus (the queue boards), delivery (farm to shop, 2 → 22 on the shelf), train (platform call on time), pilot (take-off, journey, city, approach, landing at the stand), electrician (fault mended), construction (a load laid), shop/chef (inside the café: order, counter, served), reporter (filmed and filed to PVTV), farmer (field harvested to the yard). Also the Jobs app, booking, the shift card and marker, clock-off pay and the village fund's IOU.
+
+**The airfield:** the airport is 48×15 tiles: a 372 m runway along its south edge, a parallel taxiway with links at both ends, and four stands 45 m apart (airliners span 30 m), laid out once in `Life.airfield(a)` and used by the village's planes, the renderer, the passenger flights and the pilot. One plane on the runway at a time (`Life.runwayHeld` while the Founder uses it); up to three airliners stand parked, the fourth stand is the Founder's. The pilot touches down on the runway (with an automatic flare in the last 6 m) and stops on it. An airport in an older save moves to the nearest spot where the airfield fits instead of being dropped. Covered by `tests/shifts.test.ts` (18 tests).
+
+**Polish for later:** the hose jet is faint in daylight; the train's follow camera can sit in lineside trees; work vehicles aren't solid to the Founder on foot; touch controls have no climb/descend for the plane; check the shift card on the 1366×768 laptop.
 
 Playable shift loops with pay, performance and real effects on the sim:
 

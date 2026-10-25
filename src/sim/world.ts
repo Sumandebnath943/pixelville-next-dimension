@@ -1040,17 +1040,28 @@ export const World: any = {
       const d = CAT[bs.t];
       if (!d) continue;
       const f = (bs.f || 0) & 3;
-      const bx = bs.x + OX, by = bs.y + OY;
+      let bx = bs.x + OX, by = bs.y + OY;
       const { w, h } = footprint(bs.t, f);
-      if (bx + w > GW || by + h > GH) continue; // old smaller-map safety
       // building footprints have grown between versions: skip anything that
       // would now overlap an already-restored neighbour or blocked ground
-      let clear = true;
-      for (let j = 0; j < h && clear; j++) for (let i = 0; i < w; i++) {
-        const k = this.idx(bx + i, by + j);
-        if (this.bmap[k] || this.ground[k] === G_ROCK || this.ground[k] === G_WATER) { clear = false; break; }
+      const air = bs.t === 'airport';
+      const fits = (x0: number, y0: number): boolean => {
+        if (x0 < 0 || y0 < 0 || x0 + w > GW || y0 + h > GH) return false;
+        for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+          const k = this.idx(x0 + i, y0 + j);
+          if (this.bmap[k] || this.ground[k] === G_ROCK || this.ground[k] === G_WATER || (air && (this.roadMap[k] || this.railMap[k]))) return false;
+        }
+        return true;
+      };
+      if (!fits(bx, by)) {
+        // V2 (Milestone 6): the airport grew into a full airfield: an old one moves to the nearest spot it fits
+        let moved = false;
+        if (air) for (let r = 1; r < 60 && !moved; r++) for (let t = 0; t < 48 && !moved; t++) {
+          const x = Math.round(bx + Math.cos((t / 48) * Math.PI * 2) * r), y = Math.round(by + Math.sin((t / 48) * Math.PI * 2) * r);
+          if (fits(x, y)) { bx = x; by = y; moved = true; }
+        }
+        if (!moved) continue;
       }
-      if (!clear) continue;
       const b = {
         id: v4 && bs.id ? bs.id : this.nextId++, type: bs.t, x: bx, y: by, w, h, facing: f,
         variant: bs.variant || 0,
