@@ -7,7 +7,7 @@
    to the client only through the event bus in core.ts.
    ============================================================ */
 import { CAT } from './catalog';
-import { emit, on, Snd, T } from './core';
+import { emit, on, Snd, T, midPx } from './core';
 import { G_WATER, GW, GH, MSIZE, World, footprint, originForDoor } from './world';
 import { Weather, SEASONS, SEASON_EMOJI } from './weather';
 import { Sim, SCENARIOS } from './agents';
@@ -190,7 +190,11 @@ export const Game = {
     Weather.tick(dt * spd, dt);
     // church bells at 9:00 and 18:00, thunder after lightning
     if (this.prevClock >= 0 && spd > 0)
-      for (const bellT of [540, 1080]) if (this.prevClock < bellT && Sim.clock >= bellT) Snd.bell();
+      for (const bellT of [540, 1080]) if (this.prevClock < bellT && Sim.clock >= bellT) {
+        // (from the church's tower, or the temple's, if the village has one)
+        const tower = World.buildings.find((b: any) => (b.type === 'church' || b.type === 'temple') && !b.ruined && !b.construction);
+        Snd.bell(tower ? midPx(tower) : undefined);
+      }
     this.prevClock = Sim.clock;
     if (Weather.flash > 0.4 && !this.thundered) {
       this.thundered = true;

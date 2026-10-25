@@ -349,7 +349,7 @@ export class Wanted {
         const u = { pursuit: true, path, prog: 0, x: s.x * 16 + 8, y: s.y * 16 + 8, dirx: 1, diry: 0, phase: 'go', station: st, patrol: true, wait: 6, replanT: 2 };
         Life.police.push(u);
         this.units.push(u);
-        emit('sound', { name: 'siren' });
+        emit('sound', { name: 'siren', at: { x: u.x, y: u.y } });
       }
     }
     const speed = this.stars >= 3 ? 3.3 : 2.9; // tiles/s with the siren on (~95 / 85 km/h)

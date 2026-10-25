@@ -2,7 +2,10 @@
    Procedural audio, ported from V1's js/sounds.js: no files —
    everything is synthesised with WebAudio. Ambience follows the
    world (wind, rain, crickets, birdsong); the sim's `sound`
-   events trigger the jingles. V2 adds a car engine hum.
+   events trigger the jingles. V2 adds a car engine hum, and
+   makes the one-shots positional: a siren, a crash, the church
+   bells or the fireworks come from where they happen, quieter
+   with distance and panned to their side of the listener.
    ============================================================ */
 import { Subs } from '../ui/access';
 import { Settings } from '../sim/settings';
@@ -113,6 +116,40 @@ class Sound {
       if (this.birdTimer <= 0) { this.birdTimer = 2.5 + Math.random() * 7; this.chirp(); }
     }
   }
+  /* ---------- positional one-shots ---------- */
+  /** the listener (metres) and the camera's heading (a unit vector along the ground): set every frame */
+  private lx = 0;
+  private lz = 0;
+  private fx = 0;
+  private fz = 1;
+  listen(x: number, z: number, fx: number, fz: number): void {
+    const l = Math.hypot(fx, fz) || 1;
+    this.lx = x; this.lz = z; this.fx = fx / l; this.fz = fz / l;
+  }
+  /** where the next tones and noises go (a positional sound's own gain and panner), else the master */
+  private out: AudioNode | null = null;
+  /** play `fn`'s sounds as if from (x, z) metres, heard up to `range` m: quieter with distance (silent beyond),
+   *  panned to the side they come from (near ones stay centred). Returns whether anything was played */
+  at(x: number, z: number, range: number, fn: () => void): boolean {
+    if (!this.started || !this.enabled || !this.ctx || !this.master) return false;
+    const dx = x - this.lx, dz = z - this.lz, d = Math.hypot(dx, dz);
+    const k = d >= range ? 0 : Math.pow(1 - d / range, 1.6);
+    if (k < 0.03) return false;
+    const c = this.ctx, g = c.createGain();
+    g.gain.value = k;
+    if (c.createStereoPanner && d > 1) {
+      // the camera's right is (−fz, fx): how far to that side the sound is
+      const side = (dx * -this.fz + dz * this.fx) / d;
+      const pan = c.createStereoPanner();
+      pan.pan.value = Math.max(-1, Math.min(1, side * Math.min(1, d / 10) * 0.85));
+      g.connect(pan);
+      pan.connect(this.master);
+    } else g.connect(this.master);
+    // (the nodes are let go once their last note ends: nothing holds them)
+    this.out = g;
+    try { fn(); } finally { this.out = null; }
+    return true;
+  }
   engineOff(): void {
     if (this.engineG && this.ctx) this.engineG.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
   }
@@ -131,7 +168,7 @@ class Sound {
     if (freq1) o.frequency.exponentialRampToValueAtTime(freq1, t0 + dur);
     const g = c.createGain();
     this.env(g, t0, 0.012, peak, dur);
-    o.connect(g); g.connect(this.master!);
+    o.connect(g); g.connect(this.out ?? this.master!);
     o.start(t0); o.stop(t0 + dur + 0.15);
   }
   noise(dur: number, peak: number, freq: number, type: BiquadFilterType = 'lowpass', delay = 0): void {
@@ -144,7 +181,7 @@ class Sound {
     f.frequency.value = freq;
     const g = c.createGain();
     this.env(g, t0, 0.01, peak, dur);
-    s.connect(f); f.connect(g); g.connect(this.master!);
+    s.connect(f); f.connect(g); g.connect(this.out ?? this.master!);
     s.start(t0); s.stop(t0 + dur + 0.1);
   }
 
@@ -202,10 +239,15 @@ class Sound {
 
 export const Snd = new Sound();
 
-// the sim asks for sounds by name
-on('sound', ({ name }) => {
+/** how far each of the sim's sounds carries (metres); 0: heard everywhere (a fanfare, thunder, the Planner's clicks) */
+const CARRY: Record<string, number> = { siren: 340, crunch: 170, bell: 750, launch: 1100, pop: 1100, baby: 45, ding: 90 };
+// the sim asks for sounds by name, and says where they happen
+on('sound', ({ name, at }) => {
   const fn = (Snd as unknown as Record<string, unknown>)[name];
-  if (typeof fn === 'function') (fn as () => void).call(Snd);
+  if (typeof fn !== 'function') return;
+  const play = (): void => (fn as () => void).call(Snd);
+  if (at && CARRY[name]) Snd.at(at.x * 0.5, at.y * 0.5, CARRY[name], play);
+  else play();
 });
 // unlock audio on the first interaction anywhere
 window.addEventListener('pointerdown', () => Snd.start(), { once: true });

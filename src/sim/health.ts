@@ -13,7 +13,7 @@
    on families. Health sharpens V1's old-age odds. Nobody dies of
    an injury.
    ============================================================ */
-import { MIN_PER_SEC, Snd, T } from './core';
+import { MIN_PER_SEC, Snd, T, midPx } from './core';
 import { World } from './world';
 import { Sim } from './agents';
 import { Life } from './life';
@@ -158,7 +158,7 @@ export const Health = {
     const d = doorPx(best);
     Life.ambulances.push({ path: bp, prog: 0, x: d.x, y: d.y, dirx: 1, diry: 0, phase: 'go', from: best, patient: p, t: 0 });
     this.calls++;
-    Snd.siren();
+    Snd.siren(midPx(best));
     return true;
   },
 

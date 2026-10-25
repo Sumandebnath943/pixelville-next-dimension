@@ -2,7 +2,7 @@
 import type { Building, Person } from './types';
 import { Tasks } from './tasks';
 import { GH, GW, G_GRASS, G_SAND, G_WATER, MSIZE, World } from './world';
-import { MIN_PER_SEC, Snd, T } from './core';
+import { MIN_PER_SEC, Snd, T, midPx } from './core';
 import { News } from './news';
 import { Weather } from './weather';
 import { Sim } from './agents';
@@ -255,7 +255,7 @@ export const Life: any = {
     }
     this.say(causeMsg || `🔥 Fire at the ${CAT[b.type].name}!`, { x: b.x * T + b.w * 8, y: b.y * T + b.h * 8 });
     Tasks.add('fire' + b.id, '🔥', `Put out the fire at the ${CAT[b.type].name}`);
-    Snd.siren();
+    Snd.siren(midPx(b));
     // V2: whoever was inside gets out — a few with smoke in their lungs
     const hurt = Health.casualties(b, 0.22, [24, 55], `in the fire at the ${CAT[b.type].name.toLowerCase()}`);
     if (hurt) this.say(`🚑 ${hurt === 1 ? 'Someone was' : `${hurt} people were`} carried out of the ${CAT[b.type].name} — ${Health.hospitals().length ? 'ambulance called' : 'no hospital to send them to'}`);
@@ -1107,7 +1107,7 @@ export const Life: any = {
         World.dirty = true;
         Sim.safety = Math.max(20, Sim.safety - 3);
         this.say(`💥 The ${CAT[b.type].name} suddenly collapsed! Neighbors are rushing to help`, { x: b.x * T + b.w * 8, y: b.y * T + b.h * 8 });
-        Snd.crunch();
+        Snd.crunch(midPx(b));
         this.startDisaster(b, 'collapse');
         this.collapseCd = 4000;
       }
@@ -1357,7 +1357,7 @@ export const Life: any = {
       if (p.trip.car) p.trip.car.free = true; // shaken drivers head home
       p.state = 'in'; p.at = p.home; p.trip = null; p.dest = null; p.returnAt = undefined; p.backTo = null;
     });
-    Snd.crunch();
+    Snd.crunch(this.crash ? { x: this.crash.x, y: this.crash.y } : undefined);
     this.crash.unit = this.dispatchTo(Math.round(this.crash.x / T), Math.round(this.crash.y / T), this.crash, 12);
     const where = dark ? ' at a junction with its lights out' : '';
     const amb = hurt ? (Health.hospitals().length ? ` — ${hurt > 1 ? 'two drivers' : 'a driver'} hurt, ambulance on the way` : ` — ${hurt > 1 ? 'two drivers' : 'a driver'} hurt, and no hospital to call`) : '';
@@ -1384,7 +1384,7 @@ export const Life: any = {
     if (!best) return null;
     const u = { path: bp, prog: 0, x: best.door.x * T + 8, y: best.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', station: best, patrol: true, scene: scene || null, wait: wait || 10 };
     this.police.push(u);
-    Snd.siren();
+    Snd.siren(midPx(best));
     return u;
   },
 
@@ -1415,7 +1415,7 @@ export const Life: any = {
     } else {
       visitor.phase = 'out'; visitor.done = true;
     }
-    Snd.crunch();
+    Snd.crunch({ x: o.x, y: o.y });
     this.crash.unit = this.dispatchTo(Math.round(this.crash.x / T), Math.round(this.crash.y / T), this.crash, 12);
     const whose = p ? `${Sim.fullName(p)}'s ${p.trip === null && this.crash.taxi ? 'cab' : 'car'}` : "a visitor's car";
     this.say(`💥 The Founder crashed into ${whose} — ${this.crash.unit ? 'police are on the way' : 'no squad car can respond'}`, { x: this.crash.x, y: this.crash.y });
@@ -1436,7 +1436,7 @@ export const Life: any = {
     Rep.feel(p, -6, "was knocked down by the Founder's car", `knocked ${p.name} down with their car`);
     Rep.broadcast(-0.4);
     Sim.safety = Math.max(20, Sim.safety - 1);
-    Snd.crunch();
+    Snd.crunch({ x: p.x, y: p.y });
     // V2: at speed it's an injury: they stay down until the ambulance comes (speed in m/s)
     const down = Health.injure(p, speed * 5.5, "by the Founder's car", { x: p.x, y: p.y });
     this.say(`🤕 ${Sim.fullName(p)} was knocked down by the Founder's car${down ? (Health.hospitals().length ? ' — an ambulance is on its way' : ' — and there is no hospital') : ''}`, { x: p.x, y: p.y });
@@ -1574,7 +1574,7 @@ export const Life: any = {
             vy: -(46 + Math.random() * 22), t: 0.9 + Math.random() * 0.5,
             hue: ['#ff6060', '#ffd160', '#60c0ff', '#80ff90', '#ff90e0', '#c0a0ff'][(Math.random() * 6) | 0],
           });
-          Snd.launch();
+          Snd.launch(midPx(v));
         }
       }
     }
@@ -1586,7 +1586,7 @@ export const Life: any = {
           const a = (i / n) * 6.283, sp = 26 + Math.random() * 30;
           this.sparks.push({ x: r.x, y: r.y, gy: r.gy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.1, hue: r.hue });
         }
-        Snd.pop();
+        Snd.pop({ x: r.x, y: r.gy ?? r.y });
         r.dead = true;
       }
     }
@@ -1779,7 +1779,7 @@ export const Life: any = {
     if (!best) { this.say('😰 No police in town — nobody answers the alarm…'); return; }
     this.police.push({ path: bp, prog: 0, x: best.door.x * T + 8, y: best.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', station: best });
     this.say('🚔 Police dispatched!');
-    Snd.siren();
+    Snd.siren(midPx(best));
   },
 
   resolve(arrested: boolean, unit: any, vanished: boolean) {

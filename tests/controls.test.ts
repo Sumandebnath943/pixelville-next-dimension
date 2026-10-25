@@ -6,6 +6,7 @@ import { Settings } from '../src/sim/settings';
 import { Supply } from '../src/sim/supply';
 import { Sim } from '../src/sim/agents';
 import { town, build, C } from './town';
+import { on, midPx } from '../src/sim/core';
 
 describe('controls', () => {
   beforeEach(() => { Settings.data.keys = {}; Input.loadBinds(); Input.device = 'keys'; Input.keys.clear(); });
@@ -58,6 +59,17 @@ describe('controls', () => {
   });
 });
 
+describe('positional sound', () => {
+  it('says where the sim\'s sounds happen: a grand opening dings at the new shop', () => {
+    town(5152, 2);
+    const heard: { name: string; at?: { x: number; y: number } }[] = [];
+    on('sound', (e) => heard.push(e));
+    const cafe = build('cafe', C.x + 6, C.y + 10, true);
+    const ding = heard.find((e) => e.name === 'ding');
+    expect(ding?.at).toEqual(midPx(cafe));
+  });
+});
+
 describe('balance: a young village builds without waiting (Milestone 7)', () => {
   it('brings most of the first homes\' and the first farm\'s materials with the builders', () => {
     town(5150, 0);
@@ -67,6 +79,7 @@ describe('balance: a young village builds without waiting (Milestone 7)', () => 
     expect(f.mats / f.matsNeed).toBeGreaterThanOrEqual(0.75);
     // a grown village: small homes still bring most, bigger sites the usual share
     town(5151, 12);
+    for (let i = 0; Sim.people.length < 30 && i < 12; i++) build('house', C.x + i * 4, C.y - 8); // (family sizes are random)
     expect(Sim.people.length).toBeGreaterThanOrEqual(30);
     const h2 = build('house', C.x - 12, C.y + 8, false), w = build('factory', C.x - 20, C.y + 16, false);
     Supply.initSite(h2); Supply.initSite(w);

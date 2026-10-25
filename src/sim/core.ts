@@ -30,7 +30,8 @@ export function mulberry32(a: number): () => number {
 /* ---------- event bus ---------- */
 export interface SimEvents {
   toast: { msg: string; at?: { x: number; y: number } };
-  sound: { name: string };
+  /** a one-shot sound; `at` (V1 px) makes it positional (Milestone 7 follow-up): quieter far away, panned to its side */
+  sound: { name: string; at?: { x: number; y: number } };
   breaking: { text: string };
   seasonChange: { season: number };
   buildingDone: { id: number };
@@ -57,10 +58,12 @@ export function emit<K extends keyof SimEvents>(type: K, payload: SimEvents[K]):
 
 /** V1 called `Snd.siren()`, `Snd.bell()` … directly. In the headless sim those
  *  calls become `sound` events; the client's audio engine plays them. */
-export const Snd: Record<string, () => void> = new Proxy(
+export const Snd: Record<string, (at?: { x: number; y: number }) => void> = new Proxy(
   {},
-  { get: (_t, name: string) => () => emit('sound', { name }) },
+  { get: (_t, name: string) => (at?: { x: number; y: number }) => emit('sound', { name, at }) },
 );
+/** the middle of a building, in V1 px (where its sounds come from) */
+export const midPx = (b: { x: number; y: number; w: number; h: number }): { x: number; y: number } => ({ x: b.x * 16 + b.w * 8, y: b.y * 16 + b.h * 8 });
 
 /** a family name as a household: Kim → the Kims, Owens → the Owenses (V1 wrote "Owenss") */
 export function family(surname: string): string {

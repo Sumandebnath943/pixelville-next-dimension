@@ -3,7 +3,7 @@ import type { Building, Person, Car, XY } from './types';
 import { Life } from './life';
 import { World } from './world';
 import { CAT } from './catalog';
-import { MIN_PER_SEC, Snd, T, family } from './core';
+import { MIN_PER_SEC, Snd, T, family, midPx } from './core';
 import { News } from './news';
 import { Mind } from './mind';
 import { Festivals } from './festivals';
@@ -256,7 +256,7 @@ export const Sim: any = {
     if (d.visit && b.connected) {
       this.grandOpening = { b, day: this.day };
       msgs.push(`🎉 Grand opening at the ${d.name} — the whole town is talking!`);
-      Snd.ding();
+      Snd.ding(midPx(b));
     }
     // word gets around: neighbours hear of the new place (PVTV tells everyone)
     Mind.announcePlace(b);
@@ -744,7 +744,7 @@ export const Sim: any = {
                       World.buildings.find((b: Building) => b.type === 'townhall' && b.connected && !b.ruined) ||
                       World.buildings.find((b: Building) => (b.type === 'park' || b.type === 'grandpark') && b.connected && !b.ruined);
         say(`💍 Wedding bells! ${this.fullName(p)} and ${this.fullName(q)} got married${venue ? ` at the ${CAT[venue.type].name}` : ''} 🎉`);
-        Snd.bell();
+        Snd.bell(venue ? midPx(venue) : undefined);
         p.home.funds = Math.max(0, p.home.funds - 25); // the party isn't free
         p.mood = q.mood = 95;
         {
@@ -826,7 +826,7 @@ export const Sim: any = {
           const baby = this.makePerson('kid', p.surname, p.home, 0);
           baby.mood = 80;
           say(`👶 A baby! ${this.fullName(p)} and family welcomed little ${baby.name} ${baby.surname}`);
-          Snd.baby();
+          Snd.baby(midPx(p.home));
           for (const r of p.home.residents) {
             r.mood = Math.min(98, (r.mood === undefined ? 60 : r.mood) + 10);
             if (r !== baby) Mind.remember(r, 'family', `welcomed little ${baby.name}`, 2);

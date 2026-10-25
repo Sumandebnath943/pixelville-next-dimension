@@ -101,8 +101,7 @@ Game.founderHooks = {
 founder.spawn(Game.lodge(), null);
 // a driver held up by the Founder leans on the horn (louder the nearer it is)
 Traffic.onHonk = (who) => {
-  const d = Math.hypot(who.x * 0.5 - founder.pos.x, who.y * 0.5 - founder.pos.z);
-  if (d < 70) Snd.horn(Math.max(0.15, 1 - d / 70));
+  Snd.at(who.x * 0.5, who.y * 0.5, 70, () => Snd.horn(1)); // (from where the driver is, quieter with distance)
   if (who.trip) { who.bubble = '😤'; who.bubbleUntil = performance.now() + 2500; }
 };
 const gps = new Gps();
@@ -376,6 +375,8 @@ function photoFrame(now: number, dt: number): void {
   stage.render();
   if (shotWanted) { shotWanted = false; savePhoto(); }
   if (now - lastPhotoSync > 150) { lastPhotoSync = now; photoPanel.sync(); }
+  stage.camera.getWorldDirection(camDir);
+  Snd.listen(stage.camera.position.x, stage.camera.position.z, camDir.x, camDir.z);
   Snd.tick(dt, { dark: stage.night, rainI: 0, snowI: 0, day: Sim.clock > 350 && Sim.clock < 1150, engine: -1 });
 }
 // in photo mode a click (not a drag) on the picture focuses there
@@ -584,6 +585,7 @@ const padNav = new PadNav(() => [
 let last = performance.now();
 let lastHud = 0, lastPanel = 0, lastPhone = 0, lastVersion = -1, lastTrees = -1;
 const tmpCam = new THREE.PerspectiveCamera();
+const camDir = new THREE.Vector3();
 const focus = new THREE.Vector3();
 
 function interactions(): void {
@@ -923,7 +925,9 @@ function frame(now: number): void {
   if (now - lastPanel > 1200) { lastPanel = now; panels.refresh(); }
   if (now - lastPhone > 150) { lastPhone = now; phone.tick(); }
 
-  // sound
+  // sound: heard from where you are (the view's centre in the Planner), facing the way the camera does
+  stage.camera.getWorldDirection(camDir);
+  Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
   Snd.tick(dt, {
     dark: stage.night, rainI: Weather.isRaining() ? Weather.intensity : 0, snowI: Weather.isSnowing() ? Weather.intensity : 0,
     day: Sim.clock > 350 && Sim.clock < 1150, engine: founder.driving && !planner.active ? Math.min(1, Math.abs(founder.car.speed) / 30) : -1,
