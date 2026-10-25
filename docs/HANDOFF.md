@@ -21,7 +21,7 @@
 
 ### Status (2026-10-25)
 - Milestones 1, 1.5, 2 (2a–2f), 3, 4, 5 and 6 are done, merged into `main` and pushed (`3f529f9`).
-- **Milestone 7 (launch polish) is built** on branch `milestone-7`: Milestone 6 fixes, rebindable controls and gamepad menus, accessibility, the first-day guide, phones, performance, balance, chat guards, launch prep (details in MILESTONES.md).
+- **Milestone 7 (launch polish) is built**, merged into `main` and pushed: Milestone 6 fixes, rebindable controls and gamepad menus, accessibility, the first-day guide, phones, performance, balance, chat guards, launch prep (details in MILESTONES.md).
 - 118 tests pass (`npm test`), typecheck clean (`npm run typecheck`), lint has warnings only (`any` in ported code).
 - **Not yet deployed**: the Vercel project, the Groq key in Vercel and the domain's DNS need the owner (step by step in [LAUNCH.md](LAUNCH.md)).
 
@@ -210,7 +210,7 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 
 ## 10. Git and handoff checklist for a new session
 
-1. `git pull` on `main` (Milestone 7 is on `milestone-7` until the owner merges it).
+1. `git pull` on `main` (latest: Milestone 7).
 2. `npm install && npm test && npm run typecheck` — expect 118 passing tests.
 3. Start the dev server from `.claude/launch.json` (`pixelville-nd`), open a **fresh** `*.localhost` origin, build the test town (§7).
 4. Branch `milestone-7` for new work; merge and push when the owner asks.

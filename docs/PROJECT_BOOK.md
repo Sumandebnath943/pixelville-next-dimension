@@ -2,7 +2,7 @@
 
 > The A–Z of the project: every system, place, rule, file and idea, in one alphabetical book.
 > For getting started, read [HANDOFF.md](HANDOFF.md); for the design, [DESIGN.md](DESIGN.md); for what each milestone delivered, [MILESTONES.md](MILESTONES.md).
-> State as of 2026-10-25, Milestone 7 built on `milestone-7` (the deploy waits on the owner).
+> State as of 2026-10-25, Milestone 7 built and merged into `main` (the deploy waits on the owner).
 
 ---
 
