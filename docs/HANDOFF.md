@@ -1,7 +1,7 @@
 # PixelVille — Next Dimension · Project bible & handoff
 
 > Written 2026-10-25 at the end of Milestone 6, for whoever picks the project up next (a new Claude session on a new account included).
-> Read this first, then [DESIGN.md](DESIGN.md) (the full design) and [MILESTONES.md](MILESTONES.md) (what each milestone delivered, in detail).
+> Read this first (the A–Z reference is [PROJECT_BOOK.md](PROJECT_BOOK.md)), then [DESIGN.md](DESIGN.md) (the full design) and [MILESTONES.md](MILESTONES.md) (what each milestone delivered, in detail).
 > Anything learned in earlier sessions lived in that account's private memory; everything worth keeping from it is copied here.
 
 ---
