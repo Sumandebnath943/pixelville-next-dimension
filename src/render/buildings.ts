@@ -481,6 +481,9 @@ class Ctx implements Built {
     this.trees.push({ x: p.x, z: p.z, y: 0.1, species: pick[k % pick.length], scale: s * 0.62, rot: (k % 628) / 100 });
   }
   bench(x: number, z: number, yaw = 0): void {
+    // (V2 (Milestone 8): solid: its footprint, turned)
+    const ex = Math.abs(Math.cos(yaw)) * 0.95 + Math.abs(Math.sin(yaw)) * 0.27, ez = Math.abs(Math.sin(yaw)) * 0.95 + Math.abs(Math.cos(yaw)) * 0.27;
+    this.solid(x - ex, z - ez, x + ex, z + ez, 0.9);
     const m = new THREE.Matrix4().makeRotationY(yaw).setPosition(x, 0, z);
     this.body.mat = m;
     const iron = new THREE.Color(0.04, 0.04, 0.045), wood = new THREE.Color(0.72, 0.55, 0.38);
@@ -516,11 +519,21 @@ class Ctx implements Built {
     this.kit.slab('slate', V(x0 - 0.2, y + 0.1, z0), V(x0 - 0.2, y + 0.1, z1 + 0.2), V(xm, y + rise + 0.12, z1 + 0.2), V(xm, y + rise + 0.12, z0), 0.08, new THREE.Color(0.8, 0.82, 0.84));
     this.height = Math.max(this.height, y + rise);
   }
-  fence(x0: number, z0: number, x1: number, z1: number, col = '#a5824f', h = 0.9): void {
+  /** a fence round the plot; V2 (Milestone 8): solid, and with openings in its front run (`gaps`, ranges of x)
+   *  for the path to the door and the drive (people and cars passed straight through it before) */
+  fence(x0: number, z0: number, x1: number, z1: number, col = '#a5824f', h = 0.9, gaps: [number, number][] = [[-1.6, 1.6]]): void {
     const c = hex(col);
     const iron = hslOf(c).l < 0.3;
-    const runs: [number, number, number, number][] = [[x0, z0, x1, z0], [x0, z1, x1, z1], [x0, z0, x0, z1], [x1, z0, x1, z1]];
+    const runs: [number, number, number, number][] = [[x0, z0, x1, z0], [x0, z0, x0, z1], [x1, z0, x1, z1]];
+    // the front run, between its openings
+    let from = x0;
+    for (const [g0, g1] of [...gaps].sort((a, b) => a[0] - b[0])) {
+      if (g0 > from + 0.3) runs.push([from, z1, Math.min(x1, g0), z1]);
+      from = Math.max(from, g1);
+    }
+    if (from < x1 - 0.3) runs.push([from, z1, x1, z1]);
     for (const [ax, az, bx, bz] of runs) {
+      this.solid(Math.min(ax, bx) - 0.06, Math.min(az, bz) - 0.06, Math.max(ax, bx) + 0.06, Math.max(az, bz) + 0.06, h);
       const len = Math.hypot(bx - ax, bz - az);
       if (iron) {
         for (const y of [0.1, h - 0.08]) this.kit.rod('metal', V(ax, y, az), V(bx, y, bz), 0.015, c, 5);
@@ -581,7 +594,8 @@ function buildHouse(c: Ctx, level: number): void {
   const wall = HOUSE_WALLS[(v + c.hv) % HOUSE_WALLS.length], roof = HOUSE_ROOFS[(v + (c.hv >> 3)) % HOUSE_ROOFS.length];
   const res = !!CAT[c.key].res;
   c.lot(Weather.season === 3 ? '#e6ecf2' : '#93c46c', 0.2);
-  if (res || c.key === 'lodge') c.fence(-c.hw + 0.35, -c.hd + 0.35, c.hw - 0.35, c.hd - 0.35);
+  // (openings for the path to the door and the drive, where the cars stand: sim/parking.ts)
+  if (res || c.key === 'lodge') c.fence(-c.hw + 0.35, -c.hd + 0.35, c.hw - 0.35, c.hd - 0.35, undefined, undefined, [[-1.4, 1.4], [c.hw - 7.4, c.hw]]);
   // the house sits back on its plot with a front garden and a driveway
   const x0 = -c.hw + 2.2, x1 = c.hw - 2.6, z0 = -c.hd + 1.6, z1 = c.hd - 4.2;
   const floors = Math.min(3, level);

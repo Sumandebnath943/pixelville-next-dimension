@@ -58,6 +58,8 @@ import { Travel, hhmm, hoursLabel } from './player/travel';
 import { Departures } from './ui/departures';
 import { TravelUI } from './ui/travelui';
 import { Shifts, JOB, JOBS, JobId } from './player/shifts';
+import { trailhead } from './sim/peak';
+import { Gov } from './sim/gov';
 import { ShiftPanel } from './ui/shiftpanel';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -426,6 +428,21 @@ function playScene(now: number): void {
 const nearestOf = (type: string, x: number, z: number): any =>
   World.buildings.filter((b: any) => b.type === type && b.connected && !b.ruined && !b.construction)
     .sort((a: any, b: any) => Math.hypot(a.door.x * TM - x, a.door.y * TM - z) - Math.hypot(b.door.x * TM - x, b.door.y * TM - z))[0] || null;
+// V2 (Milestone 8): hit by a vehicle on foot: a word, and the edges of the view go red while the Founder mends
+const hurtFx = document.createElement('div');
+hurtFx.id = 'hurt';
+document.body.appendChild(hurtFx);
+founder.onHurt = (dmg, what) => {
+  personalToast(`🤕 Hit by ${what}${dmg >= 45 ? ' — badly hurt' : dmg >= 20 ? ' — that hurt' : ''}`);
+  hurtFx.classList.remove('hit');
+  void hurtFx.offsetWidth;
+  hurtFx.classList.add('hit');
+};
+// V2 (Milestone 8): road-rule tickets, to the village fund (owed if the wallet can't cover them)
+wanted.onTicket = (fine, label, by) => {
+  const paid = motoring.fine(fine, `Traffic ticket · ${label}`);
+  personalToast(`${by === 'patrol' ? '🚓 Pulled over' : '📸 Caught on a road camera'}: a $${fine} ticket for ${label}${paid < fine ? ` ($${fine - paid} owed)` : ''}`);
+};
 wanted.onBusted = (stars) => {
   if (scene) return;
   if (shifts.cur) { shifts.cur.stars = 1; shifts.end('arrested on the job', true); }
@@ -562,13 +579,13 @@ actors.extra = (a) => {
 };
 planner.onBuilding = (b) => panels.showInfo(b);
 planner.onPerson = (p) => panels.showPerson(p);
-planner.onToolChange = (k) => { hud.markTool(k); if (k && Input.device === 'pad') padNav.release(); };
+planner.onToolChange = (k) => { hud.markTool(k, true); if (k && Input.device === 'pad') padNav.release(); };
 planner.onEmptyClick = () => panels.hideInfo();
 Input.attach(canvas);
 initTouch();
 canvas.addEventListener('click', () => {
   // with the phone out, the mouse stays free for it
-  if (!planner.active && !panels.anyModalOpen() && !phone.open && !photo.active) Input.requestLock(canvas);
+  if (!planner.active && !panels.anyModalOpen() && !phone.open && !photo.active && !landing) Input.requestLock(canvas);
 });
 
 /* ---------- Milestone 7: the gamepad through every menu (topmost first) ---------- */
@@ -588,9 +605,49 @@ const tmpCam = new THREE.PerspectiveCamera();
 const camDir = new THREE.Vector3();
 const focus = new THREE.Vector3();
 
+/* ---------- V2 (Milestone 8): the bike hire at the foot of a peak's trail ---------- */
+const HIRE_FEE = 4;
+const HIRE_SPEC = { max: 9, accel: 2.6, range: 1e6, tank: 0, reach: 0.5, radius: 0.42, repair: 0.2, turn: 2.8, len: 0.25 };
+function nearTrailhead(x: number, z: number): { x: number; z: number; yaw: number } | null {
+  for (const pk of World.peaks) { const th = trailhead(pk); if (Math.hypot(th.x - x, th.z - z) < 6) return th; }
+  return null;
+}
+function hireBike(th: { x: number; z: number; yaw: number }): void {
+  if (!founder.purse.spend(HIRE_FEE, 'Mountain bike hire', 'purchase')) { personalToast(`👛 The hire is $${HIRE_FEE}`); return; }
+  Gov.treasury += HIRE_FEE; // (the trail is the village's)
+  const rx = Math.cos(th.yaw), rz = -Math.sin(th.yaw), fx = Math.sin(th.yaw), fz = Math.cos(th.yaw);
+  const v: any = { id: -2, model: 'hirebike', name: 'hire bike', kind: 'moto', style: 'moto', color: '#2a6ad0', price: 0, fuel: 1, damage: 0, where: 'out', work: { type: 'bike', spec: HIRE_SPEC } };
+  founder.takeWork(v, th.x + rx * 2.1 - fx * 1.2, th.z + rz * 2.1 - fz * 1.2, th.yaw);
+  founder.enterCar();
+  actors.hireOut = true;
+  personalToast(`🚵 A mountain bike for the trail ($${HIRE_FEE}) — hand it back here at the rack when you're done`);
+}
+function returnBike(): void {
+  founder.dropWork();
+  actors.hireOut = false;
+  personalToast('🚵 Bike handed back — thanks for riding the trail');
+}
+
 function interactions(): void {
   const prompt = $('prompt');
   let text = '';
+  // V2 (Milestone 8): at a peak's trailhead, the bike hire comes first
+  {
+    const at = founder.driving ? founder.car : founder.pos;
+    const th = nearTrailhead(at.x, at.z);
+    const hired = founder.work?.model === 'hirebike';
+    if (th && hired && (founder.driving || founder.nearCar())) {
+      showPrompt(prompt, `<b>{interact}</b> hand the bike back`);
+      if (Input.take('interact')) returnBike();
+      if (founder.driving && Input.take('vehicle')) founder.exitCar();
+      return;
+    }
+    if (th && !founder.driving && !founder.work && !shifts.cur) {
+      showPrompt(prompt, `<b>{interact}</b> 🚵 hire a mountain bike · $${HIRE_FEE}`);
+      if (Input.take('interact')) hireBike(th);
+      return;
+    }
+  }
   // Milestone 5: waiting for a bus, aboard one, a trip about to leave: that's all F does now
   const tp: { text: string; act: () => void; alt?: { act: () => void } } | null = travel.interaction() || transit.interaction();
   if (tp) {
@@ -732,6 +789,14 @@ function frame(now: number): void {
     return;
   }
 
+  // Milestone 8: the landing screen
+  if (landing) {
+    landingFrame(now, dt);
+    Input.endFrame();
+    requestAnimationFrame(frame);
+    return;
+  }
+
   // photo mode: the world is paused
   if (photo.active) {
     photoFrame(now, dt);
@@ -844,7 +909,11 @@ function frame(now: number): void {
   const range = planner.active ? Math.min(700, planner.dist * 1.6 + 120) : 240;
   syncPowerMap(Game.mapVersion); // V2: blacked-out districts go dark in every window, sign and lantern
   stage.autoRes(dt); // Milestone 7: the resolution setting (auto keeps the frame rate up)
+  // V2 (Milestone 8): from high over the town at night, the eye opens up a little more, and every lamp's pool of light
+  // shows on the ground (only a few lamps are real lights)
+  stage.viewBoost = planner.active ? 1 + stage.night * Math.min(1, planner.dist / 160) * 0.9 : 1;
   stage.update(dt, focus, terrain.lampSpots);
+  terrain.setPools(stage.lampK * (planner.active ? 0.075 : 0.05) / Math.max(0.6, stage.sky.exposure * 0.25));
   if (!inside) {
     terrain.frame(stage.night, stage.camera.position);
     actors.update(dt, focus.x, focus.z, range, now, stage.night);
@@ -872,6 +941,7 @@ function frame(now: number): void {
     const w = planner.active ? planner.dist * 1.6 : 0;
     hud.drawMinimap({ x: planner.active ? planner.target.x : fx, z: planner.active ? planner.target.z : fz, yaw: founder.driving ? founder.car.yaw : founder.yaw, planner: planner.active, w, h: w * 0.7, route: gps.route, dest: gps.dest });
     $('wallet').textContent = `$${Math.round(founder.wallet)}`;
+    hurtFx.style.opacity = String(Math.max(0, 1 - founder.health / 100) * 0.75);
     if (gps.dest) $('gps-text').textContent = `${gps.dest.label} · ${distLabel(gps.left)}`;
     const speedo = founder.driving ? `${Math.round(founder.speedKmh)} km/h` : '';
     if ($('speedo').textContent !== speedo) $('speedo').textContent = speedo;
@@ -940,12 +1010,12 @@ function frame(now: number): void {
 /** Milestone 5: the phone's timetables */
 function rideTimetable(): { title: string; sub: string }[] {
   const out: { title: string; sub: string }[] = [];
-  for (const bus of Life.buses.slice(0, 1)) out.push({ title: '🚌 The village bus', sub: `${bus.stops.length} stops on the loop · ${Life.buses.length} bus${Life.buses.length > 1 ? 'es' : ''} running · $2` });
+  for (const bus of Life.buses.slice(0, 1)) out.push({ title: '🚌 The village bus', sub: `${bus.stops.length} stops on the loop · ${Life.buses.filter((b: any) => !b.hidden).length || 'no'} bus${Life.buses.length > 1 ? 'es' : ''} running · first 05:30, last 23:30 · $2` });
   const pass = Life.trains.filter((t: any) => t.type !== 'freight');
-  if (pass.length) out.push({ title: '🚆 Trains on the village line', sub: `${pass.map((t: any) => t.type).join(', ')} · locals stop everywhere · $4 (express $6)` });
+  if (pass.length) out.push({ title: '🚆 Trains on the village line', sub: `${pass.map((t: any) => t.type).join(', ')} · first 05:30, last train 23:30 · locals stop everywhere · $4 (express $6)` });
   if (Gateways.line) out.push({ title: '🚄 Intercity Express', sub: `from the station ${Gateways.boarding() ? 'boarding now' : `next departure ${hhmm(Gateways.nextDeparture())}`} · every three hours, 07:00–22:00` });
-  if (Life.ferry) out.push({ title: '⛴️ The ferry', sub: 'between the docks, all day except in winter · $5' });
-  if (World.buildings.some((b: any) => b.type === 'airport' && !b.ruined && !b.construction)) out.push({ title: '✈️ Flights', sub: `next departure ${hhmm(travel.nextFlight())} · every three hours, 06:30–21:30` });
+  if (Life.ferry) out.push({ title: '⛴️ The ferry', sub: 'between the docks, 06:00–22:00 except in winter · $5' });
+  if (World.buildings.some((b: any) => b.type === 'airport' && !b.ruined && !b.construction)) out.push({ title: '✈️ Flights', sub: `next departure ${hhmm(travel.nextFlight())} · every three hours, round the clock` });
   if (Life.taxis.length) out.push({ title: '🚕 Cabs', sub: `${Life.taxis.length} on the road · $3 plus a little a mile` });
   return out;
 }
@@ -989,11 +1059,99 @@ setInterval(() => {
   if (document.hidden && !photo.active) Game.catchUp(elapsed); // (photo mode holds the world still)
 }, 1000);
 
+/* ---------- Milestone 8: the landing screen, over a slow flight across the village ---------- */
+let landing = false;
+let flyT = 0;
+const flyCentre = new THREE.Vector3();
+function showLanding(resumed: boolean): void {
+  landing = true;
+  document.body.classList.add('landing');
+  Input.releaseLock();
+  const c = Game.lodge() ? { x: (Game.lodge().x + 1) * TM, z: (Game.lodge().y + 1) * TM } : { x: 128 * TM, z: 128 * TM };
+  // over the middle of what's been built
+  const built = World.buildings.filter((b: any) => b.type !== 'lodge');
+  if (built.length) {
+    let sx = 0, sz = 0;
+    for (const b of built) { sx += (b.x + b.w / 2) * TM; sz += (b.y + b.h / 2) * TM; }
+    c.x = sx / built.length; c.z = sz / built.length;
+  }
+  flyCentre.set(c.x, 0, c.z);
+  flyT = Math.random() * 6;
+  $('la-name').textContent = World.name;
+  $('la-meta').textContent = resumed || built.length
+    ? `Day ${Sim.day} · ${Sim.timeStr()} · ${Sim.people.length} villager${Sim.people.length === 1 ? '' : 's'}`
+    : 'A new valley, waiting for its first family';
+  ($('la-continue').querySelector('span') as HTMLElement).textContent = resumed || built.length ? `Continue ${World.name}` : 'Begin';
+  setTimeout(() => ($('la-continue') as HTMLButtonElement).focus(), 60);
+  afterLandingResumed = resumed;
+}
+let afterLandingResumed = false;
+/** off the landing screen and into the village (then the guide, or the controls, or a welcome back) */
+function leaveLanding(then?: () => void): void {
+  if (!landing) return;
+  fade(() => {
+    landing = false;
+    document.body.classList.remove('landing');
+    if (then) then();
+    else if (!Settings.get('tourDone')) tour.start();
+    else if (afterLandingResumed) hud.toast(`👋 Welcome back to ${World.name} — day ${Sim.day}, ${Sim.people.length} villagers`);
+    else panels.show('help');
+  });
+}
+$('la-continue').addEventListener('click', () => leaveLanding());
+$('la-new').addEventListener('click', () => leaveLanding(() => $('btn-new').click()));
+$('la-load').addEventListener('click', () => leaveLanding(() => $('btn-load').click()));
+$('la-controls').addEventListener('click', () => panels.show('help'));
+$('la-settings').addEventListener('click', () => panels.openSettings());
+window.addEventListener('keydown', (e) => { if (landing && e.key === 'Enter' && !panels.anyModalOpen()) { e.preventDefault(); leaveLanding(); } });
+/** a frame of the landing screen: the world goes on, the camera circles high over the village */
+function landingFrame(now: number, dt: number): void {
+  Game.tick(dt);
+  if (Game.mapVersion !== lastVersion) { lastVersion = Game.mapVersion; terrain.update(); }
+  buildings.sync();
+  flyT += dt * 0.035;
+  const r = 150 + Math.sin(flyT * 0.7) * 30, h = 58 + Math.sin(flyT * 0.45) * 14;
+  const cam = stage.camera;
+  cam.fov = 50;
+  cam.updateProjectionMatrix();
+  cam.position.set(flyCentre.x + Math.cos(flyT) * r, h, flyCentre.z + Math.sin(flyT) * r);
+  cam.lookAt(flyCentre.x + Math.cos(flyT + 1.2) * 30, 6, flyCentre.z + Math.sin(flyT + 1.2) * 30);
+  focus.set(flyCentre.x + Math.cos(flyT + 1.2) * 30, 0, flyCentre.z + Math.sin(flyT + 1.2) * 30);
+  stage.viewBoost = 1 + stage.night * 0.6;
+  stage.moving = false;
+  stage.update(dt, focus, terrain.lampSpots);
+  terrain.setPools(stage.lampK * 0.07 / Math.max(0.6, stage.sky.exposure * 0.25));
+  terrain.frame(stage.night, cam.position);
+  actors.update(dt, focus.x, focus.z, 420, now, stage.night);
+  stage.render();
+  cam.getWorldDirection(camDir);
+  Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
+  Snd.tick(dt, { dark: stage.night, rainI: 0, snowI: 0, day: Sim.clock > 350 && Sim.clock < 1150, engine: -1 });
+}
+
 /* boot: continue the last village if there is one, build it a slice at a time
    behind the loading screen, light it and compile every shader off-frame (a cold
    compile on frame one can stall an integrated GPU long enough to lose the context) */
 async function boot(): Promise<void> {
   const text = $('loading-text'), bar = $('loading-bar');
+  // Milestone 8: the key art, if there is one (public/art/keyart.jpg), behind the loading screen
+  const art = new Image();
+  art.onload = () => { $('loading').style.setProperty('--keyart', `url(${art.src})`); $('loading').classList.add('has-art'); };
+  art.src = '/art/keyart.jpg';
+  // …and a tip while you wait
+  const TIPS = [
+    'Villagers remember what you do, and tell each other about it.',
+    'Keep right and stop at red lights: the road cameras write tickets.',
+    'Rise into the Planner to build; the village grows on its own around what you place.',
+    'The last bus and the last train leave at 23:30. Flights run round the clock.',
+    'Hire a mountain bike at the foot of the peak and ride the trail to the summit.',
+    'Every December the great tree comes to the square on a flatbed, with a police escort.',
+    'The phone’s Jobs app has shifts to work: firefighter, cabbie, pilot, reporter…',
+    'Mind the traffic on foot: a car that hits you hurts, and a bus hurts more.',
+  ];
+  let tip = Math.floor(Math.random() * TIPS.length);
+  $('loading-tip').textContent = TIPS[tip];
+  const tipTimer = setInterval(() => { tip = (tip + 1) % TIPS.length; $('loading-tip').textContent = TIPS[tip]; }, 4200);
   const step = (msg: string, k: number): void => {
     if (text.textContent !== msg && !msg.startsWith('Raising')) performance.mark(`boot:${msg}`);
     text.textContent = msg;
@@ -1015,19 +1173,22 @@ async function boot(): Promise<void> {
   step('Lighting the village…', 0.85);
   await yieldFrame();
   actors.prewarm(true);
+  // (Milestone 8: the landing camera flies too high for grass or near trees: grow them round the Founder first, so
+  // their shaders compile now with everything else rather than the moment the player steps in)
+  terrain.frame(stage.night, founder.pos);
   try { await stage.warmUp(); } catch { /* draw anyway */ }
   actors.prewarm(false);
   step('Ready', 1);
+  clearInterval(tipTimer);
+  // Milestone 8: the landing screen first, over a flight across the village; the guide, the controls or a
+  // welcome back once the player steps in
+  showLanding(resumed);
   requestAnimationFrame((t) => {
     last = t;
     frame(t);
     const l = $('loading');
     l.style.opacity = '0';
     setTimeout(() => l.remove(), 700);
-    // Milestone 7: someone new gets the first-day guide (picked up where the village is, after a reload)
-    if (!Settings.get('tourDone')) tour.start();
-    else if (resumed) hud.toast(`👋 Welcome back to ${World.name} — day ${Sim.day}, ${Sim.people.length} villagers`);
-    else panels.show('help');
   });
 }
 void boot();

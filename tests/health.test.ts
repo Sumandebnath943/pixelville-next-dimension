@@ -32,7 +32,7 @@ describe('health and ambulances', () => {
     expect(Life.ambulances.some((a: any) => a.patient === p)).toBe(false);
     // mends on the ward and is discharged (with a bill) by day
     const takings = h.funds;
-    expect(until(() => !p.ward, 1440 * 4)).toBe(true);
+    expect(until(() => !p.ward, 1440 * 6)).toBe(true); // (mending is a little random: up to about five days)
     expect(h.funds).toBeGreaterThan(takings); // the bill
     // (they may since have caught a cold; the injury itself is mostly mended)
     expect(!p.cond || p.cond.k !== 'injury' || p.cond.sev < 14).toBe(true);

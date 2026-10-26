@@ -68,7 +68,7 @@ function extrudeAcross(shape: THREE.Shape, width: number, bevel: number): THREE.
   return g.index ? g.toNonIndexed() : g;
 }
 
-interface Models { paint: THREE.BufferGeometry; glass: THREE.BufferGeometry; trim: THREE.BufferGeometry; chrome: THREE.BufferGeometry; head: THREE.BufferGeometry; tail: THREE.BufferGeometry; plate: THREE.BufferGeometry; dims: Dim }
+interface Models { paint: THREE.BufferGeometry; glass: THREE.BufferGeometry; trim: THREE.BufferGeometry; chrome: THREE.BufferGeometry; head: THREE.BufferGeometry; bulb: THREE.BufferGeometry; drl: THREE.BufferGeometry; tail: THREE.BufferGeometry; plate: THREE.BufferGeometry; dims: Dim; headAt: [number, number, number][] }
 const CACHE = new Map<CarStyle, Models>();
 
 function merge(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
@@ -93,6 +93,34 @@ const boxAt = (sx: number, sy: number, sz: number, x: number, y: number, z: numb
   if (rx) g.rotateX(rx);
   return g.translate(x, y, z);
 };
+/** a lamp lens: a rounded rectangle w × h, `depth` deep, its face towards +z, turned `ry` about y and tipped `rx`, at (x, y, z) */
+function lamp(w: number, h: number, depth: number, r: number, x: number, y: number, z: number, ry: number, rx: number): THREE.BufferGeometry {
+  const s = new THREE.Shape();
+  r = Math.min(r, h / 2, w / 2);
+  s.moveTo(-w / 2 + r, -h / 2);
+  s.lineTo(w / 2 - r, -h / 2);
+  s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+  s.lineTo(w / 2, h / 2 - r);
+  s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+  s.lineTo(-w / 2 + r, h / 2);
+  s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+  s.lineTo(-w / 2, -h / 2 + r);
+  s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+  const bev = Math.min(0.012, depth * 0.4);
+  const g = new THREE.ExtrudeGeometry(s, { depth: depth - bev, bevelEnabled: true, bevelThickness: bev, bevelSize: bev * 0.7, bevelSegments: 2, curveSegments: 6 });
+  g.translate(0, 0, -depth);
+  g.rotateX(rx);
+  g.rotateY(ry);
+  return g.translate(x, y, z);
+}
+/** a bulb: a small disc on its lamp's face, (ox, oy) from the lamp's centre, turned and tipped like the lamp */
+function disc(r: number, ox: number, oy: number, x: number, y: number, z: number, ry: number, rx: number): THREE.BufferGeometry {
+  const g = new THREE.CircleGeometry(r, 14);
+  g.translate(ox, oy, 0.004);
+  g.rotateX(rx);
+  g.rotateY(ry);
+  return g.translate(x, y, z);
+}
 
 function models(style: CarStyle): Models {
   const hit = CACHE.get(style);
@@ -173,13 +201,22 @@ function models(style: CarStyle): Models {
   }
   const chrome: THREE.BufferGeometry[] = [];
   for (const sx of [-1, 1]) chrome.push(boxAt(0.012, 0.018, cab.zA - cab.zC - 0.1, sx * (hw - 0.085), d.belt - 0.035, (cab.zA + cab.zC) / 2));
-  const head: THREE.BufferGeometry[] = [], tail: THREE.BufferGeometry[] = [];
+  // V2 (Milestone 8): lamp units, not glowing boxes: a rounded lens swept round the corner of the body, and behind
+  // it two small projector bulbs and a slim running-light strip (the hot spots are small, so they glare like real
+  // lamps instead of blooming into a white slab); tail lamps are rounded clusters with a brighter inner bar
+  const head: THREE.BufferGeometry[] = [], bulb: THREE.BufferGeometry[] = [], drl: THREE.BufferGeometry[] = [], tail: THREE.BufferGeometry[] = [];
+  const headAt: [number, number, number][] = [];
   for (const sx of [-1, 1]) {
-    head.push(boxAt(0.38, 0.12, 0.1, sx * (hw - 0.32), d.hood - 0.14, L2 - 0.035, -0.35));
-    tail.push(boxAt(0.34, 0.14, 0.1, sx * (hw - 0.26), d.deck - 0.2, -L2 + 0.03, 0.25));
+    const hx = sx * (hw - 0.3), hy = d.hood - 0.15, hz = L2 - 0.03;
+    head.push(lamp(0.4, 0.13, 0.045, 0.05, hx, hy, hz, sx * 0.28, -0.3));
+    for (const k of [-1, 1]) bulb.push(disc(0.031, k * 0.085, 0.012, hx, hy, hz, sx * 0.28, -0.3));
+    drl.push(lamp(0.3, 0.018, 0.012, 0.009, hx, hy - 0.046, hz + 0.006, sx * 0.28, -0.3));
+    headAt.push([hx, hy, hz + 0.06]);
+    const tx = sx * (hw - 0.25), ty = d.deck - 0.21, tz = -L2 + 0.02;
+    tail.push(lamp(0.36, 0.15, 0.04, 0.045, tx, ty, tz, Math.PI - sx * 0.22, 0.2));
   }
   const plate = merge([boxAt(0.52, 0.12, 0.02, 0, 0.42, L2 + 0.04), boxAt(0.52, 0.12, 0.02, 0, d.deck - 0.4, -L2 - 0.02)]);
-  const m: Models = { paint: merge(paintParts), glass, trim: merge(trim), chrome: merge(chrome), head: merge(head), tail: merge(tail), plate, dims: d };
+  const m: Models = { paint: merge(paintParts), glass, trim: merge(trim), chrome: merge(chrome), head: merge(head), bulb: merge(bulb), drl: merge(drl), tail: merge(tail), plate, dims: d, headAt };
   m.glass.computeBoundingSphere();
   CACHE.set(style, m);
   return m;
@@ -257,6 +294,31 @@ export function setHeadlightPool(k: number): void {
   pool().mat.color.setRGB(1, 0.93, 0.8).multiplyScalar(k);
 }
 
+/* ---------- V2 (Milestone 8): the glare of a lit headlamp, brightest seen from in front ---------- */
+let GLARE: THREE.SpriteMaterial | null = null;
+function glare(): THREE.SpriteMaterial {
+  if (GLARE) return GLARE;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,250,235,1)');
+  gr.addColorStop(0.12, 'rgba(255,244,220,0.65)');
+  gr.addColorStop(0.4, 'rgba(255,236,205,0.14)');
+  gr.addColorStop(1, 'rgba(255,230,200,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  // the same features as the thought bubbles' sprites, so it compiles no new shader
+  GLARE = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0x000000 });
+  return GLARE;
+}
+/** where the camera is this frame (set by the stage), for how much of a lamp's glare it sees */
+export const VIEW = new THREE.Vector3();
+/** how bright the glare is drawn (scene radiance; the stage sets it from the light) */
+export function setGlare(k: number): void {
+  glare().color.setRGB(1, 0.95, 0.86).multiplyScalar(k);
+}
+
 export class Car {
   root = new THREE.Group();
   private pool: THREE.Mesh;
@@ -264,8 +326,11 @@ export class Car {
   wheels: THREE.Group[] = [];
   paint: THREE.MeshPhysicalMaterial;
   head: THREE.MeshStandardMaterial;
+  bulb: THREE.MeshStandardMaterial;
+  drl: THREE.MeshStandardMaterial;
   tail: THREE.MeshStandardMaterial;
   dims: Dim;
+  private glares: THREE.Sprite[] = [];
   private spin = 0;
   private pitch = 0;
   private roll = 0;
@@ -279,8 +344,10 @@ export class Car {
     const m = models(style), s = shared();
     this.dims = m.dims;
     this.paint = surface(new THREE.MeshPhysicalMaterial({ color, metalness: metallic ? 0.6 : 0.05, roughness: metallic ? 0.32 : 0.4, clearcoat: 1, clearcoatRoughness: 0.035 }), { snow: 0.9, wet: 0.15 }, 'carPaint') as THREE.MeshPhysicalMaterial;
-    this.head = new THREE.MeshStandardMaterial({ color: 0x7c848c, roughness: 0.25, metalness: 0.2, emissive: 0xfff4dc, emissiveIntensity: 0 });
-    this.tail = new THREE.MeshStandardMaterial({ color: 0x5a0808, roughness: 0.2, emissive: 0xff1a0a, emissiveIntensity: 0 });
+    this.head = new THREE.MeshStandardMaterial({ color: 0x9aa2aa, roughness: 0.08, metalness: 0.35, emissive: 0xfff4dc, emissiveIntensity: 0 });
+    this.bulb = new THREE.MeshStandardMaterial({ color: 0xd8dce0, roughness: 0.15, metalness: 0.5, emissive: 0xfff6e4, emissiveIntensity: 0 });
+    this.drl = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.2, metalness: 0.3, emissive: 0xf4f8ff, emissiveIntensity: 0 });
+    this.tail = new THREE.MeshStandardMaterial({ color: 0x5a0808, roughness: 0.15, emissive: 0xff1a0a, emissiveIntensity: 0 });
     const add = (g: THREE.BufferGeometry, mat: THREE.Material, shadow = true): THREE.Mesh => {
       const mesh = new THREE.Mesh(g, mat);
       mesh.castShadow = shadow;
@@ -293,8 +360,18 @@ export class Car {
     add(m.trim, s.trim);
     add(m.chrome, s.chrome, false);
     add(m.head, this.head, false);
+    add(m.bulb, this.bulb, false);
+    add(m.drl, this.drl, false);
     add(m.tail, this.tail, false);
     add(m.plate, s.plate, false);
+    for (const [x, y, z] of m.headAt) {
+      const sp = new THREE.Sprite(glare());
+      sp.position.set(x, y, z);
+      sp.visible = false;
+      sp.renderOrder = 4;
+      this.body.add(sp);
+      this.glares.push(sp);
+    }
     this.root.add(this.body);
     const w = wheelGeo();
     const d = m.dims;
@@ -371,12 +448,30 @@ export class Car {
     this.paint.color.copy(c);
   }
 
-  /** `night` 0..1 decides whether the headlights visibly light the road */
-  lights(on: boolean, night: number): void {
+  /** `night` 0..1 decides whether the headlights visibly light the road; a `parked` car is dark all over
+   *  (V2 (Milestone 8): it used to keep its lamps lit and its brake lights on in the drive) */
+  lights(on: boolean, night: number, parked = false): void {
     this.headOn = on;
-    this.head.emissiveIntensity = on ? 14 : 0;
-    this.tail.emissiveIntensity = (on ? 2.5 : 0) + (this.braking ? 9 : 0);
+    // the lens itself glows softly; the light comes from the small bulbs behind it
+    this.head.emissiveIntensity = on ? 1.6 : 0;
+    this.bulb.emissiveIntensity = on ? 34 : 0;
+    // daytime running lights whenever the engine is on
+    this.drl.emissiveIntensity = parked ? 0 : on ? 9 : 5;
+    this.tail.emissiveIntensity = parked ? 0 : (on ? 2.2 : 0) + (this.braking ? 8 : 0);
     this.pool.visible = on && night > 0.12;
+    // the glare: seen head-on it is a broad bloom, side-on a small point, from behind nothing
+    const show = on && night > 0.15;
+    let face = 0;
+    if (show) {
+      // (from the world matrix: the Founder's own car is posed inside a group of its own)
+      const e = this.root.matrixWorld.elements;
+      const dx = VIEW.x - e[12], dz = VIEW.z - e[14], d = Math.hypot(dx, dz) || 1, fl = Math.hypot(e[8], e[10]) || 1;
+      face = Math.max(0, (e[8] * dx + e[10] * dz) / (d * fl));
+    }
+    for (const g of this.glares) {
+      g.visible = show && face > 0.02;
+      if (g.visible) g.scale.setScalar(0.25 + 1.15 * face * face);
+    }
   }
 }
 
@@ -492,12 +587,92 @@ export class Moto {
   setPaint(c: THREE.Color): void {
     this.paint.color.copy(c);
   }
-  lights(on: boolean, night: number): void {
-    this.head.emissiveIntensity = on ? 14 : 0;
-    this.tail.emissiveIntensity = (on ? 2.5 : 0) + (this.braking ? 9 : 0);
+  lights(on: boolean, night: number, parked = false): void {
+    this.head.emissiveIntensity = on ? 9 : 0;
+    this.tail.emissiveIntensity = parked ? 0 : (on ? 2.2 : 0) + (this.braking ? 8 : 0);
     this.pool.visible = on && night > 0.12;
   }
 }
 
+/* ---------- V2 (Milestone 8): a mountain bike ----------
+   The car's own materials again (no new shaders): a painted diamond frame of tubes, a
+   chrome fork and bars that steer, knobbly wheels, a saddle, and a little lamp. */
+export class Bike {
+  root = new THREE.Group();
+  body = new THREE.Group();
+  paint: THREE.MeshPhysicalMaterial;
+  head: THREE.MeshStandardMaterial;
+  dims = { L: 1.75, WB: 1.08, W: 0.6, H: 1.1, wheelR: 0.34 };
+  lean = 0;
+  braking = false;
+  /** how far round the cranks are (radians), for the rider's legs */
+  crank = 0;
+  private front = new THREE.Group();
+  private spinF = new THREE.Group();
+  private spinR = new THREE.Group();
+  private spin = 0;
+
+  constructor(color: THREE.Color) {
+    const s = shared(), w = wheelGeo(), d = this.dims;
+    this.paint = surface(new THREE.MeshPhysicalMaterial({ color, metalness: 0.6, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.035 }), { snow: 0.9, wet: 0.15 }, 'carPaint') as THREE.MeshPhysicalMaterial;
+    this.head = new THREE.MeshStandardMaterial({ color: 0x7c848c, roughness: 0.25, metalness: 0.2, emissive: 0xfff4dc, emissiveIntensity: 0 });
+    const V = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
+    const rod = (a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material, parent: THREE.Object3D = this.body): void => {
+      const g = new THREE.CylinderGeometry(r, r, a.distanceTo(b), 8);
+      g.applyMatrix4(new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5), new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize()), V(1, 1, 1)));
+      const m = new THREE.Mesh(g, mat);
+      m.castShadow = true;
+      parent.add(m);
+    };
+    const r = d.wheelR, zf = d.WB / 2, zr = -d.WB / 2;
+    for (const [spin, z] of [[this.spinF, zf], [this.spinR, zr]] as [THREE.Group, number][]) {
+      const tyre = new THREE.Mesh(w.tyre, s.tyre), rim = new THREE.Mesh(w.rim, s.rim);
+      tyre.castShadow = true;
+      spin.add(tyre, rim);
+      spin.scale.set(r * 0.28, r, r);
+      if (z > 0) { this.front.add(spin); this.front.position.set(0, r, z); }
+      else { spin.position.set(0, r, z); this.body.add(spin); }
+    }
+    const bb = V(0, 0.33, 0.02), seat = V(0, 0.9, -0.14), headT = V(0, 0.93, 0.4);
+    rod(V(0, r, zr), bb, 0.018, this.paint);           // chain stays
+    rod(bb, seat, 0.022, this.paint);                    // seat tube
+    rod(seat, headT, 0.024, this.paint);                 // top tube
+    rod(bb, headT, 0.028, this.paint);                   // down tube
+    rod(seat, V(0, r, zr), 0.016, this.paint);           // seat stays
+    rod(V(0, 0, 0), V(0, 0.62, -0.08), 0.02, s.chrome, this.front);         // the fork, up to the head
+    rod(V(-0.32, 0.72, -0.12), V(0.32, 0.72, -0.12), 0.014, s.trim, this.front); // bars
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8), this.head);
+    lamp.position.set(0, 0.6, -0.02);
+    this.front.add(lamp);
+    const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.27), s.trim);
+    saddle.position.set(0, 0.95, -0.16);
+    this.body.add(saddle, this.front);
+    // the cranks
+    const crank = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.03, 16).rotateZ(Math.PI / 2), s.chrome);
+    crank.position.copy(bb);
+    this.body.add(crank);
+    this.root.add(this.body);
+  }
+
+  drive(dt: number, x: number, z: number, yaw: number, speed: number, accel: number, turn: number, y = 0): void {
+    this.root.position.set(x, y, z);
+    this.root.rotation.y = yaw;
+    this.spin += (speed * dt) / this.dims.wheelR;
+    this.spinF.rotation.x = this.spinR.rotation.x = this.spin;
+    this.crank += (speed * dt) / 0.9;
+    this.front.rotation.y = THREE.MathUtils.clamp((turn * this.dims.WB) / Math.max(speed, 0.6), -0.6, 0.6);
+    const want = speed > 1 ? THREE.MathUtils.clamp(-turn * speed * 0.06, -0.45, 0.45) : 0.08;
+    this.lean += (want - this.lean) * Math.min(1, dt * 4);
+    this.body.rotation.z = this.lean;
+    this.braking = accel < -0.6 || speed < 0.05;
+  }
+  setPaint(c: THREE.Color): void {
+    this.paint.color.copy(c);
+  }
+  lights(on: boolean, _night: number, parked = false): void {
+    this.head.emissiveIntensity = on && !parked ? 6 : 0;
+  }
+}
+
 /** anything the Founder can ride */
-export type Ride = Car | Moto;
+export type Ride = Car | Moto | Bike;

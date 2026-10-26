@@ -11,7 +11,8 @@ import { Mind } from './mind';
 import { Calamity } from './calamity';
 import { Gov } from './gov';
 import { Festivals } from './festivals';
-import { Traffic } from './traffic';
+import { Traffic, lanePose, railPose, LANE_PX, FOOT_PX } from './traffic';
+import { peakTrail } from './peak';
 import { Rep } from './reputation';
 import { Health } from './health';
 import { Supply } from './supply';
@@ -23,8 +24,12 @@ import { Gateways } from './gateways';
    police (and courthouse) answer.
    ============================================================ */
 
+/** V2 (Milestone 8): the last bus and the last train of the night leave at 23:30 (game-minutes) */
+export const LAST_TRAIN = 1410;
+
 export const Life: any = {
   hikers: [],           // {route, idx, f, pause, seed, x, y, done}
+  convoy: null,         // V2 (Milestone 8): the Christmas tree on its flatbed, while it's hauled (sim/festivals.ts)
   birds: [],            // {x, y, vx, ph}
   ducks: [],            // {x, y, tx, ty, flip}
   butterflies: [],      // {ax, ay, ph, v}
@@ -45,7 +50,7 @@ export const Life: any = {
   claim: null,
 
   reset() {
-    this.hikers = []; this.birds = []; this.ducks = []; this.butterflies = [];
+    this.hikers = []; this.birds = []; this.ducks = []; this.butterflies = []; this.convoy = null;
     this.tourists = []; this.rockets = []; this.sparks = [];
     this.crime = null; this.police = []; this.arrests = 0; this.crimes = 0; this.cooldown = 240;
     this.ambulances = []; this.trucks = []; this.crews = []; this.intercity = null;
@@ -323,8 +328,8 @@ export const Life: any = {
     // trucks
     for (const u of this.fireTrucks) {
       if (u.phase === 'go') {
-        u.prog += 2.5 * dt; // V2: fire engines ~72 km/h
-        this.followPath(u, u.path, u.prog, 3.5);
+        u.prog += 2.5 * dt * Traffic.pedBrake(u, u.path, u.prog); // V2: fire engines ~72 km/h (V2 (Milestone 8): slowing for people in the road)
+        this.followPath(u, u.path, u.prog, LANE_PX);
         if (u.prog >= u.path.length - 1) { u.phase = 'douse'; u.douse = 22; }
       } else if (u.phase === 'douse') {
         u.douse -= gm;
@@ -334,11 +339,11 @@ export const Life: any = {
             this.say(`🧯 Fire at the ${CAT[u.target.type].name} put out — building saved!`);
             Tasks.done('fire' + u.target.id, true, `Fire brigade saved the ${CAT[u.target.type].name}`);
           }
-          u.phase = 'return'; u.path = [...u.path].reverse(); u.prog = 0;
+          u.phase = 'return'; u.path = this.backPath(u.path); u.prog = 0;
         }
       } else {
-        u.prog += 2.5 * dt; // V2: fire engines ~72 km/h
-        this.followPath(u, u.path, u.prog, 3.5);
+        u.prog += 2.5 * dt * Traffic.pedBrake(u, u.path, u.prog); // V2: fire engines ~72 km/h (V2 (Milestone 8): slowing for people in the road)
+        this.followPath(u, u.path, u.prog, LANE_PX);
         if (u.prog >= u.path.length - 1) u.done = true;
       }
     }
@@ -375,13 +380,16 @@ export const Life: any = {
             });
             chain.push(rest.splice(bi, 1)[0]);
           }
+          // V2 (Milestone 8): a true loop, back round to the first stop, driven one way: running the same
+          // road back and forth had the bus on the wrong carriageway of every avenue on the way back
           let route: number[][] = [], stopIdx = [0];
           let ok = true;
-          for (let i = 0; i < chain.length - 1; i++) {
-            const seg = World.roadPath(chain[i].door.x, chain[i].door.y, chain[i + 1].door.x, chain[i + 1].door.y);
+          for (let i = 0; i < chain.length; i++) {
+            const a = chain[i], b = chain[(i + 1) % chain.length];
+            const seg = World.roadPath(a.door.x, a.door.y, b.door.x, b.door.y);
             if (!seg) { ok = false; break; }
             route = route.concat(i === 0 ? seg : seg.slice(1));
-            stopIdx.push(route.length - 1);
+            if (i < chain.length - 1) stopIdx.push(route.length - 1);
           }
           if (ok && route.length > 3) {
             const nBuses = Math.min(3, 1 + ((chain.length / 3) | 0));
@@ -396,12 +404,25 @@ export const Life: any = {
         }
       }
     }
+    // V2 (Milestone 8): the timetable. Every bus 05:30–21:00, one in the evening, none after the last bus at 23:30:
+    // a bus whose service is over finishes its loop and goes back to the depot (out of sight) till morning
+    const running = !this.transitHours() ? 0 : Sim.clock >= 1260 ? 1 : this.buses.length;
+    this.buses.forEach((bus: any, k: number) => {
+      if (k < running) { if (bus.hidden) { bus.hidden = false; bus.prog = 0; bus.lastStop = -1; bus.pause = 3; } bus.last = false; }
+      else if (!bus.hidden) bus.last = true;
+    });
     for (const bus of this.buses) {
+      if (bus.hidden) continue;
       if (bus.pause > 0) { bus.pause -= gm; bus.v = 0; continue; }
       // V2: in the traffic like everyone else — queues, junctions, crossings, gates (sim/traffic.ts)
       bus.prog += Traffic.advance(bus, bus, bus.route, bus.prog, bus.dir, 1.3, dt, 1.3) * bus.dir; // ~37 km/h
-      if (bus.prog >= bus.route.length - 1) { bus.prog = bus.route.length - 1; bus.dir = -1; bus.pause = 5; }
-      if (bus.prog <= 0) { bus.prog = 0; bus.dir = 1; bus.pause = 5; }
+      // round the loop again (V2 (Milestone 8); an old save's back-and-forth bus turns round as before)
+      if (bus.prog >= bus.route.length - 1) {
+        const loop = bus.route.length > 2 && bus.route[0][0] === bus.route[bus.route.length - 1][0] && bus.route[0][1] === bus.route[bus.route.length - 1][1];
+        if (loop) { bus.prog -= bus.route.length - 1; bus.lastStop = -1; if (bus.last) { bus.hidden = true; bus.prog = 0; continue; } }
+        else { bus.prog = bus.route.length - 1; bus.dir = -1; bus.pause = 5; }
+      }
+      if (bus.prog <= 0 && bus.dir < 0) { bus.prog = 0; bus.dir = 1; bus.pause = 5; }
       // brief stop at each bus shelter on the way — real passengers get on & off
       const at = Math.round(bus.prog);
       if (bus.stopIdx.includes(at) && at !== bus.lastStop) {
@@ -464,15 +485,29 @@ export const Life: any = {
     }
     for (const cab of this.taxis) {
       if (cab.hired) continue; // V2: hired by the Founder (src/player/transit.ts drives it)
-      if (cab.pause > 0) { cab.pause -= gm; cab.v = 0; continue; }
+      if (cab.pause > 0) { cab.pause -= gm; cab.v = 0; this.rankSlot(cab); continue; }
       // V2: cabs drive in the traffic (queues, junctions, crossings, gates)
       cab.prog += Traffic.advance(cab, cab, cab.route, cab.prog, cab.dir, 1.6, dt) * cab.dir; // ~46 km/h
-      if (cab.prog >= cab.route.length - 1) {          // dropped the fare across town
-        cab.prog = cab.route.length - 1; cab.dir = -1; cab.pause = 3;
-        if (cab.pax.length)
-          this.spawnAlighter(cab.x, cab.y, cab.dirx || 1, cab.diry || 0, cab.pax.shift());
+      if (cab.prog >= cab.route.length - 1 && cab.dir > 0) {
+        cab.prog = cab.route.length - 1;
+        if (!cab.returning) {                            // dropped the fare across town
+          cab.pause = 3;
+          if (cab.pax.length)
+            this.spawnAlighter(cab.x, cab.y, cab.dirx || 1, cab.diry || 0, cab.pax.shift());
+          // V2 (Milestone 8): it drives its own way back to the rank (keeping right), not the fare's route backwards
+          const end = cab.route[cab.route.length - 1];
+          const back = World.roadPath(end[0], end[1], cab.standTile.x, cab.standTile.y);
+          if (back && back.length > 1) { cab.route = back; cab.prog = 0; cab.returning = true; }
+          else cab.dir = -1;
+        } else {                                         // back at the rank: next fare
+          cab.returning = false;
+          cab.prog = 0; cab.pause = 4;
+          this.serveStop(cab, cab.home);
+          const nr = this.pickTaxiRoute(cab.home, cab.standTile);
+          if (nr) cab.route = nr;
+        }
       }
-      if (cab.prog <= 0) {                              // back at the rank: next fare
+      if (cab.prog <= 0 && cab.dir < 0) {               // back at the rank (the old way round): next fare
         cab.prog = 0; cab.dir = 1; cab.pause = 4;
         this.serveStop(cab, cab.home);
         const nr = this.pickTaxiRoute(cab.home, cab.standTile);
@@ -480,6 +515,16 @@ export const Life: any = {
       }
       this.followPath(cab, cab.route, cab.prog, Traffic.lanePx(cab), cab.dir);
     }
+  },
+
+  /* V2 (Milestone 8): cabs waiting at a rank line up along the kerb one behind another (they all stood on
+     the same spot, one inside the next) */
+  rankSlot(cab: any) {
+    if (cab.prog !== 0 || cab.dir < 0 || !cab.route) return;
+    let slot = 0;
+    for (const o of this.taxis) if (o !== cab && o.home === cab.home && !o.hired && o.prog === 0 && o.pause > 0 && o.dir > 0 && (o.pause < cab.pause || (o.pause === cab.pause && this.taxis.indexOf(o) < this.taxis.indexOf(cab)))) slot++;
+    this.followPath(cab, cab.route, 0, Traffic.lanePx(cab), 1);
+    if (slot) { cab.x -= (cab.hx || cab.dirx || 1) * slot * 0.8 * T; cab.y -= (cab.hy || cab.diry || 0) * slot * 0.8 * T; }
   },
 
   /* ---------------- queues, boarding & alighting at stops ---------------- */
@@ -658,7 +703,6 @@ export const Life: any = {
               this.trains.push(mk('local', 2.6, 5, 0)); // V2: train speeds ×0.62 for a 2 km map
               this.trains.push(mk('commuter', 2.9, 3, (route.length - 1) * 0.3));
               if (served >= 3 && route.length > 26) this.trains.push(mk('express', 4.0, 4, (route.length - 1) * 0.5));
-              if (route.length > 26) this.trains.push(mk('nightliner', 2.4, 6, (route.length - 1) * 0.7));
               if (industry && route.length > 18) this.trains.push(mk('freight', 1.9, 7, (route.length - 1) * 0.82));
               if (!hadTrain || served > 2) {
                 const names: Record<string, string> = { local: 'the all-stops local', commuter: 'a rush-hour commuter', express: 'an express', nightliner: 'the night sleeper', freight: 'a freight run' };
@@ -679,11 +723,16 @@ export const Life: any = {
       // the timetable: outside its window a service is stabled at the
       // terminus (hidden), so two services never share a track at once
       const active = this.serviceWindow(tr.type);
-      tr.hidden = !active;
-      if (!active) { tr.prog = 0; tr.dir = 1; tr.pause = 2; tr.lastStop = 0; continue; }
+      // (V2 (Milestone 8): a train out on the line when its service ends runs on to the terminus first,
+      // rather than vanishing from the track; that's the last train)
+      const atEnd = tr.prog <= 0 || tr.prog >= tr.route.length - 1;
+      if (!active && (tr.hidden || atEnd)) { tr.hidden = true; tr.prog = 0; tr.dir = 1; tr.pause = 2; tr.lastStop = 0; continue; }
+      if (active && tr.hidden) { tr.hidden = false; }
+      if (!active) tr.last = true;
+      else if (tr.last) tr.last = false;
       if (tr.pause > 0) { tr.pause -= gm; continue; }
       tr.prog += (tr.speed || 4.2) * dt * tr.dir;
-      if (tr.prog >= tr.route.length - 1) { tr.prog = tr.route.length - 1; tr.dir = -1; tr.pause = 12; tr.lastStop = tr.route.length - 1; if (tr.type === 'freight') this.freightAt(tr.route[tr.route.length - 1]); }
+      if (tr.prog >= tr.route.length - 1) { tr.prog = tr.route.length - 1; tr.dir = -1; tr.pause = 12; tr.lastStop = tr.route.length - 1; if (tr.type === 'freight') this.freightAt(tr.route[tr.route.length - 1]); if (tr.last) { tr.hidden = true; tr.prog = 0; tr.dir = 1; continue; } }
       else if (tr.prog <= 0) { tr.prog = 0; tr.dir = 1; tr.pause = 12; tr.lastStop = 0; if (tr.type === 'freight') this.freightAt(tr.route[0]); }
       else if (tr.stopIdx) {
         const at = Math.round(tr.prog);
@@ -691,7 +740,7 @@ export const Life: any = {
           tr.lastStop = at; tr.pause = 6; // calling at an intermediate station
         }
       }
-      this.followPath(tr, tr.route, tr.prog, 0);
+      this.followRail(tr, tr.route, tr.prog, tr.dir);
     }
   },
 
@@ -768,7 +817,10 @@ export const Life: any = {
       }
       if (this.ferry) {
         const gm = dt * MIN_PER_SEC;
+        // (V2 (Milestone 8): the last crossing is at 22:00; it lies at the dock overnight, sailing again at 06:00)
+        const sailing = Sim.clock >= 360 && Sim.clock < 1320;
         if (this.ferry.pause > 0) this.ferry.pause -= gm;
+        else if (!sailing && (this.ferry.prog <= 0 || this.ferry.prog >= this.ferry.route.length - 1)) this.ferry.pause = 5;
         else {
           this.ferry.prog += 1.0 * dt * this.ferry.dir; // V2: ferry pace
           if (this.ferry.prog >= this.ferry.route.length - 1) { this.ferry.prog = this.ferry.route.length - 1; this.ferry.dir = -1; this.ferry.pause = 14; this.ferry.at = docks[1]; Gateways.docked(docks[1]); }
@@ -1442,6 +1494,27 @@ export const Life: any = {
     this.say(`🤕 ${Sim.fullName(p)} was knocked down by the Founder's car${down ? (Health.hospitals().length ? ' — an ambulance is on its way' : ' — and there is no hospital') : ''}`, { x: p.x, y: p.y });
   },
 
+  /* V2 (Milestone 8): any vehicle that runs into someone on foot. A knock at walking pace is a fright; faster, a
+     fall and bruises; faster still (or something big), an injury that waits for the ambulance. Villagers are
+     hurt, never killed: the worst is critical, and the hospital mends it. (`speed` m/s; `mass` 0.6 … 1.6) */
+  vehicleHitPerson(veh: any, p: Person, speed: number, mass: number) {
+    if (p.knocked || p.state !== 'walk') return;
+    const what = this.buses.includes(veh) ? 'the bus' : this.taxis.includes(veh) ? 'a cab' : this.trucks?.includes(veh) ? 'a delivery truck'
+      : this.police.includes(veh) ? 'a police car' : this.fireTrucks.includes(veh) ? 'a fire engine' : this.ambulances?.includes(veh) ? 'an ambulance' : veh?.trip?.moto ? 'a motorbike' : 'a car';
+    const force = speed * mass;
+    p.knocked = true;
+    p.freezeT = 10 + Math.min(25, force * 2);
+    p.bubble = '🤕'; p.bubbleUntil = performance.now() + 6000;
+    p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 10);
+    Snd.crunch({ x: p.x, y: p.y });
+    if (veh?.trip) veh.trip.v = 0; // the driver stops
+    if (force < 3) return; // shaken, not hurt
+    const sev = Math.min(88, force * 5);
+    const down = Health.injure(p, sev, `by ${what}`, { x: p.x, y: p.y });
+    Mind.remember(p, 'health', `was knocked down by ${what}`, -1, 0);
+    if (down || sev > 25) this.say(`🚑 ${Sim.fullName(p)} was knocked down by ${what}${down ? (Health.hospitals().length ? ' — an ambulance is on its way' : ' — and there is no hospital') : ''}`, { x: p.x, y: p.y });
+  },
+
   /* ---------------- sky events: balloons, UFO ---------------- */
   balloons: [], ufo: null, ufoCd: 0,
   tickSky(dtSim: number, dtReal: number) {
@@ -1531,7 +1604,7 @@ export const Life: any = {
       }
     }
     for (const t of this.tourists) {
-      if (t.phase === 'visit') { t.stay -= dt * MIN_PER_SEC; if (t.stay <= 0) { t.phase = 'out'; t.path = [...t.path].reverse(); t.prog = 0; t.v = 0; } continue; }
+      if (t.phase === 'visit') { t.stay -= dt * MIN_PER_SEC; if (t.stay <= 0) { t.phase = 'out'; t.path = this.backPath(t.path); t.prog = 0; t.v = 0; } continue; }
       t.prog += Traffic.advance(t, t, t.path, t.prog, 1, 1.6, dt); // V2: tourist cars at town speed, in the traffic
       this.followPath(t, t.path, t.prog, Traffic.lanePx(t));
       if (t.prog >= t.path.length - 1) {
@@ -1597,6 +1670,15 @@ export const Life: any = {
 
   /* ---------------- hikers ---------------- */
   tickHikers(dt: number) {
+    // V2 (Milestone 8): on the big peak's trail, walkers and mountain bikers in daylight: up to the summit, a rest
+    // to take in the view, and back down (the bikes faster, and much faster downhill)
+    const day = Sim.clock > 420 && Sim.clock < 1110 && !Weather.isRaining();
+    if (World.peaks.length && day && this.hikers.filter((h: any) => h.trail).length < 9 && Math.random() < dt * 0.05) {
+      const pk = World.peaks[(Math.random() * World.peaks.length) | 0];
+      const up = peakTrail(pk).map(([x, z]: number[]) => [x * 2, z * 2]);
+      const bike = Math.random() < 0.4;
+      this.hikers.push({ route: up.concat(up.slice(0, -1).reverse()), topIdx: up.length - 1, idx: 0, f: 0, pause: 0, paused: false, seed: (Math.random() * 1e6) | 0, x: up[0][0], y: up[0][1], trail: true, bike });
+    }
     const cap = Math.min(5, World.mountains.length * 2);
     if (World.mountains.length && this.hikers.length < cap && Math.random() < dt * 0.03) {
       const m = World.mountains[(Math.random() * World.mountains.length) | 0];
@@ -1622,7 +1704,9 @@ export const Life: any = {
       const a = h.route[h.idx], b = h.route[h.idx + 1];
       if (!b) { h.done = true; continue; }
       const dist = Math.max(1, Math.hypot(b[0] - a[0], b[1] - a[1]));
-      h.f += dt * 3 / dist; // V2: 8.5 → 3 px/s, a real walking pace in 3D
+      // (V2 (Milestone 8): a mountain bike climbs at a walk and a half, and comes down at a lick)
+      const pace = h.bike ? (h.idx < h.topIdx ? 4.4 : 11) : 3;
+      h.f += dt * pace / dist; // V2: 8.5 → 3 px/s, a real walking pace in 3D
       if (h.f >= 1) {
         h.f = 0; h.idx++;
         if (h.idx === h.topIdx && !h.paused) { h.pause = 14 + Math.random() * 16; h.paused = true; } // admire the view
@@ -1671,7 +1755,7 @@ export const Life: any = {
       const B = c.burglar;
       if (B.phase === 'approach' || B.phase === 'flee') {
         B.prog += 0.7 * dtSim; // V2: a burglar on foot runs ~5.6 m/s
-        this.followPath(B, B.path, B.prog, 4.5);
+        this.followPath(B, B.path, B.prog, FOOT_PX);
         if (B.prog >= B.path.length - 1) {
           if (B.phase === 'approach') {
             B.phase = 'rob'; c.robT = 26;
@@ -1699,11 +1783,11 @@ export const Life: any = {
       if (u.pursuit || u.block) continue; // V2: chasing the Founder, or manning a roadblock (src/player/wanted.ts)
       if (u.phase === 'scene') { // parked at the incident, lights flashing
         u.wait -= gm;
-        if (u.wait <= 0) { u.phase = 'return'; u.path = [...u.path].reverse(); u.prog = 0; }
+        if (u.wait <= 0) { u.phase = 'return'; u.path = this.backPath(u.path); u.prog = 0; }
         continue;
       }
-      u.prog += 2.4 * dtSim; // V2: squad cars ~70 km/h through town
-      this.followPath(u, u.path, u.prog, 3.5);
+      u.prog += 2.4 * dtSim * Traffic.pedBrake(u, u.path, u.prog); // V2: squad cars ~70 km/h through town (Milestone 8: not through people)
+      this.followPath(u, u.path, u.prog, LANE_PX);
       if (u.prog >= u.path.length - 1) {
         if (u.phase === 'go') {
           // arrived at the scene
@@ -1721,7 +1805,7 @@ export const Life: any = {
             continue;
           }
           u.phase = 'return';
-          u.path = [...u.path].reverse(); u.prog = 0;
+          u.path = this.backPath(u.path); u.prog = 0;
         } else u.done = true;
       }
     }
@@ -1809,14 +1893,22 @@ export const Life: any = {
     this.cooldown = 380 + Math.random() * 400;
   },
 
+  /* V2 (Milestone 8): the village's public transport runs to a timetable: first services at 05:30, the
+     last bus and the last train at 23:30 (then the buses go back to the depot); one bus in the evening */
+  transitHours() {
+    const c = Sim.clock;
+    return c >= 330 && c < LAST_TRAIN;
+  },
   /* which service runs when — one train per track at any moment */
   serviceWindow(type: string) {
     const c = Sim.clock;
     switch (type) {
-      case 'local': return Sim.isWeekend() || (c >= 600 && c < 960);              // midday & weekends
+      // V2 (Milestone 8): passenger trains stop for the night: the first at 05:30, the last away at 23:30
+      // (they used to run all night: the sleeper, and the weekend local round the clock)
+      case 'local': return Sim.isWeekend() ? c >= 330 && c < LAST_TRAIN : (c >= 330 && c < 390) || (c >= 600 && c < 960) || (c >= 1200 && c < LAST_TRAIN); // early, midday, evening & weekends
       case 'commuter': return !Sim.isWeekend() && ((c >= 390 && c < 600) || (c >= 960 && c < 1200)); // rush hours
-      case 'express': return c >= 540 && c < 1260;                                 // daytime dash
-      case 'nightliner': return c >= 1290 || c < 360;                              // the sleeper
+      case 'express': return c >= 390 && c < 1260;                                 // daytime dash
+      case 'nightliner': return false;                                             // (retired: no passenger trains overnight)
       default: return true;                                                        // freight never sleeps
     }
   },
@@ -1835,17 +1927,34 @@ export const Life: any = {
     return false;
   },
 
-  /* shared path-follower (tile paths → px position with lane offset) */
+  /* V2 (Milestone 8): a train on its track: round the bends on their curves, on its own track of the mainline
+     (`o.lane` px right of the line as the route runs), facing the way it's going */
+  followRail(o: any, path: any, prog: number, dir = 1) {
+    if (!path || !path.length) return;
+    const p = railPose(path, prog, o.lane || 0);
+    o.x = p.x; o.y = p.y;
+    o.dirx = p.dx * dir; o.diry = p.dy * dir;
+    o.hx = p.hx * dir; o.hy = p.hy * dir;
+  },
+
+  /* V2 (Milestone 8): the way back for a vehicle at step `at` of `path` to where it set out (path[0]), planned
+     afresh so it keeps right (the route out driven backwards is on the wrong side of every avenue) */
+  backPath(path: number[][], at = path.length - 1): number[][] {
+    const i = Math.max(0, Math.min(path.length - 1, Math.round(at)));
+    const a = path[i], b = path[0];
+    const p = World.roadPath(a[0], a[1], b[0], b[1]);
+    return p && p.length > 1 ? p : path.slice(0, i + 1).reverse();
+  },
+
+  /* shared path-follower (tile paths → px position with lane offset). V2: heading and lane follow the way it's
+     travelling (a bus on its return leg keeps right); V2 (Milestone 8): round the bends on an arc in its lane
+     (sim/traffic.ts lanePose). `dirx, diry` stay the axis of the stretch it's on; `hx, hy` is the true heading. */
   followPath(o: any, path: any, prog: number, off: number, dir = 1) {
-    const i = Math.min(Math.floor(prog), path.length - 1);
-    const f = Math.min(1, prog - i);
-    const [ax, ay] = path[i], [bx, by] = path[Math.min(i + 1, path.length - 1)];
-    const dx = bx - ax, dy = by - ay;
-    // V2: heading and lane follow the way it's travelling (a bus on its return leg keeps right)
-    const sx = dx * dir, sy = dy * dir;
-    o.x = (ax + dx * f) * T + 8 + (sy !== 0 ? (sy > 0 ? -off : off) : 0);
-    o.y = (ay + dy * f) * T + 8 + (sx !== 0 ? (sx > 0 ? off : -off) : 0);
-    if (sx || sy) { o.dirx = sx; o.diry = sy; }
+    if (!path || !path.length) return;
+    const p = lanePose(path, prog, off, dir);
+    o.x = p.x; o.y = p.y;
+    o.dirx = p.dx; o.diry = p.dy;
+    o.hx = p.hx; o.hy = p.hy;
   },
 
   tileDist(a: any, b: Building) { return (Math.abs(a.x - b.x) + Math.abs(a.y - b.y)) / T; },

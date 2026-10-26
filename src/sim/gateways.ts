@@ -20,6 +20,7 @@ import { MIN_PER_SEC, T } from './core';
 import { GW, GH, World } from './world';
 import { Sim, PRICES } from './agents';
 import { Life } from './life';
+import { FOOT_PX } from './traffic';
 import { Mind } from './mind';
 import { Tasks } from './tasks';
 
@@ -254,7 +255,7 @@ export const Gateways = {
         ic.phase = 'off'; ic.hidden = true; ic.nextIn = this.nextSlot();
       }
     }
-    Life.followPath(ic, route, ic.prog, 0, ic.dir);
+    Life.followRail(ic, route, ic.prog, ic.dir); // V2 (Milestone 8): round the curves
   },
   nextSlot(): number {
     for (const s of INTERCITY_SLOTS) if (s > Sim.clock) return s;
@@ -290,7 +291,7 @@ export const Gateways = {
         continue;
       }
       v.prog += 0.3 * dt; // walking pace, like the villagers
-      Life.followPath(v, v.path, Math.min(v.prog, v.path.length - 1), 5);
+      Life.followPath(v, v.path, Math.min(v.prog, v.path.length - 1), FOOT_PX); // V2 (Milestone 8): on the pavement
       if (v.prog >= v.path.length - 1) {
         if (v.phase === 'in') {
           v.phase = 'stay';

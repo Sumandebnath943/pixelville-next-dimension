@@ -142,7 +142,8 @@ export class Pipeline {
       this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
       this.composer.addPass(this.gtao);
     }
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.18, 0.4, 8);
+    // V2 (Milestone 8): gentler (it was 0.18 strength, 0.4 radius): the sunlit haze and shop windows haloed over
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.11, 0.28, 8);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     if (!P.msaa) {
@@ -236,8 +237,9 @@ export class Pipeline {
 
   render(exposure: number, dt: number, shadows = true): void {
     this.renderer.toneMappingExposure = exposure;
-    // bloom acts on HDR values before exposure: keep its threshold in display terms
-    this.bloom.threshold = 2.4 / exposure;
+    // bloom acts on HDR values before exposure: keep its threshold in display terms (V2 (Milestone 8): only what's
+    // well past white blooms, so a bright sky or a lit window stays crisp and only lamps and the sun glow)
+    this.bloom.threshold = 3.6 / exposure;
     (this.grade.uniforms.time.value as number) += dt;
     this.renderer.shadowMap.needsUpdate = shadows;
     this.composer.render(dt);

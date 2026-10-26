@@ -304,9 +304,29 @@
         <canvas id="stats-canvas" width="1120" height="600"></canvas>
       </div></div>
 
-      <div id="help" class="modal"><div class="modal-card glass wide">
-        <header class="m-head"><h1>PixelVille <span class="brand-sub">Next Dimension</span></h1><button class="ib" data-close="help" title="Close"><svg><use href="#i-close" /></svg></button></header>
+      <div id="help" class="modal"><div class="modal-card glass wide help-card">
+        <header class="m-head"><h1><img class="help-logo" src="/logo.svg" alt="PixelVille — Next Dimension" /></h1><button class="ib" data-close="help" title="Close"><svg><use href="#i-close" /></svg></button></header>
         <p class="lede">You are <b>the Founder</b>: walk your village at street level, drive its roads, and rise into the sky to build. <b>The village figures out the rest</b>: families move in, find work, fall in love, vote, gossip and remember.</p>
+        <!-- Milestone 8: the controls at a glance, as keycaps -->
+        <div class="ctl-board">
+          <div class="ctl-group"><h4>Move</h4>
+            <div class="ctl-wasd"><kbd class="cap" data-k="forward">W</kbd><kbd class="cap" data-k="left">A</kbd><kbd class="cap" data-k="back">S</kbd><kbd class="cap" data-k="right">D</kbd></div>
+            <p><kbd class="cap" data-k="run">Shift</kbd> run · <kbd class="cap" data-k="jump">Space</kbd> jump</p></div>
+          <div class="ctl-group"><h4>Look</h4>
+            <div class="ctl-mouse"><i></i></div>
+            <p>Click the view, then move the mouse · <kbd class="cap" data-k="camera">V</kbd> first or third person</p></div>
+          <div class="ctl-group"><h4>Do</h4>
+            <p><kbd class="cap big" data-k="interact">E</kbd> talk, go in, use, hire a bike</p>
+            <p><kbd class="cap big" data-k="vehicle">F</kbd> get in or out (your car waits at the Lodge)</p></div>
+          <div class="ctl-group"><h4>Drive</h4>
+            <p><kbd class="cap" data-k="forward">W</kbd> gas · <kbd class="cap" data-k="back">S</kbd> brake · <kbd class="cap" data-k="left">A</kbd><kbd class="cap" data-k="right">D</kbd> steer · <kbd class="cap" data-k="jump">Space</kbd> handbrake</p>
+            <p class="dim">Keep right, mind the lights: the road cameras write tickets</p></div>
+          <div class="ctl-group"><h4>Build</h4>
+            <p><kbd class="cap big" data-k="planner">P</kbd> rise into the Planner and back down</p>
+            <p class="dim">Pick from the palette, click to place, <kbd class="cap" data-k="rotate">R</kbd> turns the door</p></div>
+          <div class="ctl-group"><h4>More</h4>
+            <p><kbd class="cap" data-k="phone">Tab</kbd> phone · <kbd class="cap" data-k="photo">F2</kbd> photo mode · <kbd class="cap">F1</kbd> this sheet</p></div>
+        </div>
         <div class="help-grid">
           <div><h3>On the street</h3>
             <p><kbd data-k="forward">W</kbd><kbd data-k="left">A</kbd><kbd data-k="back">S</kbd><kbd data-k="right">D</kbd> move · <kbd data-k="run">Shift</kbd> run · <kbd data-k="jump">Space</kbd> jump · mouse to look (click the view first)<br />
@@ -327,7 +347,7 @@
           <div><h3>Getting started</h3>
             <p>Open the Planner and drop a <b>house</b> near the highway: a road connects itself and the first family moves in. Add jobs, shops and a school, then come back down and watch the morning commute.</p></div>
         </div>
-        <div class="row-end"><button class="primary" data-close="help">Start</button></div>
+        <div class="row-end"><button class="primary" data-close="help">Let's go</button></div>
       </div></div>
     </div>
 
@@ -357,10 +377,39 @@
       <i id="curtain-clock"></i>
     </div>
     <div id="travel"><div id="tv-card" class="glass"></div></div>
+    <!-- Milestone 8: the loading screen: the key art (public/art/keyart.jpg, if there is one) or a dusk sky over a
+         pixel skyline, the logo, what's being done, and a tip while it's done -->
     <div id="loading">
-      <div class="title"><b>PixelVille</b><span>Next Dimension</span></div>
-      <p id="loading-text">Raising the village…</p>
-      <span id="loading-track"><i id="loading-bar"></i></span>
+      <div class="ld-art"></div>
+      <svg class="ld-skyline" viewBox="0 0 1200 220" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+        <path d="M0 220V150h40v-30h30v30h24V96h44v54h30v-24h36v24h28V70h22V40h10v30h22v80h34v-36h40v36h26v-60h46v60h30v-30h30v30h44V110h20V84h28v26h20v40h40v-50h50v50h22v-28h40v28h30V60h16V30h12v30h16v90h36v-40h44v40h28v-26h34v26h40v-70h48v70h26v-34h40v34H1200V220z" />
+      </svg>
+      <i class="ld-glow"></i>
+      <div class="ld-main">
+        <img class="ld-logo" src="/logo.svg" alt="PixelVille — Next Dimension" />
+        <p id="loading-text">Raising the village…</p>
+        <span id="loading-track"><i id="loading-bar"></i></span>
+        <p id="loading-tip"></p>
+      </div>
+      <p class="ld-foot">A living village, now in three dimensions</p>
+    </div>
+    <!-- Milestone 8: the landing screen, over a slow flight across the village itself -->
+    <div id="landing">
+      <div class="la-panel">
+        <img class="la-logo" src="/logo.svg" alt="PixelVille — Next Dimension" />
+        <div class="la-village">
+          <b id="la-name">PixelVille</b>
+          <span id="la-meta"></span>
+        </div>
+        <div class="la-buttons">
+          <button class="primary la-go" id="la-continue"><svg><use href="#i-home" /></svg><span>Continue</span><kbd>Enter</kbd></button>
+          <button id="la-new"><svg><use href="#i-map" /></svg><span>Found a new village</span></button>
+          <button id="la-load"><svg><use href="#i-book" /></svg><span>Load a village</span></button>
+          <button id="la-controls"><svg><use href="#i-star" /></svg><span>Controls</span></button>
+          <button id="la-settings"><svg><use href="#i-chart" /></svg><span>Settings</span></button>
+        </div>
+      </div>
+      <p class="la-foot">Milestone 8 · the village keeps living while you're away</p>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

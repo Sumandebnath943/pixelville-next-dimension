@@ -11,7 +11,7 @@ import { doorState } from '../src/player/indoors';
 import { buy, a } from '../src/player/shopping';
 import { Wallet } from '../src/player/wallet';
 
-const OUTDOOR = ['park', 'grandpark', 'plaza', 'playground', 'zoo', 'amusement', 'farm', 'busstop', 'taxistand', 'forest', 'pond', 'lake', 'river', 'mountain', 'road', 'rail', 'bulldoze'];
+const OUTDOOR = ['park', 'grandpark', 'plaza', 'playground', 'zoo', 'amusement', 'farm', 'busstop', 'taxistand', 'forest', 'pond', 'lake', 'river', 'mountain', 'peak', 'road', 'rail', 'bulldoze'];
 
 describe('interiors', () => {
   beforeEach(() => { Sim.people = []; Sim.clock = 12 * 60; });

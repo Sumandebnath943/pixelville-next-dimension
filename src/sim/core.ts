@@ -38,6 +38,8 @@ export interface SimEvents {
   mapEdited: Record<string, never>;
   /** V2: a road rule the Founder broke or harm they caused (metres) */
   founderOffence: { kind: string; day: number; clock: number; x: number; z: number; at: number };
+  /** V2 (Milestone 8): a vehicle ran into the Founder on foot (speed m/s; mass 0.6 a motorbike … 1.6 a bus or truck) */
+  founderHit: { speed: number; mass: number; what: string; dx: number; dy: number };
 }
 type Handler<K extends keyof SimEvents> = (p: SimEvents[K]) => void;
 const handlers: { [K in keyof SimEvents]?: Handler<K>[] } = {};

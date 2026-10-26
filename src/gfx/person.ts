@@ -323,7 +323,7 @@ function umbrella(color: THREE.Color): THREE.Group {
   return g;
 }
 
-export type Pose = 'walk' | 'idle' | 'wait' | 'sit' | 'lie';
+export type Pose = 'walk' | 'idle' | 'wait' | 'sit' | 'lie' | 'work' | 'carry' | 'pedal';
 
 export class Person {
   root = new THREE.Group();
@@ -374,8 +374,9 @@ export class Person {
     const B = this.bones;
     for (const n of ORDER) B[n].rotation.set(0, 0, 0);
     const h = this.look.height / 1.75;
-    const walkK = pose === 'walk' ? THREE.MathUtils.clamp(speed / 1.2, 0, 1.3) : 0;
-    if (pose === 'walk') this.phase += (speed / this.stride) * dt;
+    const walking = pose === 'walk' || pose === 'carry';
+    const walkK = walking ? THREE.MathUtils.clamp(speed / 1.2, 0, 1.3) : 0;
+    if (walking) this.phase += (speed / this.stride) * dt;
     const p = this.phase;
     const amp = Math.min(1.15, 0.55 + walkK * 0.5);
 
@@ -415,6 +416,46 @@ export class Person {
         B[`fa${side}`].rotation.x = -0.18;
         B[`th${side}`].rotation.x = side === 'L' ? Math.sin(this.t * 0.35) * 0.04 : -Math.sin(this.t * 0.35) * 0.04;
         B[`shin${side}`].rotation.x = 0.05;
+      }
+    }
+    if (pose === 'carry') {
+      // V2 (Milestone 8): a load held in front, both arms up under it, leaning back a touch
+      for (const side of ['L', 'R'] as const) {
+        B[`ua${side}`].rotation.x = -0.75;
+        B[`ua${side}`].rotation.z = side === 'L' ? 0.16 : -0.16;
+        B[`fa${side}`].rotation.x = -0.85;
+      }
+      B.spine.rotation.x = -0.04;
+    } else if (pose === 'work') {
+      // V2 (Milestone 8): at work on a site: feet planted, bent to the job, the right arm swinging the hammer
+      // down in a steady beat, the left steadying the work
+      const beat = (this.t * 1.35 + this.phase) % 1;
+      const swing = beat < 0.55 ? THREE.MathUtils.smoothstep(beat / 0.55, 0, 1) : 1 - THREE.MathUtils.smoothstep((beat - 0.55) / 0.12, 0, 1);
+      B.hips.position.y = 0.92 * h;
+      B.spine.rotation.x = 0.28;
+      B.chest.rotation.x = 0.08;
+      B.head.rotation.x = 0.25;
+      B.thL.rotation.x = -0.22; B.shinL.rotation.x = 0.3;
+      B.thR.rotation.x = 0.1; B.shinR.rotation.x = 0.2;
+      B.uaR.rotation.x = -0.5 - swing * 1.6; B.uaR.rotation.z = -0.12;
+      B.faR.rotation.x = -0.4 - swing * 0.7;
+      B.uaL.rotation.x = -0.7; B.uaL.rotation.z = 0.2;
+      B.faL.rotation.x = -0.6;
+    }
+    if (pose === 'pedal') {
+      // V2 (Milestone 8): on a bike: perched on the saddle, leaning to the bars, legs going round with the cranks
+      // (`speed` here is the crank angle, radians)
+      B.hips.position.y = 0.52 * h;
+      B.spine.rotation.x = 0.5;
+      B.head.rotation.x = -0.35;
+      for (const [side, ph] of [['L', 0], ['R', Math.PI]] as const) {
+        const c = Math.sin(speed + ph);
+        B[`th${side}`].rotation.x = -1.05 - c * 0.4;
+        B[`shin${side}`].rotation.x = 0.95 + c * 0.45;
+        B[`foot${side}`].rotation.x = -0.15;
+        B[`ua${side}`].rotation.x = -0.95;
+        B[`ua${side}`].rotation.z = side === 'L' ? 0.12 : -0.12;
+        B[`fa${side}`].rotation.x = -0.25;
       }
     }
     if (pose === 'sit') {

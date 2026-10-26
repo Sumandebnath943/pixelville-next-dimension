@@ -176,6 +176,34 @@ export const VEHICLES: Record<string, VModel> = {
     l.box(-0.1, 0.9, 0.95, 0.1, 1.05, 1.0, hex('#fff6d8'));
     return { paint: p.build(), fixed: f.build(), lights: l.build() };
   })(),
+  // V2 (Milestone 8): a mountain bike (the hikers' and cyclists' on the peak's trail, the hire rack's)
+  bicycle: (() => {
+    const p = new MeshBuilder(), f = new MeshBuilder(), l = new MeshBuilder();
+    const M = new THREE.Matrix4(), T = new THREE.Matrix4();
+    /** a bar from a to b (y, z in the bike's side plane), as a thin box */
+    const bar = (b: MeshBuilder, y0: number, z0: number, y1: number, z1: number, w: number, c: THREE.Color, x = 0): void => {
+      const len = Math.hypot(y1 - y0, z1 - z0), ang = Math.atan2(y1 - y0, z1 - z0);
+      b.mat = T.makeTranslation(x, (y0 + y1) / 2, (z0 + z1) / 2).multiply(M.makeRotationX(-ang));
+      b.box(-w / 2, -w / 2, -len / 2, w / 2, w / 2, len / 2, c);
+      b.mat = null;
+    };
+    const tyre = hex('#1a1a1c'), steel = hex('#9a9ea4');
+    for (const z of [-0.52, 0.52]) for (let k = 0; k < 10; k++) {
+      const a0 = (k / 10) * Math.PI * 2, a1 = ((k + 1) / 10) * Math.PI * 2;
+      bar(f, 0.34 + Math.sin(a0) * 0.33, z + Math.cos(a0) * 0.33, 0.34 + Math.sin(a1) * 0.33, z + Math.cos(a1) * 0.33, 0.05, tyre);
+    }
+    bar(p, 0.34, -0.52, 0.62, 0.02, 0.05, W);  // chain stay → seat tube foot
+    bar(p, 0.62, 0.02, 0.92, -0.12, 0.05, W);  // seat tube
+    bar(p, 0.92, -0.12, 0.95, 0.42, 0.05, W);  // top tube
+    bar(p, 0.62, 0.02, 0.95, 0.42, 0.06, W);   // down tube
+    bar(p, 0.92, -0.12, 0.34, -0.52, 0.04, W); // seat stay
+    bar(f, 0.95, 0.42, 0.34, 0.52, 0.04, steel); // fork
+    bar(f, 1.08, 0.4, 1.08, 0.4, 0.02, steel);
+    f.box(-0.28, 1.05, 0.36, 0.28, 1.09, 0.42, hex('#2a2a2c')); // handlebar
+    f.box(-0.08, 0.95, -0.2, 0.08, 1.0, 0.02, hex('#1c1c1e')); // saddle
+    l.box(-0.04, 0.98, 0.46, 0.04, 1.04, 0.5, hex('#fff6d8'));
+    return { paint: p.build(), fixed: f.build(), lights: l.build() };
+  })(),
   loco: (() => {
     const p = new MeshBuilder(), f = new MeshBuilder(), l = new MeshBuilder();
     p.box(-1.3, 0.9, -4.4, 1.3, 3.6, 4.6, W);

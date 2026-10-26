@@ -2,6 +2,7 @@
 import type { Building, Car, XY } from './types';
 import { mulberry32 } from './core';
 import { CAT } from './catalog';
+import { PEAK_R, peakHeight, peakTrail } from './peak';
 import { Tasks } from './tasks';
 import { Life } from './life';
 /* ============================================================
@@ -63,6 +64,28 @@ const SCRATCH = {
   },
 };
 
+/** a steady 0 … 1 from a tile and a seed */
+function hash01(x: number, y: number, s: number): number {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s | 0, 2147483647)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/* V2 (Milestone 8): the driving search's scratch: one state per tile and heading */
+const DRIVE = {
+  gen: 0,
+  seen: new Uint32Array(GW * GH * 4),
+  prev: new Int32Array(GW * GH * 4),
+  dist: new Float64Array(GW * GH * 4),
+  heapC: new Float64Array(8192),
+  heapN: new Int32Array(8192),
+  grow() {
+    const c = new Float64Array(this.heapC.length * 2), n = new Int32Array(this.heapN.length * 2);
+    c.set(this.heapC); n.set(this.heapN);
+    this.heapC = c; this.heapN = n;
+  },
+};
+
 export const World: any = {
   name: 'PixelVille',                  // the village's name — travels with the save
   ground: new Uint8Array(GW * GH),
@@ -73,6 +96,8 @@ export const World: any = {
   bmap: new Int16Array(GW * GH),      // building index + 1
   buildings: [],
   mountains: [],                       // {x,y} 3x3 rock + peak sprite
+  peaks: [],                           // V2 (Milestone 8): {x, y, h, seed} the big mountain with its trail (sim/peak.ts)
+  peakTried: false,                    // V2 (Milestone 8): an older village has been offered its peak
   nextId: 1,
   dirty: true,                         // ground layer needs re-render
   railStamp: 0,                        // bumped on every rail edit (train line re-check)
@@ -97,7 +122,7 @@ export const World: any = {
   reset() {
     this.ground.fill(0); this.tree.fill(0); this.roadMap.fill(0); this.railMap.fill(0); this.bmap.fill(0);
     this.reserved.fill(0);
-    this.buildings = []; this.mountains = []; this.nextId = 1; this.dirty = true; this.railStamp++;
+    this.buildings = []; this.mountains = []; this.peaks = []; this.peakTried = false; this.nextId = 1; this.dirty = true; this.railStamp++;
     this.roadStamp++; this.waterStamp++; // V2: a new map must invalidate the path caches
     this.signals.clear(); this.crossings.clear(); this.darkSignals.clear(); this.darkZone.clear();
     this.highway = null; this.signalHeads = [];
@@ -185,6 +210,12 @@ export const World: any = {
     }
     // the sea along the southern edge, with a broad sandy beach
     this.carveSea(R);
+    // V2 (Milestone 8): and the big mountain, out in the country, with its trail
+    if (!keep) {
+      const spot = this.findPeakSpot();
+      if (spot) this.placePeak(spot.x, spot.y, (R() * 1e6) | 0);
+    }
+    this.peakTried = true;
     this.dirty = true;
   },
 
@@ -200,6 +231,8 @@ export const World: any = {
         if (!this.inB(x, y) || !this.clearForTerrain(x, y)) continue;
         const i = this.idx(x, y);
         if (this.ground[i] === G_ROCK) continue;
+        // (V2 (Milestone 8): the river runs on across the beach into the sea; the sand used to cut it off)
+        if (this.ground[i] === G_WATER && y < waterY) continue;
         this.ground[i] = y >= waterY ? G_WATER : G_SAND;
         this.tree[i] = 0;
       }
@@ -256,6 +289,52 @@ export const World: any = {
     this.mountains.push({ x, y, v: this.mountains.length % 3 });
     this.dirty = true;
     return true;
+  },
+  /* V2 (Milestone 8): the big mountain, centred on tile (cx, cy), on open land (no buildings, roads, railway or
+     water under its foot). Its ground turns to rock (nothing is built on a mountainside), forest grows up its
+     lower slopes, and the trail is kept clear */
+  canPlacePeak(cx: number, cy: number) {
+    const R = PEAK_R;
+    for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) {
+      if (i * i + j * j > R * R) continue;
+      const x = cx + i, y = cy + j;
+      if (!this.inB(x, y) || !this.clearForTerrain(x, y)) return false;
+      const k = this.idx(x, y);
+      if (this.ground[k] === G_WATER || this.ground[k] === G_ROCK || this.railMap[k] || this.reserved[k]) return false;
+    }
+    return true;
+  },
+  placePeak(cx: number, cy: number, seed?: number) {
+    if (!this.canPlacePeak(cx, cy)) return null;
+    const pk = { x: cx, y: cy, h: 125, seed: seed ?? ((Math.random() * 1e6) | 0) };
+    const R = PEAK_R, H = pk.h;
+    const trail = new Set<number>();
+    for (const [x, z] of peakTrail(pk)) for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) trail.add(this.idx(Math.floor(x / 8) + i, Math.floor(z / 8) + j));
+    for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) {
+      if (i * i + j * j > R * R) continue;
+      const k = this.idx(cx + i, cy + j);
+      this.ground[k] = G_ROCK;
+      const f = peakHeight(pk, (cx + i + 0.5) * 8, (cy + j + 0.5) * 8) / H;
+      // pines and spruce up to the tree line, birch at the foot; none on the trail
+      const r = hash01(cx + i, cy + j, pk.seed);
+      this.tree[k] = trail.has(k) ? 0 : f > 0.04 && f < 0.5 && r < 0.5 ? 2 : f <= 0.04 && r < 0.18 ? 5 : 0;
+    }
+    this.peaks.push(pk);
+    this.dirty = true;
+    return pk;
+  },
+  /** V2 (Milestone 8): the most open spot for a peak, as far from the Lodge as the land allows (or null) */
+  findPeakSpot() {
+    const lodge = this.buildings.find((b: Building) => b.type === 'lodge');
+    const lx = lodge ? lodge.x : GW / 2, ly = lodge ? lodge.y : GH / 2;
+    let best: { x: number; y: number } | null = null, bd = -1;
+    for (let y = PEAK_R + 1; y < GH - PEAK_R - 12; y += 4)
+      for (let x = PEAK_R + 1; x < GW - PEAK_R - 1; x += 4) {
+        const d = Math.hypot(x - lx, y - ly);
+        if (d < PEAK_R + 26 || d <= bd) continue;
+        if (this.canPlacePeak(x, y)) { best = { x, y }; bd = d; }
+      }
+    return best;
   },
   placeTree(x: number, y: number) {
     if (!this.inB(x, y)) return false;
@@ -751,6 +830,18 @@ export const World: any = {
     if (this.roadMap[i]) { this.roadMap[i] = 0; this.roadStamp++; this.dirty = true; this.refreshConnections(); return { kind: 'road' }; }
     if (this.tree[i]) { this.tree[i] = 0; this.dirty = true; return { kind: 'tree' }; }
     if (this.ground[i] === G_WATER) { this.ground[i] = G_GRASS; this.waterStamp++; this.dirty = true; return { kind: 'water' }; }
+    // V2 (Milestone 8): the peak goes as a whole, back to meadow
+    const pk = this.peaks.find((q: any) => (x - q.x) ** 2 + (y - q.y) ** 2 <= PEAK_R * PEAK_R);
+    if (pk && this.ground[i] === G_ROCK) {
+      this.peaks.splice(this.peaks.indexOf(pk), 1);
+      for (let j = -PEAK_R; j <= PEAK_R; j++) for (let ii = -PEAK_R; ii <= PEAK_R; ii++) {
+        if (ii * ii + j * j > PEAK_R * PEAK_R || !this.inB(pk.x + ii, pk.y + j)) continue;
+        const k = this.idx(pk.x + ii, pk.y + j);
+        if (this.ground[k] === G_ROCK && !this.mountains.some((m: XY) => pk.x + ii >= m.x && pk.x + ii < m.x + MSIZE && pk.y + j >= m.y && pk.y + j < m.y + MSIZE)) { this.ground[k] = G_GRASS; this.tree[k] = 0; }
+      }
+      this.dirty = true;
+      return { kind: 'mountain' };
+    }
     if (this.ground[i] === G_ROCK) {
       // remove the whole mountain containing this tile
       const m = this.mountains.find((m: XY) => x >= m.x && x < m.x + MSIZE && y >= m.y && y < m.y + MSIZE);
@@ -788,36 +879,91 @@ export const World: any = {
     this._pathCache.set(key, path);
     return path;
   },
+  /* V2 (Milestone 8): the driving route. V1's breadth-first search took any of the many equally short
+     ways, so routes zigzagged in staircases through blocks and along V1's two-tile avenues, where a
+     car on the wrong row is on the wrong side of the road. This is an A* over (tile, heading): every
+     step costs a tile, a turn a little more (so routes run straight and turn only where they must),
+     and driving along the left-hand row of an avenue (the oncoming carriageway: traffic keeps right)
+     costs four times as much, so it's only used for the last few metres to a door on that side. */
+  isLeftRow(x: number, y: number, dx: number, dy: number) {
+    // the road on our right runs alongside, in our direction: we're on its left, the oncoming side
+    const rx = x - dy, ry = y + dx;
+    return this.isRoad(rx, ry) && (this.isRoad(rx + dx, ry + dy) || this.isRoad(rx - dx, ry - dy)) &&
+      (this.isRoad(x + dx, y + dy) || this.isRoad(x - dx, y - dy));
+  },
   _roadPathRaw(ax: number, ay: number, bx: number, by: number) {
     if (!this.isRoad(ax, ay) || !this.isRoad(bx, by)) return null;
     if (ax === bx && ay === by) return [[ax, ay]];
-    // V2: shared scratch buffers stamped per search (allocating and clearing two 64k
-    // arrays per search cost tens of milliseconds a miss on the 256² map)
-    const S = SCRATCH, gen = ++S.gen;
-    const prev = S.prev, seen = S.seen;
+    const D = DRIVE, gen = ++D.gen;
+    const dist = D.dist, prev = D.prev, seen = D.seen;
+    let hl = 0;
+    const push = (c: number, s: number) => {
+      if (hl >= D.heapC.length) D.grow();
+      let i = hl++;
+      const C = D.heapC, N = D.heapN;
+      while (i > 0) {
+        const q = (i - 1) >> 1;
+        if (C[q] <= c) break;
+        C[i] = C[q]; N[i] = N[q]; i = q;
+      }
+      C[i] = c; N[i] = s;
+    };
+    let popC = 0;
+    const pop = () => {
+      const C = D.heapC, N = D.heapN;
+      const top = N[0];
+      popC = C[0];
+      hl--;
+      if (hl > 0) {
+        const lc = C[hl], ln = N[hl];
+        let i = 0;
+        for (;;) {
+          const l = 2 * i + 1, r = l + 1;
+          let m = i, mc = lc;
+          if (l < hl && C[l] < mc) { m = l; mc = C[l]; }
+          if (r < hl && C[r] < mc) { m = r; }
+          if (m === i) break;
+          C[i] = C[m]; N[i] = N[m]; i = m;
+        }
+        C[i] = lc; N[i] = ln;
+      }
+      return top;
+    };
     const start = this.idx(ax, ay), goal = this.idx(bx, by);
-    prev[start] = start; seen[start] = gen;
-    const q = S.queue;
-    let qn = 0, qi = 0;
-    q[qn++] = start;
-    while (qi < qn) {
-      const cur = q[qi++];
-      if (cur === goal) break;
+    const h = (i: number) => Math.abs((i % GW) - bx) + Math.abs(((i / GW) | 0) - by);
+    // the start may be left in any direction
+    for (let k = 0; k < 4; k++) {
+      const s = start * 4 + k;
+      seen[s] = gen; dist[s] = 0; prev[s] = -1;
+      push(h(start), s);
+    }
+    let end = -1;
+    while (hl > 0) {
+      const st = pop(), c = popC - h((st / 4) | 0);
+      if (c > dist[st] + 1e-9) continue;
+      const cur = (st / 4) | 0, hd = st & 3;
+      if (cur === goal) { end = st; break; }
       const cx = cur % GW, cy = (cur / GW) | 0;
+      let ways = 0;
+      for (let k = 0; k < 4; k++) if (this.isRoad(cx + DX4[k], cy + DY4[k])) ways++;
       for (let k = 0; k < 4; k++) {
         const nx = cx + DX4[k], ny = cy + DY4[k];
         if (!this.isRoad(nx, ny)) continue;
-        const ni = ny * GW + nx;
-        if (seen[ni] === gen) continue;
-        seen[ni] = gen; prev[ni] = cur;
-        q[qn++] = ni;
+        const back = prev[st] >= 0 && k === ((hd + 2) & 3);
+        if (back && ways > 1) continue; // no U-turns, except at a dead end
+        let cost = 1;
+        if (prev[st] >= 0 && k !== hd) cost += back ? 2 : 0.35;
+        if (this.isLeftRow(nx, ny, DX4[k], DY4[k])) cost += 3;
+        const ni = (ny * GW + nx) * 4 + k, nc = c + cost;
+        if (seen[ni] !== gen || nc < dist[ni] - 1e-9) {
+          seen[ni] = gen; dist[ni] = nc; prev[ni] = st;
+          push(nc + h(ny * GW + nx), ni);
+        }
       }
     }
-    if (seen[goal] !== gen) return null;
+    if (end < 0) return null;
     const path = [];
-    let cur = goal;
-    while (cur !== start) { path.push([cur % GW, (cur / GW) | 0]); cur = prev[cur]; }
-    path.push([ax, ay]);
+    for (let s = end; s >= 0; s = prev[s]) path.push([((s / 4) | 0) % GW, (((s / 4) | 0) / GW) | 0]);
     path.reverse();
     return path;
   },
@@ -989,6 +1135,7 @@ export const World: any = {
       v: 5, gw: GW, name: this.name, highway: this.highway || null,
       ground: b64(this.ground), tree: b64(this.tree), road: b64(this.roadMap), rail: b64(this.railMap),
       mountains: this.mountains,
+      peaks: this.peaks, peakTried: this.peakTried || this.peaks.length > 0,
       nextId: this.nextId,
       buildings: this.buildings.map((b: Building) => ({
         id: b.id, t: b.type, x: b.x, y: b.y, f: b.facing || 0, variant: b.variant,
@@ -1033,6 +1180,8 @@ export const World: any = {
       un(o.ground, this.ground); un(o.tree, this.tree); un(o.road, this.roadMap);
       if (o.rail) un(o.rail, this.railMap);
       this.mountains = o.mountains || [];
+      this.peaks = o.peaks || [];
+      this.peakTried = !!o.peakTried;
       this.highway = o.highway || null;
     }
     this.name = o.name || 'PixelVille';

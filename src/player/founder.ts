@@ -8,22 +8,27 @@ import * as THREE from 'three';
 import { World, GW, GH } from '../sim/world';
 import { Settings } from '../sim/settings';
 import { Input } from '../input/input';
-import { heightAt, isWaterAt, treeSpot } from '../render/terrain';
+import { heightAt, isWaterAt, treeSpot, postsNear } from '../render/terrain';
+import { drivewayCars, DrivewayCar } from '../render/parked';
+import { baySpot } from '../sim/parking';
+import { CAT } from '../sim/catalog';
 import type { BuildingLayer } from '../render/buildings';
-import { emit } from '../sim/core';
+import { emit, on } from '../sim/core';
 import type { FounderSave } from '../sim/game';
 import { Person } from '../gfx/person';
-import { Car as CarModel, Moto, Ride, CarStyle } from '../gfx/car';
+import { Car as CarModel, Moto, Bike, Ride, CarStyle } from '../gfx/car';
 import { Fleet, Vehicle, specOf } from './fleet';
 import type { BagItem } from './shopping';
 import { surface } from '../gfx/surface';
 import { ENV } from '../gfx/env';
-import { Traffic } from '../sim/traffic';
+import { Traffic, PAVEMENT_M } from '../sim/traffic';
 import { Life } from '../sim/life';
 import { Sim } from '../sim/agents';
 import { Wallet, Entry } from './wallet';
 
 const TM = 8;
+/** a tile's four corners: which neighbours make it an inner corner, and where it is in the tile */
+const CORNERS = [[-1, -1, 0, 0], [1, -1, TM, 0], [-1, 1, 0, TM], [1, 1, TM, TM]] as const;
 const R_BODY = 0.38;
 const GRAV = 22;
 /** how far the street camera keeps from walls (the near plane's corners reach ~0.44 m) */
@@ -46,6 +51,19 @@ export function crownLift(x: number, y: number, z: number): number {
       if (y > cy - ry * Math.sqrt(1 - d2) && y < top) lift = Math.max(lift, top - y + 0.5);
     }
   return lift;
+}
+
+/** push circle p (radius r) out of a capsule: a vehicle at (x, z) facing yaw, `reach` from its middle to the
+ *  centres of its end circles, `rad` wide each side; true if it touched */
+function capsule(p: { x: number; z: number }, r: number, x: number, z: number, yaw: number, reach: number, rad: number): boolean {
+  const fx = Math.sin(yaw), fz = Math.cos(yaw), rr = rad + r;
+  const t = Math.max(-reach, Math.min(reach, (p.x - x) * fx + (p.z - z) * fz));
+  const cx = x + fx * t, cz = z + fz * t, dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz);
+  if (d >= rr) return false;
+  if (d < 1e-4) { p.x = cx - fz * rr; p.z = cz + fx * rr; return true; }
+  p.x = cx + (dx / d) * rr;
+  p.z = cz + (dz / d) * rr;
+  return true;
 }
 
 /** where a ray from o (inverse direction i) first enters the box, if before `max` (else Infinity) */
@@ -127,6 +145,38 @@ export class Founder {
     this.buildBody();
     this.buildCar();
     scene.add(this.mesh, this.carMesh, this.parkedMesh);
+    on('founderHit', (h) => this.runOver(h.speed, h.mass, h.what, h.dx, h.dy));
+  }
+
+  /* ---------- V2 (Milestone 8): the Founder on foot is as breakable as anyone ---------- */
+  /** 0 … 100; it mends by itself a few seconds after the last knock */
+  health = 100;
+  /** seconds left on the ground after being knocked down */
+  downT = 0;
+  private hurtT = 0;
+  /** told when a vehicle hits the Founder (damage dealt, what it was); `onWreck` follows if it was too much */
+  onHurt: ((damage: number, what: string) => void) | null = null;
+  /** a vehicle ran into the Founder on foot: hurt by how fast and how big it was, knocked aside and down */
+  runOver(speed: number, mass: number, what: string, dx: number, dy: number): void {
+    if (this.driving || this.passenger) return;
+    const dmg = Math.round(Math.min(100, speed * mass * 4.2));
+    if (dmg < 4) return;
+    this.health = Math.max(0, this.health - dmg);
+    this.hurtT = 0;
+    this.downT = Math.min(3.5, 0.8 + dmg / 30);
+    // thrown along the way it was going, and a little to the side
+    const l = Math.hypot(dx, dy) || 1, k = Math.min(4, 0.6 + speed * 0.18);
+    const p = { x: this.pos.x + (dx / l) * k + (dy / l) * 0.6, z: this.pos.z + (dy / l) * k - (dx / l) * 0.6 };
+    this.collide(p, R_BODY);
+    this.pos.x = p.x; this.pos.z = p.z;
+    emit('sound', { name: 'crunch' });
+    this.onHurt?.(dmg, what);
+    if (this.health <= 0) { this.health = 100; this.downT = 0; this.onWreck?.(99); }
+  }
+  private mend(dt: number): void {
+    this.downT = Math.max(0, this.downT - dt);
+    this.hurtT += dt;
+    if (this.hurtT > 6 && this.health < 100) this.health = Math.min(100, this.health + dt * 4);
   }
 
   /* the Founder: a deep-violet coat, a gold scarf, a wide-brimmed hat */
@@ -184,6 +234,8 @@ export class Founder {
       // a cab or a patrol car is a full model; the fire engine, the bus, the ambulance and the rest are
       // the village's own instanced models (src/player/shifts.ts draws them), with the headlamps here
       const t = v.work.type;
+      // (V2 (Milestone 8): a hired mountain bike is ridden, and drawn, here)
+      if (t === 'bike') { this.ride = new Bike(col); this.carMesh.add(this.ride.root); return; }
       if (t !== 'police' && t !== 'taxi') return;
       this.ride = new CarModel(t === 'police' ? 'estate' : 'sedan', col, t !== 'taxi', t);
     } else this.ride = v.kind === 'moto' ? new Moto(col) : new CarModel(v.style as CarStyle, col, true);
@@ -381,11 +433,13 @@ export class Founder {
     if (!World.isRoad(tx, tz)) return Math.max(0, h);
     const base = World.ground[World.idx(tx, tz)] === 1 ? 0.25 : 0.03;
     if (World.ground[World.idx(tx, tz)] === 1) return base;
-    // the raised pavement strip along kerbs that face open ground
+    // the raised pavement strip along kerbs that face open ground (V2 (Milestone 8): and the quarter-round
+    // pavement at a junction's inner corners)
     const lx = x - tx * TM, lz = z - tz * TM;
-    const SW = 1.8;
-    if ((lz < SW && !World.isRoad(tx, tz - 1)) || (lz > TM - SW && !World.isRoad(tx, tz + 1)) ||
-        (lx < SW && !World.isRoad(tx - 1, tz)) || (lx > TM - SW && !World.isRoad(tx + 1, tz))) return base + 0.17;
+    const SW = PAVEMENT_M;
+    const R = (i: number, j: number): boolean => World.isRoad(tx + i, tz + j);
+    if ((lz < SW && !R(0, -1)) || (lz > TM - SW && !R(0, 1)) || (lx < SW && !R(-1, 0)) || (lx > TM - SW && !R(1, 0))) return base + 0.17;
+    for (const [i, j, cx, cz] of CORNERS) if (R(i, 0) && R(0, j) && !R(i, j) && Math.hypot(lx - cx, lz - cz) < SW) return base + 0.17;
     return base;
   }
 
@@ -399,14 +453,21 @@ export class Founder {
     if (p.x > maxX) { p.x = maxX; hit = true; }
     if (p.z > maxZ) { p.z = maxZ; hit = true; }
     const boxes = this.buildings.solidsNear(p.x, p.z, r + 2);
-    // open water is a wall for now (swimming arrives later)
     const tx = Math.floor(p.x / TM), tz = Math.floor(p.z / TM);
-    for (let j = -1; j <= 1; j++)
-      for (let i = -1; i <= 1; i++) {
-        const x = tx + i, z = tz + j;
-        if (!World.inB(x, z)) continue;
-        if (isWaterAt(x * TM + 4, z * TM + 4)) boxes.push([x * TM, z * TM, x * TM + TM, z * TM + TM]);
+    // open water is a wall for now (swimming arrives later). V2 (Milestone 8): its edge is the smoothed shoreline
+    // on the bank, not the old tile line: feel round the body for it and step back from it
+    for (let it = 0; it < 4; it++) {
+      let ax = 0, az = 0, n = 0;
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4, cx = Math.cos(a), cz = Math.sin(a);
+        if (isWaterAt(p.x + cx * r, p.z + cz * r)) { ax -= cx; az -= cz; n++; }
       }
+      if (!n) break;
+      hit = true;
+      const l = Math.hypot(ax, az);
+      if (l < 1e-3) break; // (water all round: leave it be)
+      p.x += (ax / l) * r * 0.3; p.z += (az / l) * r * 0.3;
+    }
     for (const [x0, z0, x1, z1] of boxes) {
       const cx = Math.max(x0, Math.min(p.x, x1)), cz = Math.max(z0, Math.min(p.z, z1));
       let dx = p.x - cx, dz = p.z - cz;
@@ -424,6 +485,25 @@ export class Founder {
       p.x = cx + dx * r;
       p.z = cz + dz * r;
     }
+    // V2 (Milestone 8): lamp posts and signal poles
+    for (const s of postsNear(p.x, p.z, this.posts)) {
+      const rr = r + s.r, dx = p.x - s.x, dz = p.z - s.z, d = Math.hypot(dx, dz);
+      if (d < rr && d > 1e-4) { p.x = s.x + (dx / d) * rr; p.z = s.z + (dz / d) * rr; hit = true; }
+    }
+    // V2 (Milestone 8): the villagers' cars standing in their drives and in the bays
+    for (let j = -1; j <= 1; j++)
+      for (let i = -1; i <= 1; i++) {
+        const b = World.buildingAt(tx + i * 2, tz + j * 2);
+        if (!b || this.seenB.has(b)) continue;
+        this.seenB.add(b);
+        for (const c of drivewayCars(b, this.driveCars)) if (capsule(p, r, c.x, c.z, c.yaw, 1.35, 0.92)) hit = true;
+        this.driveCars.length = 0;
+        if (b.parked > 0 && !CAT[b.type]?.res) for (let k = 0; k < Math.min(4, b.parked); k++) {
+          const s = baySpot(b, k);
+          if (s && capsule(p, r, s.x, s.z, s.yaw, 1.35, 0.92)) hit = true;
+        }
+      }
+    this.seenB.clear();
     // tree trunks
     for (let j = -1; j <= 1; j++)
       for (let i = -1; i <= 1; i++) {
@@ -436,6 +516,22 @@ export class Founder {
         if (d < rr && d > 1e-4) { p.x = t.x + (dx / d) * rr; p.z = t.z + (dz / d) * rr; hit = true; }
       }
     return hit;
+  }
+
+  private posts: { x: number; z: number; r: number }[] = [];
+  private seenB = new Set<any>();
+  private driveCars: DrivewayCar[] = [];
+  private nearV: ReturnType<typeof Traffic.near> = [];
+  /** V2 (Milestone 8): on foot, the village's traffic is solid too: a car, a bus or a cab standing or passing is
+   *  walked round, not through (a moving one that runs into the Founder is a knock: sim/traffic.ts hits) */
+  private collideTraffic(p: { x: number; z: number }, r: number): void {
+    for (const ob of Traffic.near(p.x * 2, p.z * 2, 30, this.nearV)) {
+      if (!ob.car) continue;
+      const o = ob.o as any;
+      const x = (o.x ?? ob.x * 16) * 0.5, z = (o.y ?? ob.y * 16) * 0.5;
+      const yaw = Math.atan2(o.hx ?? ob.dx, o.hy ?? ob.dy), L = ob.len * 8;
+      capsule(p, r, x, z, yaw, Math.max(0.2, L / 2 - 0.9), L > 6 ? 1.25 : L < 3 ? 0.45 : 0.92);
+    }
   }
 
   /** V2 (Milestone 7): on foot, the vehicles the Founder has out are solid: the one in hand (a fire engine,
@@ -646,6 +742,8 @@ export class Founder {
         const ox = c.x - (tx * TM + 4), oz = c.z - (tz * TM + 4);
         wrong = ox * -sz + oz * sx < -0.7; // right-hand normal (z runs south): negative is the left
       }
+      // V2 (Milestone 8): on a twin-row avenue, the left-hand row is the oncoming carriageway
+      if (!wrong && (Math.abs(sx) > 0.8 || Math.abs(sz) > 0.8)) wrong = World.isLeftRow(tx, tz, Math.round(sx), Math.round(sz));
     }
     this.wrongT = wrong ? this.wrongT + dt : 0;
     if (this.wrongT > 1.5 && !this.ruleCd.wrong) { this.offence('wrong side'); this.ruleCd.wrong = 25; }
@@ -661,7 +759,9 @@ export class Founder {
   }
 
   private walk(dt: number): void {
-    const mv = Input.move();
+    this.mend(dt);
+    // knocked down: on the ground for a moment
+    const mv = this.downT > 0 ? { x: 0, y: 0 } : Input.move();
     const run = Input.running();
     const speed = run ? 7.2 : 3.2;
     const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
@@ -671,6 +771,7 @@ export class Founder {
     const p = { x: this.pos.x + vx * dt, z: this.pos.z + vz * dt };
     this.collide(p, R_BODY);
     this.collideVehicles(p, R_BODY);
+    this.collideTraffic(p, R_BODY);
     const g = this.groundAt(p.x, p.z);
     // steps up to ~0.5 m are climbed; mountains are walked
     if (g - this.pos.y < 0.55 || heightAt(p.x, p.z) > 0.3) {
@@ -707,6 +808,8 @@ export class Founder {
     // a battered vehicle loses its top end, shredded tyres more; an empty tank crawls; a wreck won't go
     let MAX = sp.max * (v.damage > 50 ? 1 - (v.damage - 50) / 100 : 1) * (v.flat ? 0.4 : 1), REV = -8, power = sp.accel;
     if (v.fuel <= 0) { MAX = Math.min(MAX, 2.2); REV = -2.2; }
+    // V2 (Milestone 8): pedal power: a bicycle slows to a crawl up a steep climb and runs away down one
+    if (v.work?.type === 'bike') { MAX *= THREE.MathUtils.clamp(1 + c.pitch * 3.2, 0.28, 1.6); REV = -1.5; }
     if (v.damage >= 100) { MAX = 0; REV = 0; power = 0; }
     if (gas > 0 && c.speed < MAX) c.speed = Math.min(MAX, c.speed + (c.speed < 0 ? 18 : power) * gas * dt);
     if (brake > 0) c.speed -= (c.speed > 0 ? 22 : 6) * brake * dt;
@@ -752,23 +855,32 @@ export class Founder {
       let d = c.yaw + (c.speed < 0 ? Math.PI : 0) - this.camYaw;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      this.camYaw += d * Math.min(1, dt * 1.6);
+      this.camYaw += d * (1 - Math.exp(-dt * 1.8));
     }
   }
 
+  /** on a motorbike or a bicycle (the rider shows) */
+  twoWheels(): boolean { return this.ride instanceof Moto || this.ride instanceof Bike; }
+
   /** photo mode: the Founder is in the picture, even when the camera was behind their eyes */
   showBody(): void {
-    this.mesh.visible = !this.driving || this.ride instanceof Moto;
+    this.mesh.visible = !this.driving || this.twoWheels();
   }
 
   /** animate the body, place the car, and set the camera */
   private pose(dt: number): void {
-    const riding = this.driving && this.ride instanceof Moto;
+    const riding = this.driving && this.twoWheels();
     this.mesh.visible = (!this.driving || riding) && !this.firstPerson;
     const moving = !!this.mesh.userData.moving;
     const speed = moving ? Math.max(0.6, this.speedKmh / 3.6) : 0;
     const c = this.car;
-    if (riding) {
+    if (riding && this.ride instanceof Bike) {
+      // (V2 (Milestone 8): on the saddle of the mountain bike, pedalling)
+      const m = this.ride;
+      this.mesh.position.set(c.x - Math.sin(c.yaw) * 0.17, c.y + 0.44, c.z - Math.cos(c.yaw) * 0.17);
+      this.mesh.rotation.set(0, c.yaw, m.lean, 'YXZ');
+      if (this.mesh.visible) this.person.animate(dt, 'pedal', m.crank, ENV.rain.value);
+    } else if (riding) {
       // astride the motorcycle, leaning with it
       const m = this.ride as Moto;
       this.mesh.position.set(c.x - Math.sin(c.yaw) * 0.22, c.y + 0.42, c.z - Math.cos(c.yaw) * 0.22);
@@ -776,8 +888,11 @@ export class Founder {
       if (this.mesh.visible) this.person.animate(dt, 'sit', 0, ENV.rain.value);
     } else {
       this.mesh.position.copy(this.pos);
-      this.mesh.rotation.set(0, this.yaw, 0, 'YXZ');
-      if (this.mesh.visible) this.person.animate(dt, moving ? 'walk' : 'idle', speed, ENV.rain.value);
+      // (V2 (Milestone 8): flat on the road after a knock)
+      const down = this.downT > 0;
+      this.mesh.rotation.set(down ? -Math.PI / 2 : 0, this.yaw, 0, 'YXZ');
+      if (down) this.mesh.position.y += 0.14;
+      if (this.mesh.visible) this.person.animate(dt, down ? 'lie' : moving ? 'walk' : 'idle', speed, ENV.rain.value);
     }
     this.carMesh.position.set(c.x, c.y, c.z);
     this.carMesh.rotation.set(c.pitch, c.yaw, 0, 'YXZ');
@@ -791,7 +906,7 @@ export class Founder {
     this.lastCar.speed = c.speed;
     this.lastCar.yaw = c.yaw;
     this.ride.drive(dt, 0, 0, 0, c.speed, accel, dy / Math.max(dt, 1e-3), 0);
-    this.ride.lights(this.driving && ENV.night.value > 0.2, ENV.night.value);
+    this.ride.lights(this.driving && ENV.night.value > 0.2, ENV.night.value, !this.driving);
   }
 
   /** place the street camera: third-person orbit with collision, or eyes */
@@ -812,7 +927,7 @@ export class Founder {
     // (a fire engine or a bus is long: the chase camera sits further back, the cab further forward and higher)
     const big = this.driving && this.vehicle?.work ? Math.max(0, specOf(this.vehicle).reach - 1.35) : 0;
     const target = new THREE.Vector3(this.pos.x, this.pos.y + (this.driving ? 1.6 + big * 0.3 : 1.55), this.pos.z);
-    const dist = aboard ? aboard.dist : this.driving ? (this.firstPerson ? 0.01 : this.ride instanceof Moto ? 6 : 8.5 + big * 2) : this.camDist;
+    const dist = aboard ? aboard.dist : this.driving ? (this.firstPerson ? 0.01 : this.twoWheels() ? (this.ride instanceof Bike ? 4.8 : 6) : 8.5 + big * 2) : this.camDist;
     if (this.driving && this.firstPerson && !aboard) {
       const c = this.car, fwd = 0.3 + big * 1.25;
       cam.position.set(c.x + Math.sin(c.yaw) * fwd - Math.cos(c.yaw) * 0.35, c.y + 1.3 + big * 0.35, c.z + Math.cos(c.yaw) * fwd + Math.sin(c.yaw) * 0.35);
@@ -822,28 +937,32 @@ export class Founder {
     }
     const pitch = this.driving || aboard ? Math.min(this.camPitch, -0.08) : this.camPitch;
     const dir = new THREE.Vector3(-Math.sin(this.camYaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(this.camYaw) * Math.cos(pitch));
-    const want = target.clone().addScaledVector(dir, dist);
-    if (!this.camInit) { this.camPos.copy(want); this.camInit = true; }
-    this.camPos.lerp(want, Math.min(1, dt * (this.driving || aboard ? 10 : 18)));
-    // then pull it in front of whatever lies between: it snaps in at once and eases back out
-    const ray = this.camPos.clone().sub(target);
-    const len = ray.length();
-    if (len > 1e-3) {
-      ray.divideScalar(len);
-      const reach = this.camReach(target, ray, len);
-      if (reach < len) this.camPos.copy(target).addScaledVector(ray, reach);
-      // too close to see past the Founder: look over their shoulder instead
-      if (!this.driving && !aboard && reach < 0.9) this.mesh.visible = false;
-    }
+    // V2 (Milestone 8): the camera is held rigidly at its angle and distance from the Founder (or the car). It used
+    // to chase that spot with a per-frame lerp, so the lag behind a moving Founder depended on the frame time and the
+    // whole view surged back and forth whenever frames came unevenly. Only height steps (kerbs, a jump's landing) and
+    // the distance (pulled in by a wall at once, easing back out) are smoothed, at rates that don't depend on the frame rate.
+    const ease = (rate: number): number => 1 - Math.exp(-rate * Math.min(dt, 0.1));
+    if (!this.camInit) { this.camY = target.y; this.camD = dist; this.camInit = true; }
+    this.camY += (target.y - this.camY) * ease(this.driving || aboard ? 14 : 10);
+    if (Math.abs(target.y - this.camY) > 3) this.camY = target.y; // (a teleport: out of a building, off a ride)
+    target.y = this.camY;
+    const reach = this.camReach(target, dir, dist);
+    this.camD = reach < this.camD ? reach : this.camD + (Math.min(dist, reach) - this.camD) * ease(4);
+    this.camPos.copy(target).addScaledVector(dir, this.camD);
+    // too close to see past the Founder: look over their shoulder instead
+    if (!this.driving && !aboard && this.camD < 0.9) this.mesh.visible = false;
     cam.position.copy(this.camPos);
     // V2 (Milestone 7): following a vehicle, the camera rises over a tree's crown rather than sitting in its
-    // leaves (the train's view along a wooded line); up at once, easing back down
+    // leaves (the train's view along a wooded line). V2 (Milestone 8): it glides up and down rather than jumping
+    // (passing a row of street trees made the view hop)
     const lift = this.driving || aboard ? crownLift(this.camPos.x, this.camPos.y, this.camPos.z) : 0;
-    this.camLift = lift > this.camLift ? lift : this.camLift + (lift - this.camLift) * Math.min(1, dt * 1.5);
+    this.camLift += (lift - this.camLift) * ease(lift > this.camLift ? 5 : 1.5);
     cam.position.y += this.camLift;
     cam.lookAt(target);
   }
   private camLift = 0;
+  private camY = 0;
+  private camD = 5.5;
   private bobK = 0;
 
   /** how far the camera can travel from o along unit d (up to len) before touching ground or a building */

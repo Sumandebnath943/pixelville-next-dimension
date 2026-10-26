@@ -114,6 +114,7 @@ export const CAT: Record<string, CatDef> = {
   lake: {name:"Lake",emoji:"🌊",cat:"nature",tool:"lake",key:"lake",building:false},
   river: {name:"River",emoji:"🏞️",cat:"nature",tool:"river",drag:true,key:"river",building:false},
   mountain: {name:"Mountain",emoji:"⛰️",cat:"nature",tool:"mountain",key:"mountain",building:false},
+  peak: {name:"Mountain peak",emoji:"🏔️",cat:"nature",tool:"peak",key:"peak",building:false},
   road: {name:"Road",emoji:"🛣️",cat:"tool",tool:"road",drag:true,key:"road",building:false},
   rail: {name:"Railway",emoji:"🛤️",cat:"transport",tool:"rail",drag:true,key:"rail",building:false},
   bulldoze: {name:"Bulldoze",emoji:"🚜",cat:"tool",tool:"bulldoze",drag:true,key:"bulldoze",building:false},

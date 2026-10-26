@@ -176,7 +176,10 @@ export class Hud {
       b.dataset.cat = cat;
       b.title = CAT_GROUPS.find((g) => g[0] === cat)![2];
       b.innerHTML = `${icon(ic)}<span>${label}</span>`;
-      b.addEventListener('click', () => this.showCategory(cat));
+      // V2 (Milestone 8): a tab turns on the press, like the items (and takes no focus, so a later
+      // Space or Enter can't press it again); a click with no pointer (the gamepad, the keyboard) still works
+      b.addEventListener('pointerdown', (ev) => { if (ev.button !== 0) return; ev.preventDefault(); this.showCategory(cat); });
+      b.addEventListener('click', (ev) => { if (ev.detail === 0) this.showCategory(cat); });
       tabs.appendChild(b);
     }
     this.showCategory(this.palCat);
@@ -206,10 +209,11 @@ export class Hud {
     this.showCategory(CAT_GROUPS[(i + 1) % CAT_GROUPS.length][0]);
   }
   private tool: string | null = null;
-  markTool(key: string | null): void {
-    // a tool picked from elsewhere (a hotkey): show its category (only when it changes, so the
-    // other tabs can still be browsed with a tool in hand)
-    if (key !== this.tool && key && CAT[key] && CAT[key].cat !== this.palCat) this.showCategory(CAT[key].cat);
+  /** the tool in hand: highlighted, and named in the hint. `follow` (a tool just picked from elsewhere,
+   *  a hotkey or the guide) also turns the palette to its tab; the HUD's own refresh never does, so the
+   *  other tabs can always be browsed with a tool in hand */
+  markTool(key: string | null, follow = false): void {
+    if (follow && key !== this.tool && key && CAT[key] && CAT[key].cat !== this.palCat) this.showCategory(CAT[key].cat);
     this.tool = key;
     document.querySelectorAll<HTMLElement>('.pal-item').forEach((i) => i.classList.toggle('active', !!key && i.dataset.key === key));
     const hint = $('hint');

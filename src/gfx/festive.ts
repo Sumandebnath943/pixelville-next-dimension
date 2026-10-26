@@ -85,9 +85,36 @@ function star(): THREE.BufferGeometry {
   return g;
 }
 
+/** V2 (Milestone 8): what the great tree is doing, for the frame (metres) */
+export interface TreeScene {
+  /** the square: plinth, rink, flags, garlands (from when the tree arrives) */
+  plaza: { x: number; z: number } | null;
+  /** where the tree is and how it lies: `tilt` 0 upright … π/2 on its side, along `yaw` */
+  tree: { x: number; y: number; z: number; yaw: number; tilt: number } | null;
+  /** how much of the lights are strung (0 … 1), and whether they're on */
+  lights: number; lit: boolean;
+  /** the star: 0 on the ground beside the tree … 1 on top; < 0 not yet made */
+  star: number;
+  scaffold: boolean;
+  /** a mobile crane: its base, and where its hook is */
+  crane: { x: number; z: number; hx: number; hy: number; hz: number } | null;
+  /** the flatbed under the tree while it travels (centre and heading) */
+  flatbed: { x: number; z: number; yaw: number } | null;
+  /** the ceremony stage, beside the rink */
+  stage: boolean;
+}
+
 export class XmasPlaza {
   group = new THREE.Group();
   private tree = new THREE.Group();
+  /** V2 (Milestone 8): the tree travels on its own (lying on the flatbed, tilting up on the crane) */
+  private treeRoot = new THREE.Group();
+  private crane = new THREE.Group();
+  private boom!: THREE.Mesh;
+  private cable!: THREE.Mesh;
+  private flatbed = new THREE.Group();
+  private scaffold = new THREE.Group();
+  private stage = new THREE.Group();
   private bulbs: Bulbs;
   private garland: Bulbs;
   private starMat: THREE.MeshStandardMaterial;
@@ -98,8 +125,9 @@ export class XmasPlaza {
   private built = false;
 
   constructor(scene: THREE.Scene) {
-    scene.add(this.group);
+    scene.add(this.group, this.treeRoot, this.crane, this.flatbed);
     this.group.visible = false;
+    this.treeRoot.visible = this.crane.visible = this.flatbed.visible = false;
     this.bulbs = new Bulbs(900, 0.1);
     this.garland = new Bulbs(520, 0.085);
     this.starMat = new THREE.MeshStandardMaterial({ color: 0xffd76a, emissive: 0xffc840, emissiveIntensity: 2, roughness: 0.25, metalness: 0.6 });
@@ -113,7 +141,7 @@ export class XmasPlaza {
     const k = this.H / t.height;
     const wood = new THREE.Mesh(t.wood, mats.bark), leaves = new THREE.Mesh(t.leaves, mats.leaves);
     for (const m of [wood, leaves]) { m.scale.setScalar(k); m.castShadow = true; m.receiveShadow = true; this.tree.add(m); }
-    this.group.add(this.tree);
+    this.treeRoot.add(this.tree);
 
     // lights spiralling up the cone, and a star on top
     const crownR = (y: number): number => Math.max(0.3, (1 - y / this.H) * this.H * 0.3 * 0.92);
@@ -128,7 +156,8 @@ export class XmasPlaza {
     const s = new THREE.Mesh(star(), this.starMat);
     s.scale.setScalar(1.1);
     s.position.y = this.H + 0.9;
-    this.tree.add(s);
+    // (V2 (Milestone 8): the star belongs to the square: the crane lifts it to the top of the tree)
+    this.group.add(s);
     this.tree.userData.star = s;
 
     // plinth with gifts
@@ -204,6 +233,58 @@ export class XmasPlaza {
       this.lamps.push(l);
     }
 
+    // V2 (Milestone 8): the crane (a lattice boom on a truck, its cable and hook), the flatbed, the scaffolding,
+    // the ceremony stage
+    const yellow = surface(new THREE.MeshStandardMaterial({ color: 0xf2b21a, roughness: 0.5, metalness: 0.3 }), { snow: 0.5 }, 'pole');
+    const dark = surface(new THREE.MeshStandardMaterial({ color: 0x24262a, roughness: 0.7 }), { snow: 0.5 }, 'pole');
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.4, 9), yellow);
+    cab.position.y = 1.5;
+    cab.castShadow = true;
+    this.boom = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 1), yellow);
+    this.boom.castShadow = true;
+    this.cable = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1, 0.05), dark);
+    this.crane.add(cab, this.boom, this.cable);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.35, 16), boards);
+    deck.position.y = 1.25;
+    deck.castShadow = true;
+    this.flatbed.add(deck);
+    for (const z of [-6.5, -5.2, 5.5]) for (const x of [-1.1, 1.1]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.4, 14).rotateZ(Math.PI / 2), dark);
+      w.position.set(x, 0.5, z);
+      this.flatbed.add(w);
+    }
+    const tractor = new THREE.Mesh(new THREE.BoxGeometry(2.6, 3, 3.4), surface(new THREE.MeshStandardMaterial({ color: 0xb8202a, roughness: 0.4, metalness: 0.3 }), { snow: 0.6 }, 'pole'));
+    tractor.position.set(0, 1.9, 9.8);
+    tractor.castShadow = true;
+    this.flatbed.add(tractor);
+    for (let lv = 0; lv < 7; lv++) {
+      const y = 1 + lv * 3, r = crownR(y) + 1.1;
+      for (let k = 0; k < 10; k++) {
+        const a0 = (k / 10) * Math.PI * 2, a1 = ((k + 1) / 10) * Math.PI * 2;
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 2 * r * Math.sin(Math.PI / 10)), boards);
+        plank.position.set(Math.cos((a0 + a1) / 2) * r * Math.cos(Math.PI / 10), y, Math.sin((a0 + a1) / 2) * r * Math.cos(Math.PI / 10));
+        plank.rotation.y = -(a0 + a1) / 2;
+        this.scaffold.add(plank);
+        if (lv < 6) {
+          const r2 = crownR(y + 3) + 1.1;
+          const poleM = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1, 6), pole);
+          const p0 = new THREE.Vector3(Math.cos(a0) * r, y, Math.sin(a0) * r), p1 = new THREE.Vector3(Math.cos(a0) * r2, y + 3, Math.sin(a0) * r2);
+          poleM.position.copy(p0).add(p1).multiplyScalar(0.5);
+          poleM.scale.y = p0.distanceTo(p1);
+          poleM.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p1.clone().sub(p0).normalize());
+          this.scaffold.add(poleM);
+        }
+      }
+    }
+    this.group.add(this.scaffold);
+    const stageDeck = new THREE.Mesh(new THREE.BoxGeometry(9, 1.1, 4.5), boards);
+    stageDeck.position.set(0, 0.55, 0);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(9, 4.5, 0.3), surface(new THREE.MeshStandardMaterial({ color: 0x8a1a22, roughness: 0.8 }), { snow: 0.5 }, 'pole'));
+    back.position.set(0, 3.3, -2.1);
+    this.stage.add(stageDeck, back);
+    this.stage.position.set(0, 0, 16.5);
+    this.group.add(this.stage);
+
     // skaters gliding round
     let seed = 7;
     const rnd = (): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
@@ -215,20 +296,49 @@ export class XmasPlaza {
     }
   }
 
-  /** place, show and animate; `rise` 0..1 while the tree is being raised */
-  update(dt: number, show: boolean, x: number, z: number, rise: number, lit: boolean, night: number, time: number): void {
-    this.group.visible = show;
-    if (!show) return;
+  /** the great tree's whole scene for the frame (null: nothing to show) */
+  update(dt: number, sc: TreeScene | null, night: number, time: number): void {
+    const any = !!sc && (!!sc.plaza || !!sc.tree);
+    this.group.visible = any && !!sc!.plaza;
+    this.treeRoot.visible = any && !!sc!.tree;
+    this.crane.visible = any && !!sc!.crane;
+    this.flatbed.visible = any && !!sc!.flatbed;
+    if (!any || !sc) return;
     if (!this.built) this.build();
-    this.group.position.set(x, 0, z);
-    this.tree.scale.set(1, Math.max(0.05, rise), 1);
+    if (sc.plaza) this.group.position.set(sc.plaza.x, 0, sc.plaza.z);
+    if (sc.tree) {
+      this.treeRoot.position.set(sc.tree.x, sc.tree.y, sc.tree.z);
+      this.treeRoot.rotation.set(sc.tree.tilt, sc.tree.yaw, 0, 'YXZ');
+    }
+    if (sc.flatbed) { this.flatbed.position.set(sc.flatbed.x, 0, sc.flatbed.z); this.flatbed.rotation.y = sc.flatbed.yaw; }
+    if (sc.crane) {
+      // the truck stands back from the load; the boom reaches from it to just above the hook
+      const c = sc.crane, dx = c.hx - c.x, dz = c.hz - c.z, yaw = Math.atan2(dx, dz);
+      this.crane.position.set(c.x, 0, c.z);
+      this.crane.rotation.y = yaw;
+      const reach = Math.hypot(dx, dz), tipY = c.hy + 6, base = new THREE.Vector3(0, 2.8, 0), tip = new THREE.Vector3(0, tipY, reach);
+      this.boom.position.copy(base).add(tip).multiplyScalar(0.5);
+      this.boom.scale.z = base.distanceTo(tip);
+      this.boom.rotation.x = -Math.atan2(tipY - 2.8, reach);
+      this.cable.position.set(0, (tipY + c.hy) / 2, reach);
+      this.cable.scale.y = Math.max(0.1, tipY - c.hy);
+    }
+    this.scaffold.visible = sc.scaffold;
+    this.stage.visible = sc.stage;
+    // the lights strung so far (from the bottom up), lit or not
+    this.bulbs.mesh.count = Math.round(this.bulbs.n * Math.max(0, Math.min(1, sc.lights)));
+    const lit = sc.lit;
     // scene-referred brightness: at night exposure these read as bright points that softly bloom
     const glow = lit ? 0.2 + night * 1.0 + lightsOn.value * 0.15 : 0;
     this.bulbs.level = glow;
     this.garland.level = glow;
-    this.bulbs.mesh.visible = this.garland.mesh.visible = lit;
-    this.starMat.emissiveIntensity = lit ? 0.6 + night * 1.4 + Math.sin(time * 2) * 0.15 : 0;
-    (this.tree.userData.star as THREE.Mesh).rotation.y = time * 0.4;
+    this.bulbs.mesh.visible = sc.lights > 0;
+    this.garland.mesh.visible = lit;
+    const st = this.tree.userData.star as THREE.Mesh;
+    st.visible = sc.star >= 0;
+    st.position.set(sc.star >= 1 ? 0 : 3.4 * (1 - sc.star), 0.8 + sc.star * this.H, 0);
+    this.starMat.emissiveIntensity = lit ? 0.6 + night * 1.4 + Math.sin(time * 2) * 0.15 : 0.15;
+    st.rotation.y = time * 0.4;
     for (const l of this.lamps) l.intensity = lit ? 9 * night : 0;
     for (const f of this.flags) {
       const pos = f.geometry.attributes.position;

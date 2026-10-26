@@ -117,7 +117,7 @@ export class Transit {
   }
   /** the vehicle standing at `at` right now that we can board */
   private arrived(w: Waiting): any {
-    if (w.kind === 'bus') return Life.buses.find((bus: any) => bus.pause > 0 && tilesTo(bus, w.at) < 2.6 && (!w.to || bus.stops.includes(w.to))) || null;
+    if (w.kind === 'bus') return Life.buses.find((bus: any) => !bus.hidden && bus.pause > 0 && tilesTo(bus, w.at) < 2.6 && (!w.to || bus.stops.includes(w.to))) || null;
     if (w.kind === 'train') return Life.trains.find((tr: any) => !tr.hidden && tr.type !== 'freight' && tr.pause > 0 && tilesTo(tr, w.at) < 3 && (!w.to || this.servesStation(tr, w.to))) || null;
     const f = Life.ferry;
     return f && f.pause > 0 && tilesTo(f, w.at) < 5 ? f : null;
@@ -186,8 +186,9 @@ export class Transit {
     cab.hired = false;
     // back to its rank, like any cab after a fare
     const at = World.nearestRoad(Math.floor(cab.x / T), Math.floor(cab.y / T), 3);
-    const back = at && cab.standTile && World.roadPath(cab.standTile.x, cab.standTile.y, at.x, at.y);
-    if (back && back.length > 1) { cab.route = back; cab.prog = back.length - 1; cab.dir = -1; cab.pause = 2; }
+    // (V2 (Milestone 8): its own way back, keeping right, rather than the way out driven backwards)
+    const back = at && cab.standTile && World.roadPath(at.x, at.y, cab.standTile.x, cab.standTile.y);
+    if (back && back.length > 1) { cab.route = back; cab.prog = 0; cab.dir = 1; cab.returning = true; cab.pause = 2; }
     this.cab = null;
   }
 
@@ -291,7 +292,7 @@ export class Transit {
       return;
     }
     const v = a.v;
-    if (a.kind !== 'taxi' && (a.kind === 'ferry' ? !Life.ferry : a.kind === 'bus' ? !Life.buses.includes(v) : !Life.trains.includes(v) || v.hidden)) {
+    if (a.kind !== 'taxi' && (a.kind === 'ferry' ? !Life.ferry : a.kind === 'bus' ? !Life.buses.includes(v) || v.hidden : !Life.trains.includes(v) || v.hidden)) {
       // the line closed under us (the stops were bulldozed): off at the nearest door
       this.alight(a.from);
       return;

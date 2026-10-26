@@ -81,7 +81,7 @@ export class TrainJob implements Job {
     tr.prog = k;
     tr.dir = k >= end ? -1 : k <= 0 ? 1 : end - k > k ? 1 : -1;
     tr.lastStop = k;
-    Life.followPath(tr, tr.route, tr.prog, 0);
+    Life.followRail(tr, tr.route, tr.prog, tr.dir);
     this.next();
     c.f.camPitch = -0.5; // (high enough to see over the lineside trees)
   }
@@ -161,7 +161,7 @@ export class TrainJob implements Job {
       if (this.v > 0.6) this.c.bad('Into the buffers — far too fast at the end of the line');
       this.v = 0;
     }
-    Life.followPath(tr, tr.route, tr.prog, 0);
+    Life.followRail(tr, tr.route, tr.prog, tr.dir);
     if (this.stopAt >= 0 && this.dwell <= 0) {
       const ahead = (this.stopAt - tr.prog) * tr.dir;
       if (ahead < -1) { this.c.bad(`Ran through ${stationName(this.stationAt(this.stopAt))} without stopping`); tr.lastStop = this.stopAt; this.next(); }

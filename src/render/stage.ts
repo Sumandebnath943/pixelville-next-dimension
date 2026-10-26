@@ -22,7 +22,7 @@ import { setTextureScale } from '../gfx/textures';
 import { interiorDay, lightsOn } from '../gfx/architecture';
 import { GLOW } from '../gfx/props';
 import { leafFall } from '../gfx/vegetation';
-import { setHeadlightPool } from '../gfx/car';
+import { setHeadlightPool, setGlare, VIEW } from '../gfx/car';
 import { snowUniform, MAT } from './kit';
 
 export type { Quality } from '../gfx/pipeline';
@@ -184,8 +184,9 @@ export class Stage {
     ENV.wind.value = st.wind;
     ENV.windDir.value.set(Math.cos(ENV.time.value * 0.013) * 0.8 + 0.2, Math.sin(ENV.time.value * 0.011) * 0.6 + 0.5).normalize();
 
-    // sky, sun and exposure (shadows refresh on alternate frames on the lighter presets)
-    const doShadow = (this.frameNo + 1) % P.shadowEvery === 0;
+    // sky, sun and exposure (shadows refresh on alternate frames on the lighter presets; V2 (Milestone 8): but
+    // every frame while the camera rides along with something fast, or its shadow stutters a car-length behind it)
+    const doShadow = this.moving || (this.frameNo + 1) % P.shadowEvery === 0;
     this.sky.holdShadow = !doShadow;
     const hour = Sim.clock / 60;
     this.sky.update(dt, hour, dayOfYear(), { overcast: st.overcast, clouds: st.clouds, fog: st.fog, snow: ENV.snow.value }, focus, this.camera);
@@ -215,9 +216,12 @@ export class Stage {
     MAT.windowB.emissiveIntensity = lightsOn.value * 1.2;
     MAT.windowC.emissiveIntensity = lightsOn.value * 1.4;
     const lampK = THREE.MathUtils.smoothstep(this.sky.nightK + st.overcast * 0.25, 0.2, 0.55);
+    this.lampK = lampK;
     GLOW.lantern.emissiveIntensity = lampK * 5;
     this.updateLamps(focus, lamps, lampK);
     setHeadlightPool(0.06 * this.sky.nightK);
+    setGlare(0.9 * this.sky.nightK);
+    VIEW.copy(this.camera.position);
 
     // precipitation and the rainbow
     this.precip.update(st.rain, st.snowfall, this.sky.ambient);
@@ -294,6 +298,15 @@ export class Stage {
   /** indoors, exposure is set for lamplight and daylight through the windows */
   indoorExposure = 1;
 
+  /** V2 (Milestone 8): how lit the street lamps are (0 by day … 1 at night) */
+  lampK = 0;
+  /** V2 (Milestone 8): extra exposure for the view (the Planner high over a town at night) */
+  viewBoost = 1;
+  /** V2 (Milestone 8): the camera is following something fast (the Founder at the wheel): shadows every frame */
+  moving = false;
+  private camMoved = false;
+  private lastCam = new THREE.Matrix4();
+
   render(): void {
     if (this.lost) return;
     if (this.indoor) {
@@ -309,9 +322,13 @@ export class Stage {
       this.camera.position.y += (Math.random() - 0.5) * k;
     }
     this.camera.updateMatrixWorld();
+    this.camMoved = !this.camera.matrixWorld.equals(this.lastCam);
+    this.lastCam.copy(this.camera.matrixWorld);
     const P = this.profile;
-    const doShadow = (this.frameNo + 1) % P.shadowEvery === 0;
-    const doWater = this.frameNo % P.reflEvery === 0;
+    const doShadow = this.moving || (this.frameNo + 1) % P.shadowEvery === 0;
+    // V2 (Milestone 8): a mirror drawn every other frame lags the moving camera by a frame, and the water
+    // shivered with it: the water's mirror is redrawn every frame whenever the view moves
+    const doWater = this.camMoved || this.frameNo % P.reflEvery === 0;
     const doGround = (this.frameNo + 1) % P.reflEvery === 0;
     // mirrors first: the water every frame it's on screen, the streets only when wet
     ENV.reflOn.value = 0;
@@ -326,7 +343,7 @@ export class Stage {
       ENV.reflTex.value = this.groundRefl.rt.texture;
       ENV.reflOn.value = 1;
     } else this.groundReady = false;
-    this.pipe.render(this.sky.exposure * this.exposureBias, this.frozen ? 0 : 1 / 60, doShadow);
+    this.pipe.render(this.sky.exposure * this.exposureBias * this.viewBoost, this.frozen ? 0 : 1 / 60, doShadow);
   }
 
   /* ---------- V2 (Milestone 7): resolution that keeps the frame rate ---------- */

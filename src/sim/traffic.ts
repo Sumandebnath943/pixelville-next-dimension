@@ -14,12 +14,14 @@
    the lane for a while (a parked car, a bus at its stop, a wreck)
    is overtaken through the oncoming lane when that is clear.
    Units: tiles and sim seconds. Positions are V1 pixels (T = 16
-   per tile, tile centres at +8), lanes 3.5 px right of centre.
+   per tile, tile centres at +8), lanes 2.7 px right of centre.
+   V2 (Milestone 8): drivers also slow for the bends ahead, which
+   they take on arcs in their lane (lanePose).
    ============================================================ */
 import { World } from './world';
 
 const T = 16;
-const LANE = 3.5 / T;      // lane centre, right of the road's centreline
+const LANE = 2.7 / T;      // lane centre, right of the road's centreline (V2 (Milestone 8): 1.35 m, was 1.75 m: cars hung over the kerb)
 const CAR_LEN = 0.56;      // ~4.5 m
 const GAP = 0.3;           // ~2.4 m bumper to bumper in a queue
 const ACC = 0.35;          // pulling away (~2.8 m/s²)
@@ -35,6 +37,149 @@ const HONK_AFTER = 2;      // seconds held up by the Founder before the horn
 const SWERVE = 0.35;       // how fast a car moves across the road (tiles/s, at walking pace)
 
 export { CAR_LEN, LANE };
+/** V2 (Milestone 8): the lane centre in V1 pixels, right of the road's centreline (1.35 m: the carriageway
+ *  between the kerbs is 5.2 m, so a 1.8 m car keeps clear of both the kerb and the oncoming lane) */
+export const LANE_PX = LANE * T;
+/** V2 (Milestone 8): the road's cross-section: a pavement this wide (metres) along every kerb that faces open
+ *  ground, with a quarter-round kerb of the same radius at the inner corners of junctions and bends (so a car on
+ *  its tight right-turn arc clears the kerb); people walk down the middle of it */
+export const PAVEMENT_M = 1.4;
+export const FOOT_PX = (4 - 0.55) * 2; // px from the centreline to where people walk: 0.55 m in from the pavement's outer edge, clear of the lamp posts at its kerb side
+
+/* ---------- V2 (Milestone 8): where a vehicle is along its path ----------
+   Paths are tile centres. On a straight a vehicle runs `lat` to the right of the centre
+   line. Where the path turns, it follows a quarter circle in its lane from the edge of
+   the corner tile it enters by to the edge it leaves by: a tight arc for a right turn
+   (radius ½ tile − lat), a wide one for a left (½ tile + lat), as a driver would; at a
+   dead end it swings round in a half circle. So nothing cuts a corner onto the
+   pavement or across the oncoming lane, and the heading turns smoothly. */
+export interface Pose { x: number; y: number; hx: number; hy: number; dx: number; dy: number }
+const _pose: Pose = { x: 0, y: 0, hx: 1, hy: 0, dx: 1, dy: 0 };
+/** step k of the path as travelled (dir −1 walks it backwards) */
+const at = (path: number[][], k: number, dir: number): number[] | undefined => path[dir > 0 ? k : path.length - 1 - k];
+/** the direction of travel into step k (or, failing that, out of it) */
+function stepDir(path: number[][], k: number, dir: number, into: boolean): [number, number] {
+  const n = path.length;
+  for (let j = 0; j < n; j++) {
+    const a = at(path, into ? k - 1 - j : k + j, dir), b = at(path, into ? k - j : k + 1 + j, dir);
+    if (!a || !b) break;
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    if (dx || dy) return [Math.sign(dx), Math.sign(dy)];
+  }
+  if (into) return stepDir(path, k, dir, false);
+  return [1, 0];
+}
+/**
+ * Position (V1 px) and heading `prog` steps along `path`, `lat` px right of the centreline,
+ * driving towards the end (`dir` +1) or the start (−1). `dx, dy` is the axis of the stretch
+ * it is on (the old meaning of dirx/diry); `hx, hy` the true heading through bends.
+ */
+export function lanePose(path: number[][], prog: number, lat: number, dir = 1, out: Pose = _pose): Pose {
+  const n = path.length;
+  const s = Math.max(0, Math.min(n - 1, dir > 0 ? prog : n - 1 - prog));
+  const k = Math.round(s), u = s - k; // the tile we're in, and where in it (−½ … ½)
+  const cur = at(path, k, dir)!;
+  const [ax, ay] = stepDir(path, k, dir, true), [bx, by] = stepDir(path, k, dir, false);
+  const L = lat / T;
+  const cx = cur[0] + 0.5, cy = cur[1] + 0.5;
+  const t = u + 0.5;
+  if ((ax === bx && ay === by) || k === 0 || k === n - 1) {
+    const [dx, dy] = u < 0 || k === n - 1 ? [ax, ay] : [bx, by];
+    out.x = (cx + dx * u - dy * L) * T; out.y = (cy + dy * u + dx * L) * T;
+    out.hx = dx; out.hy = dy; out.dx = dx; out.dy = dy;
+    return out;
+  }
+  const n1x = -ay, n1y = ax, n2x = -by, n2y = bx; // right-hand normals (y runs south)
+  if (ax === -bx && ay === -by) {
+    // a dead end: up to the middle in our lane, then round in a half circle into the other
+    if (t < 0.5) {
+      out.x = (cx - ax * (0.5 - t) + n1x * L) * T; out.y = (cy - ay * (0.5 - t) + n1y * L) * T;
+      out.hx = ax; out.hy = ay;
+    } else {
+      const a0 = Math.atan2(n1y, n1x), a = a0 + Math.PI * (t - 0.5) * 2 * -1; // sweeping left, through the far side
+      out.x = (cx + Math.cos(a) * L) * T; out.y = (cy + Math.sin(a) * L) * T;
+      out.hx = Math.sin(a); out.hy = -Math.cos(a);
+    }
+    out.dx = u < 0 ? ax : bx; out.dy = u < 0 ? ay : by;
+    return out;
+  }
+  // a bend: the arc about the corner between the edge we came in by and the one we leave by
+  const qx = cx - ax * 0.5 + bx * 0.5, qy = cy - ay * 0.5 + by * 0.5;
+  const ex = cx - ax * 0.5 + n1x * L, ey = cy - ay * 0.5 + n1y * L;
+  const xx = cx + bx * 0.5 + n2x * L, xy = cy + by * 0.5 + n2y * L;
+  const r = Math.hypot(ex - qx, ey - qy);
+  const a0 = Math.atan2(ey - qy, ex - qx);
+  let da = Math.atan2(xy - qy, xx - qx) - a0;
+  while (da > Math.PI) da -= Math.PI * 2;
+  while (da < -Math.PI) da += Math.PI * 2;
+  const a = a0 + da * t, sg = Math.sign(da) || 1;
+  out.x = (qx + Math.cos(a) * r) * T; out.y = (qy + Math.sin(a) * r) * T;
+  out.hx = -Math.sin(a) * sg; out.hy = Math.cos(a) * sg;
+  out.dx = u < 0 ? ax : bx; out.dy = u < 0 ? ay : by;
+  return out;
+}
+/** how a path turns at step k as travelled: 0 straight on, 1 right, −1 left, 2 back the way it came */
+export function turnAt(path: number[][], k: number, dir: number): number {
+  if (k <= 0 || k >= path.length - 1) return 0;
+  const [ax, ay] = stepDir(path, k, dir, true), [bx, by] = stepDir(path, k, dir, false);
+  if (ax === bx && ay === by) return 0;
+  if (ax === -bx && ay === -by) return 2;
+  return ax * by - ay * bx > 0 ? 1 : -1; // (y runs south: a positive cross product turns right)
+}
+/* ---------- V2 (Milestone 8): railway bends ----------
+   A rail bend (two arms at right angles) is a curve, not a corner. Where straight track runs
+   on from both arms, the curve sweeps through half of each neighbouring tile too (a radius
+   of a whole tile for the middle track); otherwise it turns within its own tile. The three
+   tracks of the mainline stay side by side through the curve (inner, middle, outer), so a
+   train on one track is still on it after the bend. The terrain draws the same curves. */
+const ARMS: [number, number, number][] = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];
+const armBit = (dx: number, dy: number): number => (dy < 0 ? 1 : dx > 0 ? 2 : dy > 0 ? 4 : 8);
+/** the rail tile (x, y) as a bend: its two arms, and whether the curve may sweep through the neighbours */
+export function railBend(x: number, y: number): { a: [number, number]; b: [number, number]; wide: boolean } | null {
+  const m = World.railMask(x, y);
+  const arms = ARMS.filter(([, , bit]) => m & bit);
+  if (arms.length !== 2) return null;
+  const [a, b] = arms;
+  if (a[0] === -b[0] && a[1] === -b[1]) return null;
+  // the neighbour along an arm carries straight on (or ends): it isn't a bend or a junction itself
+  const runsOn = (dx: number, dy: number): boolean => {
+    const mm = World.railMask(x + dx, y + dy), back = armBit(-dx, -dy), on = armBit(dx, dy);
+    return (mm & back) !== 0 && (mm & ~(back | on)) === 0;
+  };
+  return { a: [a[0], a[1]], b: [b[0], b[1]], wide: runsOn(a[0], a[1]) && runsOn(b[0], b[1]) };
+}
+/** where a train is `prog` steps along a rail `path`, `lat` px right of the line (as the path runs: a train
+ *  going back along it stays on the same track), round the bends on their curves */
+export function railPose(path: number[][], prog: number, lat: number, out: Pose = _pose): Pose {
+  const n = path.length, s = Math.max(0, Math.min(n - 1, prog)), k0 = Math.round(s);
+  for (const kc of [k0, k0 - 1, k0 + 1]) {
+    if (kc <= 0 || kc >= n - 1) continue;
+    const turn = turnAt(path, kc, 1);
+    if (turn !== 1 && turn !== -1) continue;
+    const bend = railBend(path[kc][0], path[kc][1]);
+    const R = bend?.wide ? 1 : 0.5;
+    if (Math.abs(s - kc) > R) continue;
+    const [ax, ay] = stepDir(path, kc, 1, true), [bx, by] = stepDir(path, kc, 1, false);
+    const L = lat / T, cx = path[kc][0] + 0.5, cy = path[kc][1] + 0.5;
+    const qx = cx - ax * R + bx * R, qy = cy - ay * R + by * R;
+    const ex = cx - ax * R - ay * L, ey = cy - ay * R + ax * L;
+    const xx = cx + bx * R - by * L, xy = cy + by * R + bx * L;
+    const r = Math.hypot(ex - qx, ey - qy), a0 = Math.atan2(ey - qy, ex - qx);
+    let da = Math.atan2(xy - qy, xx - qx) - a0;
+    while (da > Math.PI) da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    const t = (s - (kc - R)) / (2 * R), a = a0 + da * t, sg = Math.sign(da) || 1;
+    out.x = (qx + Math.cos(a) * r) * T; out.y = (qy + Math.sin(a) * r) * T;
+    out.hx = -Math.sin(a) * sg; out.hy = Math.cos(a) * sg;
+    out.dx = t < 0.5 ? ax : bx; out.dy = t < 0.5 ? ay : by;
+    return out;
+  }
+  return lanePose(path, s, lat, 1, out);
+}
+
+/** the speed (path steps a second) a turn is taken at: a right turn's tight arc is short, so the same
+ *  step rate is already slow; a left's wide arc is long, so it's taken at fewer steps a second */
+const TURN_V = { right: 0.95, left: 0.62, back: 0.35 };
 
 /** one road user as seen by others this tick (x, y in tiles; dx, dy its heading) */
 export interface Ob { o: unknown; x: number; y: number; dx: number; dy: number; car: boolean; len: number; still: boolean; wide: number }
@@ -64,6 +209,8 @@ const pool: Ob[] = [];
 let used = 0;
 /** junction tile → who holds it, on which axis, last refreshed on which tick */
 const claims = new Map<number, { o: unknown; ns: boolean; tick: number }>();
+/** V2 (Milestone 8): who has run into whom lately (so a hit counts once) */
+const struck = new Map<string, number>();
 let tick = 0;
 let gateClosed: (tx: number, ty: number) => boolean = () => false;
 
@@ -135,10 +282,11 @@ export const Traffic = {
     for (const p of people) {
       if (p.state !== 'walk' || !p.trip) continue;
       const t = p.trip;
-      if (t.car || t.taxi || t.moto) put(p, p.x, p.y, p.dirx, p.diry, true, t.moto ? 0.3 : CAR_LEN);
+      if (t.joined === false) continue; // (still in the drive, waiting to pull out)
+      if (t.car || t.taxi || t.moto) put(p, p.x, p.y, p.dirx, p.diry, true, t.moto ? 0.3 : CAR_LEN, (t.parkT || 0) > 0);
       else put(p, p.x, p.y, p.dirx, p.diry, false, 0);
     }
-    for (const b of life.buses || []) put(b, b.x, b.y, b.dirx, b.diry, true, 1.3, b.pause > 0);
+    for (const b of life.buses || []) if (!b.hidden) put(b, b.x, b.y, b.dirx, b.diry, true, 1.3, b.pause > 0);
     for (const c of life.taxis || []) put(c, c.x, c.y, c.dirx, c.diry, true, CAR_LEN, c.pause > 0);
     for (const t of life.tourists || []) if (t.phase !== 'visit') put(t, t.x, t.y, t.dirx, t.diry, true, CAR_LEN);
     for (const c of life.campaignCars || []) put(c, c.x, c.y, c.dirx, c.diry, true, CAR_LEN);
@@ -149,6 +297,8 @@ export const Traffic = {
     for (const u of life.trucks || []) put(u, u.x, u.y, u.dirx, u.diry, true, 0.9, u.phase === 'drop');
     for (const u of life.crews || []) put(u, u.x, u.y, u.dirx, u.diry, true, 0.7, u.phase === 'fix');
     if (life.crash) put(life.crash, life.crash.x, life.crash.y, 1, 0, true, 1.2, true);
+    // V2 (Milestone 8): the Christmas tree on its flatbed, crawling through town: traffic waits behind it
+    if (life.convoy) put(life.convoy, life.convoy.x, life.convoy.y, life.convoy.dirx, life.convoy.diry, true, 2.4, false);
     // the Founder's car sits anywhere across the road, so it blocks a wider strip than a lane
     for (const g of this.guests) put(g.car ? FOUNDER_CAR : FOUNDER, g.x, g.y, g.dx, g.dy, g.car, g.car ? g.len ?? CAR_LEN : 0, g.still, g.car ? 0.14 : 0);
     // claims nobody has refreshed lately lapse
@@ -254,12 +404,27 @@ export const Traffic = {
     let room = Math.max(0, free);
     if (changing) room = Math.min(room, 0.6); // ease along while crossing the road
 
+    // V2 (Milestone 8): slow for the next bend (and through it): brake down to the turn's own speed by the
+    // time the arc begins, as a driver would, instead of swinging round the corner at full speed
+    const n = path.length, s0 = dir > 0 ? prog : n - 1 - prog;
+    let bend = v0;
+    for (let k = Math.max(1, Math.round(s0)); k < Math.min(n - 1, Math.round(s0) + 5); k++) {
+      const turn = turnAt(path, k, dir);
+      if (!turn) continue;
+      const vt = turn === 2 ? TURN_V.back : turn > 0 ? TURN_V.right : TURN_V.left;
+      bend = Math.sqrt(vt * vt + 2 * DEC * Math.max(0, k - 0.5 - s0));
+      break;
+    }
     // speed: as fast as still lets us stop in the room we have
-    const target = Math.min(v0, Math.sqrt(2 * DEC * room));
+    const target = Math.min(v0, bend, Math.sqrt(2 * DEC * room));
     let v = st.v || 0;
     v = target < v ? Math.max(target, v - DEC_MAX * dt) : Math.min(target, v + ACC * dt);
     let step = v * dt;
-    if (step > room) { step = room; v = room / dt; }
+    // V2 (Milestone 8): someone stepping out inside the stopping distance can't be stopped for in time: the driver
+    // brakes as hard as the car will, and may still hit them (it used to stop dead, which no car can do)
+    const lateFor = !byTraffic && free < (st.v || 0) ** 2 / (2 * DEC_MAX) - 0.05 && (st.v || 0) > 0.5;
+    if (lateFor) { v = Math.max(0, (st.v || 0) - DEC_MAX * dt); step = v * dt; }
+    else if (step > room) { step = room; v = room / dt; }
     st.v = v;
     // across the road, towards our lane (or the oncoming one while passing)
     const want = st.over ? -LANE : LANE;
@@ -320,6 +485,27 @@ export const Traffic = {
     return segs.length > 0 && segs[segs.length - 1].base + 1 >= Math.min(dist, LOOK);
   },
 
+  /**
+   * V2 (Milestone 8): is there room for `me` to pull out onto the first tile of `path`? Nothing on the
+   * tile itself, and nothing moving that's bearing down on it from within a couple of tiles.
+   */
+  roomToJoin(me: unknown, path: number[][]): boolean {
+    const t0 = path[0];
+    if (!t0) return true;
+    const cx = t0[0] + 0.5, cy = t0[1] + 0.5;
+    for (let j = -2; j <= 2; j++)
+      for (let i = -2; i <= 2; i++) {
+        for (const ob of grid.get(World.idx(t0[0] + i, t0[1] + j)) || []) {
+          if (ob.o === me || !ob.car) continue;
+          const rx = cx - ob.x, ry = cy - ob.y, d = Math.hypot(rx, ry);
+          if (d < 0.95) return false;
+          const v = (ob.o as any)?.trip?.v ?? (ob.o as any)?.v ?? (ob.still ? 0 : 1);
+          if (!ob.still && v > 0.1 && d < 2.6 && rx * ob.dx + ry * ob.dy > 0) return false;
+        }
+      }
+    return true;
+  },
+
   /** where `o` (a road user in the index) is along our heading, relative to us (tiles), or null */
   relAlong(o: unknown, path: number[][], prog: number, dir: number): number | null {
     const i = dir > 0 ? Math.floor(prog) : Math.ceil(prog);
@@ -335,6 +521,62 @@ export const Traffic = {
       for (const ob of grid.get(World.idx(q[0], q[1])) || []) if (ob.o === o) return (ob.x - px) * dx + (ob.y - py) * dy;
     }
     return null;
+  },
+
+  /**
+   * V2 (Milestone 8): who a moving vehicle has run into this tick. Every vehicle in the index is checked
+   * against the people on foot around it (where both stand now); a knock at walking pace does nothing, a
+   * faster one hurts in proportion to the speed and the size of what hit them. Each pair counts once a
+   * few seconds. `dt` is the tick's sim seconds (speeds come from how far each vehicle moved).
+   */
+  hits(dt: number, onHit: (veh: any, who: unknown, speed: number, mass: number) => void): void {
+    if (dt <= 0) return;
+    const now = tick;
+    for (const key of filled) {
+      for (const ob of grid.get(key)!) {
+        if (!ob.car || isFounder(ob.o)) continue;
+        const o: any = ob.o;
+        const vx = (o.x ?? ob.x * T) / T, vy = (o.y ?? ob.y * T) / T;
+        const v = Math.hypot(vx - ob.x, vy - ob.y) / dt; // tiles a second
+        if (v < 0.22) continue;
+        const hx = o.hx ?? ob.dx, hy = o.hy ?? ob.dy, hl = Math.hypot(hx, hy) || 1;
+        const fx = hx / hl, fy = hy / hl;
+        const tx = Math.floor(vx), ty = Math.floor(vy);
+        for (let j = -1; j <= 1; j++)
+          for (let i = -1; i <= 1; i++)
+            for (const pd of grid.get(World.idx(tx + i, ty + j)) || []) {
+              if (pd.car) continue;
+              const q: any = pd.o;
+              const px = isFounder(q) ? pd.x : (q.x ?? pd.x * T) / T, py = isFounder(q) ? pd.y : (q.y ?? pd.y * T) / T;
+              const rx = px - vx, ry = py - vy;
+              if (Math.abs(rx * fx + ry * fy) > ob.len / 2 + 0.05 || Math.abs(rx * -fy + ry * fx) > 0.15) continue;
+              const k = `${rank(o)}:${rank(q)}`;
+              if ((struck.get(k) ?? -1e9) > now - 120) continue;
+              struck.set(k, now);
+              onHit(o, q, v * 8, ob.len >= 0.95 ? 1.6 : ob.len >= 0.7 ? 1.25 : ob.len < 0.4 ? 0.6 : 1);
+            }
+      }
+    }
+    if (struck.size > 400) for (const [k, t] of struck) if (t < now - 200) struck.delete(k);
+  },
+
+  /**
+   * V2 (Milestone 8): vehicles on blue lights don't queue, but they don't run people down either: how much of
+   * its speed (0 … 1) a vehicle at `prog` on `path` can keep with someone on the carriageway ahead
+   */
+  pedBrake(me: unknown, path: number[][], prog: number, dir = 1): number {
+    let near = Infinity;
+    for (const { a, b, base, dx, dy } of segmentsAhead(path, prog, dir, 2.6, SEGS)) {
+      const ax = a[0] + 0.5, ay = a[1] + 0.5;
+      for (const [tx, ty] of [a, b])
+        for (const ob of grid.get(World.idx(tx, ty)) || []) {
+          if (ob.car || ob.o === me) continue;
+          const rx = ob.x - ax, ry = ob.y - ay, along = rx * dx + ry * dy;
+          if (along < -0.05 || along > 1.05 || Math.abs(rx * -dy + ry * dx) > ON_ROAD) continue;
+          near = Math.min(near, base + along);
+        }
+    }
+    return near < 0.8 ? 0 : near < 2.6 ? (near - 0.8) / 1.8 : 1;
   },
 
   /** road users within r pixels of (x, y), as indexed this tick (their `o` holds live positions) */

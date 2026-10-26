@@ -404,7 +404,7 @@ export const Supply = {
           this.unload(t);
           // imports and exports leave the way they came; deliveries go back to the yard
           if (t.kind === 'export') t.done = true;
-          else { t.phase = 'back'; t.prog = Math.max(0, t.path.length - 1 - t.prog); t.path = [...t.path].reverse(); }
+          else { t.phase = 'back'; t.path = Life.backPath(t.path, t.prog); t.prog = 0; }
         }
       }
     }

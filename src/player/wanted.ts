@@ -18,7 +18,7 @@ import { Sim } from '../sim/agents';
 import { Mind } from '../sim/mind';
 import { Rep } from '../sim/reputation';
 import { family, on, emit } from '../sim/core';
-import { isJunction } from '../sim/traffic';
+import { isJunction, LANE_PX } from '../sim/traffic';
 import { drivewayCars, DrivewayCar, styleForPaint } from '../render/parked';
 import type { Founder } from './founder';
 import type { Vehicle } from './fleet';
@@ -46,6 +46,10 @@ const CRIME: Record<string, { stars: number; label: string; memory: string; gist
   theft: { stars: 2, label: 'car theft', memory: 'saw the Founder steal a car', gist: 'stole a car', opinion: -2, policeOnly: false },
   ram: { stars: 3, label: 'ramming the police', memory: 'saw the Founder ram a police car', gist: 'rammed a police car', opinion: -2, policeOnly: false },
 };
+/** V2 (Milestone 8): the road rules are enforced with tickets (a patrol that sees it, else the road cameras); only
+ *  a driver who keeps at it (TICKETS_STAR tickets in TICKET_WINDOW real seconds) has the police come after them */
+export const TICKET_FINES: Record<string, number> = { 'red light': 50, speeding: 35, 'wrong side': 40 };
+const TICKETS_STAR = 3, TICKET_WINDOW = 300;
 /** villagers this hostile report even the Founder's driving, and tell the police where they're hiding */
 const INFORMER = -5, TELLTALE = -3;
 /** villagers this fond of the Founder look the other way (except at a hit-and-run or an attack on the police) */
@@ -163,10 +167,25 @@ export class Wanted {
     return Sim.people.filter((q: any) => q.state === 'walk' && q.trip && !q.knocked && Math.hypot(q.x * 0.5 - p.x, q.y * 0.5 - p.z) < 32);
   }
 
+  /** a ticket was written: the fine (paid as far as the wallet goes, the rest owed) and a word about it */
+  onTicket: ((fine: number, label: string, by: 'patrol' | 'camera') => void) | null = null;
+  private tickets: number[] = [];
+
   private offence(kind: string): void {
     const c = CRIME[kind];
     if (!c) return;
     const police = this.policeSee();
+    // V2 (Milestone 8): a road-rule offence is a ticket; only a run of them (with a patrol watching) is a chase
+    if (TICKET_FINES[kind] !== undefined) {
+      if (this.stars > 0) return; // (in the middle of a chase it's the least of it)
+      const now = performance.now() / 1000;
+      this.tickets = this.tickets.filter((t) => now - t < TICKET_WINDOW);
+      this.tickets.push(now);
+      this.onTicket?.(TICKET_FINES[kind], c.label, police ? 'patrol' : 'camera');
+      for (const q of this.onlookers().slice(0, 8)) Rep.feel(q, c.opinion, c.memory, c.gist);
+      if (police && this.tickets.length >= TICKETS_STAR) { this.tickets = []; this.raise(1, 'reckless driving', true, false); }
+      return;
+    }
     const people = this.onlookers().slice(0, 8);
     // who picks up the phone (by how they felt about the Founder until now): anyone at a hit-and-run or an
     // attack on the police; for the rest, not the Founder's loyal fans; for driving, only those who can't stand them
@@ -363,7 +382,7 @@ export class Wanted {
         if (u.lost > 3) { this.sendHome(u); continue; }
       }
       u.prog = Math.min(u.path.length - 1, u.prog + speed * dt);
-      Life.followPath(u, u.path, u.prog, 3.5);
+      Life.followPath(u, u.path, u.prog, LANE_PX);
     }
   }
   /** a new route to the target from wherever the car is now, without a jump: from its exact spot to the next tile, then on */

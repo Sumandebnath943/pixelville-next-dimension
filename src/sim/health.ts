@@ -17,6 +17,7 @@ import { MIN_PER_SEC, Snd, T, midPx } from './core';
 import { World } from './world';
 import { Sim } from './agents';
 import { Life } from './life';
+import { LANE_PX, Traffic } from './traffic';
 import { Mind } from './mind';
 import { Weather } from './weather';
 import { Tasks } from './tasks';
@@ -249,8 +250,8 @@ export const Health = {
         if (p.state !== 'hurt' || !Sim.people.includes(p)) { this.turnBack(a); continue; }
         // it pulls up just short of the casualty, not on top of them
         const stop = Math.max(0, a.path.length - 1 - STOP_SHORT);
-        a.prog = Math.min(stop, a.prog + AMB_SPEED * dt);
-        Life.followPath(a, a.path, a.prog, 3.5);
+        a.prog = Math.min(stop, a.prog + AMB_SPEED * dt * Traffic.pedBrake(a, a.path, a.prog));
+        Life.followPath(a, a.path, a.prog, LANE_PX);
         if (a.prog >= stop) { a.phase = 'treat'; a.t = 8; }
       } else if (a.phase === 'treat') {
         a.t -= gm;
@@ -261,8 +262,8 @@ export const Health = {
         }
       } else {
         const fast = p.state === 'amb';
-        a.prog = Math.min(a.path.length - 1, a.prog + (fast ? AMB_SPEED : 1.6) * dt);
-        Life.followPath(a, a.path, a.prog, 3.5);
+        a.prog = Math.min(a.path.length - 1, a.prog + (fast ? AMB_SPEED : 1.6) * dt * Traffic.pedBrake(a, a.path, a.prog));
+        Life.followPath(a, a.path, a.prog, LANE_PX);
         if (a.prog >= a.path.length - 1) {
           a.done = true;
           if (fast) this.deliver(p, a.from);
@@ -302,8 +303,9 @@ export const Health = {
 
   turnBack(a: any): void {
     a.phase = 'return';
-    a.prog = Math.max(0, a.path.length - 1 - a.prog); // the same spot, on the way back
-    a.path = [...a.path].reverse();
+    // from the same spot, its own way back (V2 (Milestone 8): keeping right, not the way out backwards)
+    a.path = Life.backPath(a.path, a.prog);
+    a.prog = 0;
   },
 
   /** the ambulance reached the hospital with its patient */

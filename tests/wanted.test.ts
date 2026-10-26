@@ -8,7 +8,7 @@ import { Life } from '../src/sim/life';
 import { Sim } from '../src/sim/agents';
 import { emit } from '../src/sim/core';
 import { Mind } from '../src/sim/mind';
-import { Wanted } from '../src/player/wanted';
+import { Wanted, TICKET_FINES } from '../src/player/wanted';
 
 const TM = 8;
 
@@ -46,12 +46,19 @@ beforeEach(() => {
 });
 
 describe('the wanted level', () => {
-  it('a traffic offence needs a crew to see it; a fresh crime while wanted adds a star', () => {
+  it("a road-rule offence is a ticket (a patrol's, or a road camera's); a run of them under a patrol's eyes is a chase", () => {
     const { f, w } = setup();
+    const tickets: { fine: number; label: string; by: string }[] = [];
+    w.onTicket = (fine, label, by) => tickets.push({ fine, label, by });
     f.offence('speeding');
-    expect(w.stars).toBe(0); // nobody around
+    expect(w.stars).toBe(0);
+    expect(tickets[0]).toMatchObject({ by: 'camera', fine: TICKET_FINES.speeding });
     Life.police.push(crew(130, 100));
     f.offence('red light');
+    expect(w.stars).toBe(0); // a ticket, not a chase
+    expect(tickets[1]).toMatchObject({ by: 'patrol', fine: TICKET_FINES['red light'] });
+    f.offence('wrong side'); // the third in a few minutes, with a patrol watching: now they come after you
+    expect(tickets).toHaveLength(3);
     expect(w.stars).toBe(1);
     f.offence('speeding'); // mid-chase, the least of it
     expect(w.stars).toBe(1);
@@ -62,15 +69,17 @@ describe('the wanted level', () => {
     expect(w.stars).toBe(3);
   });
 
-  it('a building in between hides the Founder; a park does not', () => {
+  it('a building in between hides the Founder from a patrol; a park does not', () => {
     const { f, w } = setup();
+    const by: string[] = [];
+    w.onTicket = (_fine, _label, b) => by.push(b);
     Life.police.push(crew(140, 100));
     const b = building({ id: 1, type: 'house' }, Math.floor(120 / TM), Math.floor(100 / TM));
     f.offence('speeding');
-    expect(w.stars).toBe(0);
+    expect(by[0]).toBe('camera');
     b.type = 'park';
     f.offence('speeding');
-    expect(w.stars).toBe(1);
+    expect(by[1]).toBe('patrol');
   });
 
   it('villagers who see a crime call it in, and remember it', () => {
@@ -85,7 +94,7 @@ describe('the wanted level', () => {
     expect(p.mind.memories.at(-1).text).toContain('knock someone down');
   });
 
-  it("a villager who can't stand the Founder reports their driving; loyal fans look the other way", () => {
+  it("a villager who can't stand the Founder reports a knock on the road; loyal fans look the other way", () => {
     const { f, w, toasts } = setup();
     const p: any = { state: 'walk', trip: {}, x: 110 * 2, y: 100 * 2, seed: 3, home: { x: 0, y: 0 }, name: 'Ada', surname: 'Berg' };
     Sim.people.push(p);
@@ -94,7 +103,7 @@ describe('the wanted level', () => {
     f.offence('theft'); // a fan saw it: not reported
     expect(w.stars).toBe(0);
     p.mind.fo = -6;
-    f.offence('red light');
+    f.offence('bump');
     expect(w.stars).toBe(1);
     expect(toasts.join(' ')).toContain("a villager who can't stand you called it in");
   });

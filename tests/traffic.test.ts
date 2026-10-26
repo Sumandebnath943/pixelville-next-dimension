@@ -2,26 +2,22 @@
    carriageway, and take turns at junctions without gridlock. */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { World } from '../src/sim/world';
-import { Traffic, CAR_LEN } from '../src/sim/traffic';
+import { Traffic, CAR_LEN, LANE, LANE_PX, PAVEMENT_M, lanePose } from '../src/sim/traffic';
 
 const T = 16;
 const DT = 0.05;
 
-/** a road user on a tile path, positioned the way the sim does it (lane 3.5 px right of centre) */
+/** a road user on a tile path, positioned the way the sim does it (in its lane, round the bends on arcs) */
 function rider(path: number[][], prog: number, car = true): any {
   const p: any = { state: 'walk', trip: { path, prog, car: car ? {} : null }, x: 0, y: 0, dirx: 1, diry: 0 };
   place(p);
   return p;
 }
 function place(p: any): void {
-  const t = p.trip, path = t.path;
-  const i = Math.min(Math.floor(t.prog), path.length - 2), f = t.prog - i;
-  const [ax, ay] = path[i], [bx, by] = path[i + 1];
-  const dx = bx - ax, dy = by - ay;
-  const off = t.car ? Traffic.lanePx(t) : 0;
-  p.x = (ax + dx * f) * T + 8 + (dy !== 0 ? (dy > 0 ? -off : off) : 0);
-  p.y = (ay + dy * f) * T + 8 + (dx !== 0 ? (dx > 0 ? off : -off) : 0);
-  p.dirx = dx; p.diry = dy;
+  const t = p.trip;
+  const pose = lanePose(t.path, t.prog, t.car ? Traffic.lanePx(t) : 0);
+  p.x = pose.x; p.y = pose.y;
+  p.dirx = pose.dx; p.diry = pose.dy;
 }
 const line = (x0: number, y0: number, dx: number, dy: number, n: number): number[][] =>
   Array.from({ length: n }, (_, i) => [x0 + dx * i, y0 + dy * i]);
@@ -94,7 +90,7 @@ describe('traffic', () => {
     const road = line(10, 10, 1, 0, 24);
     for (const [x, y] of road) World.roadMap[World.idx(x, y)] = 1;
     // a bus standing at a stop in our lane, tile 18 (path index 8)
-    const bus = { x: 18 * T + 8, y: 10 * T + 8 + 3.5, dirx: 1, diry: 0, pause: 99 };
+    const bus = { x: 18 * T + 8, y: 10 * T + 8 + LANE_PX, dirx: 1, diry: 0, pause: 99 };
     const car = rider(road, 0);
     let closest = Infinity, pulledOut = false;
     run([car], [car], 40, () => {
@@ -102,15 +98,15 @@ describe('traffic', () => {
       if ((car.trip.lat ?? 1) < 0) pulledOut = true;
     }, { buses: [bus] });
     expect(pulledOut).toBe(true);
-    expect(closest).toBeGreaterThan(0.38); // passed beside it, never through it
+    expect(closest).toBeGreaterThan(0.3); // passed beside it (a lane's width), never through it
     expect(car.trip.prog).toBe(road.length - 1);
-    expect(car.trip.lat).toBeCloseTo(3.5 / 16, 3); // back in its own lane
+    expect(car.trip.lat).toBeCloseTo(LANE, 3); // back in its own lane
   });
 
   it('overtakes on a two-tile avenue too (its twin row is not a side street)', () => {
     for (let x = 10; x <= 34; x++) for (const y of [10, 11]) World.roadMap[World.idx(x, y)] = 1;
     const road = line(10, 10, 1, 0, 24);
-    const bus = { x: 18 * T + 8, y: 10 * T + 8 + 3.5, dirx: 1, diry: 0, pause: 99 };
+    const bus = { x: 18 * T + 8, y: 10 * T + 8 + LANE_PX, dirx: 1, diry: 0, pause: 99 };
     const car = rider(road, 0);
     run([car], [car], 40, undefined, { buses: [bus] });
     expect(car.trip.prog).toBe(road.length - 1);
@@ -119,7 +115,7 @@ describe('traffic', () => {
   it("doesn't pull out while something is coming the other way", () => {
     const road = line(10, 10, 1, 0, 24);
     for (const [x, y] of road) World.roadMap[World.idx(x, y)] = 1;
-    const bus = { x: 18 * T + 8, y: 10 * T + 8 + 3.5, dirx: 1, diry: 0, pause: 99 };
+    const bus = { x: 18 * T + 8, y: 10 * T + 8 + LANE_PX, dirx: 1, diry: 0, pause: 99 };
     const car = rider(road, 0);
     // an oncoming car parked in the other lane just past the bus
     const oncoming = rider(line(33, 10, -1, 0, 24), 13.5);
@@ -147,7 +143,7 @@ describe('traffic', () => {
     const road = line(10, 10, 1, 0, 24);
     for (const [x, y] of road) World.roadMap[World.idx(x, y)] = 1;
     Traffic.guests = [
-      { x: 18 * T + 8, y: 10 * T + 8 + 3.5, dx: 1, dy: 0, car: true, still: true },
+      { x: 18 * T + 8, y: 10 * T + 8 + LANE_PX, dx: 1, dy: 0, car: true, still: true },
       { x: 16 * T + 8, y: 10 * T + 8 - 6.5, dx: 0, dy: 1, car: false, still: true },
     ];
     const car = rider(road, 0);
@@ -163,6 +159,75 @@ describe('traffic', () => {
     run([a, b, blocker], [a, b], 30);
     const gap = Math.abs(a.trip.prog - b.trip.prog);
     expect(gap).toBeGreaterThan(CAR_LEN + 0.15);
+  });
+
+  /* ---------- V2 (Milestone 8): bends, keeping right, slowing for turns ---------- */
+  it('takes a bend on an arc in its own lane: clear of the kerbs, the heading turning smoothly', () => {
+    // east, then a right turn south, then a left turn east again
+    const path = [...line(10, 10, 1, 0, 6), ...line(15, 11, 0, 1, 5), ...line(16, 15, 1, 0, 5)];
+    for (const [x, y] of path) World.roadMap[World.idx(x, y)] = 1;
+    const SW = PAVEMENT_M * 2; // px
+    /** px from (x, y) to the nearest kerb: the strips on sides facing open ground, the quarter-round inner corners */
+    const kerb = (x: number, y: number): number => {
+      const tx = Math.floor(x / T), ty = Math.floor(y / T), lx = x - tx * T, ly = y - ty * T;
+      const R = (i: number, j: number) => World.isRoad(tx + i, ty + j);
+      let d = Infinity;
+      if (!R(0, -1)) d = Math.min(d, ly - SW);
+      if (!R(0, 1)) d = Math.min(d, T - SW - ly);
+      if (!R(-1, 0)) d = Math.min(d, lx - SW);
+      if (!R(1, 0)) d = Math.min(d, T - SW - lx);
+      for (const [i, j, cx, cy] of [[-1, -1, 0, 0], [1, -1, T, 0], [-1, 1, 0, T], [1, 1, T, T]] as const)
+        if (R(i, 0) && R(0, j) && !R(i, j)) d = Math.min(d, Math.hypot(lx - cx, ly - cy) - SW);
+      return d;
+    };
+    let lastYaw: number | null = null, maxJump = 0, minKerb = Infinity;
+    for (let prog = 0; prog <= path.length - 1; prog += 0.02) {
+      const p = lanePose(path, prog, LANE_PX);
+      const tx = Math.floor(p.x / T), ty = Math.floor(p.y / T);
+      expect(path.some(([x, y]) => x === tx && y === ty)).toBe(true); // always on the road
+      minKerb = Math.min(minKerb, kerb(p.x, p.y));
+      const yaw = Math.atan2(p.hx, p.hy);
+      if (lastYaw !== null) { let d = yaw - lastYaw; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; maxJump = Math.max(maxJump, Math.abs(d)); }
+      lastYaw = yaw;
+    }
+    expect(minKerb).toBeGreaterThan(2.2); // the car's centre stays over a metre from every kerb (it's 1.8 m wide)
+    expect(maxJump).toBeLessThan(0.15);   // no snap at the corners
+    // and on the straights it is in the right-hand lane
+    const mid = lanePose(path, 2.5, LANE_PX);
+    expect(mid.y - (10 * T + 8)).toBeCloseTo(LANE_PX, 5);
+  });
+
+  it('keeps right on a two-tile avenue: eastbound on the south row, westbound on the north', () => {
+    for (let x = 10; x <= 40; x++) for (const y of [10, 11]) World.roadMap[World.idx(x, y)] = 1;
+    World._pathCache?.clear?.();
+    World.roadStamp++;
+    const east = World.roadPath(10, 10, 40, 10)!, west = World.roadPath(40, 11, 10, 11)!;
+    const onRow = (path: number[][], y: number) => path.filter(([, py]) => py === y).length / path.length;
+    expect(onRow(east, 11)).toBeGreaterThan(0.8);
+    expect(onRow(west, 10)).toBeGreaterThan(0.8);
+  });
+
+  it('routes run straight rather than zigzagging through a grid of streets', () => {
+    for (let y = 10; y <= 30; y++) for (let x = 10; x <= 30; x++) if (x % 5 === 0 || y % 5 === 0) World.roadMap[World.idx(x, y)] = 1;
+    World.roadStamp++;
+    const path = World.roadPath(10, 10, 30, 30)!;
+    let turns = 0;
+    for (let i = 1; i < path.length - 1; i++) {
+      const a = [path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]], b = [path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]];
+      if (a[0] !== b[0] || a[1] !== b[1]) turns++;
+    }
+    expect(path.length).toBe(41); // still the shortest way
+    expect(turns).toBeLessThanOrEqual(2);
+  });
+
+  it('slows for a left turn ahead and takes it at turning speed', () => {
+    const path = [...line(10, 10, 1, 0, 12), ...line(21, 9, 0, -1, 10)];
+    for (const [x, y] of path) World.roadMap[World.idx(x, y)] = 1;
+    const car = rider(path, 0);
+    let inBend = Infinity;
+    run([car], [car], 30, () => { const s = car.trip.prog; if (s > 10.6 && s < 11.4) inBend = Math.min(inBend, 1); if (s > 10.5 && s < 11.5) inBend = Math.max(inBend === Infinity ? 0 : inBend, car.trip.v); });
+    expect(inBend).toBeLessThan(0.8);
+    expect(car.trip.prog).toBe(path.length - 1);
   });
 
   it('waits at a red light and goes on green', () => {

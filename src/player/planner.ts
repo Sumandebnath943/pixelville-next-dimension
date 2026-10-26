@@ -7,6 +7,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { CAT } from '../sim/catalog';
+import { PEAK_R } from '../sim/peak';
 import { World, GW, GH, footprint, doorOf, normFacing } from '../sim/world';
 import { Game } from '../sim/game';
 import { Input } from '../input/input';
@@ -319,7 +320,7 @@ export class Planner {
       this.door.rotation.set(Math.PI, 0, 0);
       this.door.visible = true;
     } else {
-      const r = d.tool === 'mountain' ? 5 : d.tool === 'lake' ? 4 : d.tool === 'forest' ? 3 : 0;
+      const r = d.tool === 'peak' ? PEAK_R : d.tool === 'mountain' ? 5 : d.tool === 'lake' ? 4 : d.tool === 'forest' ? 3 : 0;
       for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++)
         if (x * x + y * y <= r * r + 0.5) this.preview.add((tile.x + x) * TM + 4, 0.2, (tile.y + y) * TM + 4, 0, 1, hex(d.tool === 'bulldoze' ? '#ff5050' : '#80d0ff'));
     }

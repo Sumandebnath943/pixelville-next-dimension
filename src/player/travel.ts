@@ -29,8 +29,9 @@ import type { Transit } from './transit';
 import { tripTicket, punch } from './tickets';
 
 const TM = 8, PX = 0.5;
-/** flights leave at these times (game-minutes): 06:30 … 21:30, every three hours */
-export const FLIGHTS = [390, 570, 750, 930, 1110, 1290];
+/** flights leave at these times (game-minutes): every three hours round the clock (V2 (Milestone 8): an airport
+ *  doesn't close at night; it used to run 06:30 … 21:30) */
+export const FLIGHTS = [30, 210, 390, 570, 750, 930, 1110, 1290];
 /** check-in closes this long before a flight */
 const CHECKIN_CLOSES = 20;
 

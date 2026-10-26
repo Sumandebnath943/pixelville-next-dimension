@@ -19,7 +19,7 @@ import { Mind } from './mind';
 import { Tasks } from './tasks';
 import { News } from './news';
 import { Settings } from './settings';
-import { Traffic } from './traffic';
+import { Traffic, FOUNDER } from './traffic';
 import { Health } from './health';
 import { Power } from './power';
 import { Supply } from './supply';
@@ -174,6 +174,11 @@ export const Game = {
       const dts = dt * spd;
       Sim.tick(dts);
       Life.tick(dts, dt);
+      // V2 (Milestone 8): anyone a vehicle ran into this tick
+      Traffic.hits(dts, (veh, who, speed, mass) => {
+        if (who === FOUNDER) emit('founderHit', { speed, mass, what: Life.buses.includes(veh) ? 'the bus' : 'a car', dx: veh.hx ?? veh.dirx ?? 0, dy: veh.hy ?? veh.diry ?? 0 });
+        else Life.vehicleHitPerson(veh, who as any, speed, mass);
+      });
       Calamity.tick(dts);
       Festivals.tick(dts);
       this.tickSystems(dts);
@@ -311,6 +316,11 @@ export const Game = {
       case 'mountain':
         if (World.placeMountain(x - (MSIZE >> 1), y - (MSIZE >> 1)))
           this.toast('Mountain range raised ⛰️ — roads will carve around it');
+        this.afterMapEdit();
+        return true;
+      case 'peak': // V2 (Milestone 8)
+        if (World.placePeak(x, y)) this.toast('🏔️ A great peak rises — a trail climbs from its foot to the summit');
+        else this.toast('🏔️ A peak needs a wide stretch of open land (no buildings, roads, railway or water)');
         this.afterMapEdit();
         return true;
       case 'bulldoze':
@@ -477,6 +487,17 @@ export const Game = {
     this.afterMapEdit();
   },
 
+  /** V2 (Milestone 8): a village from before the big mountain gets one, once, on the most open land away from town */
+  offerPeak(): void {
+    if (World.peakTried || World.peaks.length) return;
+    World.peakTried = true;
+    const spot = World.findPeakSpot();
+    if (!spot) return;
+    World.placePeak(spot.x, spot.y);
+    this.afterMapEdit();
+    this.toast('⛰️ A great peak rises over the countryside — a trail climbs to its summit for hikers and mountain bikes', { x: spot.x * 16 + 8, y: spot.y * 16 + 8 });
+  },
+
   /** load a save string; a bad file must never cost the running village */
   performLoad(data: string | null): { ok: boolean; msg: string } {
     if (!data) return { ok: false, msg: 'That slot is empty' };
@@ -486,6 +507,7 @@ export const Game = {
       if (extra._incompat) return { ok: false, msg: "⚠️ That save is from a very old PixelVille map and can't be loaded" };
       this.applyLoadedState(extra);
       if (extra._fromV1) this.toast(`📦 ${World.name} arrived from PixelVille V1 — the whole village, now in 3D`);
+      this.offerPeak();
       return { ok: true, msg: 'Village loaded 📂' };
     } catch (e) {
       this.applyLoadedState(World.deserialize(backup));

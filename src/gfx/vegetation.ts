@@ -95,7 +95,7 @@ function rng(seed: number): () => number {
 }
 
 /* ---------- tree species ---------- */
-export type Species = 'oak' | 'birch' | 'spruce' | 'lime';
+export type Species = 'oak' | 'birch' | 'spruce' | 'lime' | 'pine' | 'fir';
 interface SpeciesDef {
   height: [number, number];
   trunkR: number;
@@ -114,6 +114,8 @@ interface SpeciesDef {
   leafSize: number;
   conifer?: boolean;
   birch?: boolean;
+  /** V2 (Milestone 8): a pine's crown sits high on a long bare trunk */
+  pine?: boolean;
   deciduous: boolean;
 }
 const SPECIES: Record<Species, SpeciesDef> = {
@@ -140,6 +142,20 @@ const SPECIES: Record<Species, SpeciesDef> = {
     children: [0, 34, 6], angle: [0, 88, 55], lenRatio: [1, 0.3, 0.35],
     childStart: [0, 0.12, 0.2], upPull: [0, -0.18, 0.05], gnarl: [0.02, 0.1, 0.2],
     taper: 0.97, leafLevel: 1, leavesPer: 7, leafSize: 1.1, conifer: true, deciduous: false,
+  },
+  // V2 (Milestone 8): a Scots pine, tall and bare-trunked with a rounded crown high up
+  pine: {
+    height: [18, 25], trunkR: 0.32, levels: 2, segs: [14, 5, 3], radial: [10, 5, 3],
+    children: [0, 18, 5], angle: [0, 66, 50], lenRatio: [1, 0.24, 0.4],
+    childStart: [0, 0.6, 0.25], upPull: [0, 0.14, 0.1], gnarl: [0.05, 0.28, 0.3],
+    taper: 0.84, leafLevel: 1, leavesPer: 9, leafSize: 1.35, conifer: true, pine: true, deciduous: false,
+  },
+  // V2 (Milestone 8): a Nordmann fir, the Christmas tree: a dense, even cone right down to the ground
+  fir: {
+    height: [11, 16], trunkR: 0.26, levels: 2, segs: [12, 5, 3], radial: [10, 5, 3],
+    children: [0, 46, 6], angle: [0, 78, 50], lenRatio: [1, 0.3, 0.35],
+    childStart: [0, 0.04, 0.2], upPull: [0, 0.07, 0.05], gnarl: [0.01, 0.06, 0.15],
+    taper: 0.97, leafLevel: 1, leavesPer: 9, leafSize: 1.15, conifer: true, deciduous: false,
   },
 };
 
@@ -249,7 +265,8 @@ export function buildTree(species: Species, seed: number): TreeGeo {
       const ang = ((sp.angle[level + 1] + (R() - 0.5) * 16) * Math.PI) / 180;
       const cd = pd.clone().multiplyScalar(Math.cos(ang)).addScaledVector(n1, Math.sin(ang) * Math.cos(az)).addScaledVector(n2, Math.sin(ang) * Math.sin(az)).normalize();
       let cl = len * sp.lenRatio[level + 1] * (0.75 + R() * 0.5);
-      if (sp.conifer && level === 0) cl = (1 - t) * H * 0.3 + 0.4;
+      if (sp.pine && level === 0) cl = Math.sin(Math.PI * Math.min(1, (t - sp.childStart[1]) / (1 - sp.childStart[1]))) * H * 0.17 + 0.6;
+      else if (sp.conifer && level === 0) cl = (1 - t) * H * 0.3 + 0.4;
       else if (level === 0) cl *= 1 - (t - 0.5) * 0.6;
       grow(p, cd, cl, radius(t) * (sp.conifer ? 0.3 : 0.62), level + 1, flexAt(t), phase + k * 1.7);
     }
@@ -429,13 +446,23 @@ export class Vegetation {
 /* ---------- a forest at map scale: detailed trees near, light crowns far ---------- */
 export interface TreeInstance { x: number; z: number; y: number; species: Species; scale: number; sx?: number; rot: number; tint?: THREE.Color }
 
-/** a cheap leafy crown for distant trees: a deformed sphere wearing the leaf texture */
-function farTreeGeo(species: Species, seed: number): { crown: THREE.BufferGeometry; trunk: THREE.BufferGeometry } {
+/* V2 (Milestone 8): distant canopies are solid: the same material (and so the same shader) as the woods on the
+   hills beyond the map, coloured per tree by species and season */
+let FARC: THREE.MeshStandardMaterial | null = null;
+const FAR_CROWN = (): THREE.MeshStandardMaterial => (FARC ??= surface(new THREE.MeshStandardMaterial({ color: 0x2a3a1e, roughness: 0.95 }), { snow: 0.8, antiTile: 0.3 }, 'farTree') as THREE.MeshStandardMaterial);
+const FAR_TINT: Record<Species, THREE.Color> = {
+  oak: new THREE.Color(1.05, 1.12, 0.82), lime: new THREE.Color(1.15, 1.25, 0.78), birch: new THREE.Color(1.35, 1.45, 0.92), spruce: new THREE.Color(0.68, 0.86, 0.74),
+  pine: new THREE.Color(0.82, 0.96, 0.7), fir: new THREE.Color(0.6, 0.8, 0.72),
+};
+const AUTUMN = new THREE.Color(2.1, 1.25, 0.42);
+
+/** a cheap leafy crown for distant trees: a deformed sphere (solid, V2 (Milestone 8)); `detail` 1 is 80
+ *  triangles, 0 is 20 (V2 (Milestone 8): for the far distance, where a forest is a thousand dots) */
+function farTreeGeo(species: Species, seed: number, detail = 1): { crown: THREE.BufferGeometry; trunk: THREE.BufferGeometry } {
   const sp = SPECIES[species];
   const H = (sp.height[0] + sp.height[1]) / 2;
   const R = rng(seed);
-  // 80 triangles: the leaf texture's cut-outs give the ragged silhouette
-  const crown = new THREE.IcosahedronGeometry(1, 1);
+  const crown = new THREE.IcosahedronGeometry(1, detail);
   const p = crown.attributes.position;
   const uv = new Float32Array(p.count * 2), wind = new Float32Array(p.count * 4), rnd = new Float32Array(p.count), col = new Float32Array(p.count * 3);
   const nrm = new Float32Array(p.count * 3);
@@ -444,7 +471,10 @@ function farTreeGeo(species: Species, seed: number): { crown: THREE.BufferGeomet
     const v = new THREE.Vector3().fromBufferAttribute(p, i);
     const lumpy = 0.82 + hash(Math.round(v.x * 40), Math.round(v.y * 40 + v.z * 13), seed) * 0.32;
     let x = v.x * lumpy, y = v.y * lumpy, z = v.z * lumpy;
-    if (sp.conifer) {
+    if (sp.pine) {
+      // (a pine's far crown: a flattened dome high on the trunk)
+      x *= H * 0.2; z *= H * 0.2; y = H * 0.8 + y * H * 0.13;
+    } else if (sp.conifer) {
       // a cone: wide at the bottom, a point at the top
       const t = (y + 1) / 2;
       x *= (1 - t) * 1.1 + 0.05; z *= (1 - t) * 1.1 + 0.05;
@@ -467,31 +497,36 @@ function farTreeGeo(species: Species, seed: number): { crown: THREE.BufferGeomet
   crown.setAttribute('aWind', new THREE.BufferAttribute(wind, 4));
   crown.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
   crown.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const trunk = new THREE.CylinderGeometry(sp.trunkR * 0.55, sp.trunkR, H * (sp.conifer ? 0.3 : 0.55), 6);
-  trunk.translate(0, (H * (sp.conifer ? 0.3 : 0.55)) / 2, 0);
+  const th = H * (sp.pine ? 0.76 : sp.conifer ? 0.3 : 0.55);
+  const trunk = new THREE.CylinderGeometry(sp.trunkR * 0.55, sp.trunkR, th, 6);
+  trunk.translate(0, th / 2, 0);
   const tp = trunk.attributes.position;
   trunk.setAttribute('aWind', new THREE.BufferAttribute(new Float32Array(tp.count * 4), 4));
   trunk.setAttribute('aRand', new THREE.BufferAttribute(new Float32Array(tp.count), 1));
   return { crown, trunk };
 }
 
-interface LodSet { wood: THREE.InstancedMesh; leaves: THREE.InstancedMesh; deciduous: boolean }
+interface LodSet { wood: THREE.InstancedMesh | null; leaves: THREE.InstancedMesh; deciduous: boolean }
 
 export class TreeLayer {
   group = new THREE.Group();
   private veg: Vegetation;
   private near = new Map<string, LodSet>();
   private far = new Map<Species, LodSet>();
+  /** V2 (Milestone 8): beyond `midRange`, twenty-triangle crowns and no trunks */
+  private distant = new Map<Species, LodSet>();
   private trees: TreeInstance[] = [];
   private lastX = 1e9;
   private lastZ = 1e9;
   private dirty = true;
+  private farTint = new Map<Species, THREE.Color>();
+  private lastFall = -1;
 
-  constructor(scene: THREE.Scene, private nearRange = 150, cap = 32000) {
+  constructor(scene: THREE.Scene, private nearRange = 150, cap = 32000, private midRange = 420, private farRange = 1500) {
     scene.add(this.group);
     this.veg = new Vegetation(scene);
     scene.remove(this.veg.group);
-    const species: Species[] = ['oak', 'lime', 'birch', 'spruce'];
+    const species: Species[] = ['oak', 'lime', 'birch', 'spruce', 'pine', 'fir'];
     for (const s of species) {
       const sp = SPECIES[s];
       const mats = this.veg.materialsFor(s);
@@ -506,22 +541,33 @@ export class TreeLayer {
         this.near.set(`${s}:${v}`, set);
       }
       const f = farTreeGeo(s, 7 + s.length);
+      // V2 (Milestone 8): a solid canopy for distant crowns. They wore the leaf texture, whose cut-outs fade away
+      // with distance (the mipmaps average them out), so far trees lost their crowns and stood as bare trunks
+      // (the white birch trunks looked like boxes floating over the fields)
       const fset: LodSet = {
         wood: new THREE.InstancedMesh(f.trunk, mats.bark, cap),
-        leaves: new THREE.InstancedMesh(f.crown, mats.leaves, cap),
+        leaves: new THREE.InstancedMesh(f.crown, FAR_CROWN(), cap),
         deciduous: sp.deciduous,
       };
+      this.farTint.set(s, FAR_TINT[s]);
       this.prep(fset);
-      fset.wood.castShadow = false;
+      fset.wood!.castShadow = false;
       fset.leaves.castShadow = false;
       // distant crowns stay out of the mirror passes
-      fset.wood.layers.set(LAYER_NO_REFLECT);
+      fset.wood!.layers.set(LAYER_NO_REFLECT);
       fset.leaves.layers.set(LAYER_NO_REFLECT);
       this.far.set(s, fset);
+      const d = farTreeGeo(s, 7 + s.length, 0);
+      const dset: LodSet = { wood: null, leaves: new THREE.InstancedMesh(d.crown, FAR_CROWN(), cap), deciduous: sp.deciduous };
+      this.prep(dset);
+      dset.leaves.castShadow = false;
+      dset.leaves.layers.set(LAYER_NO_REFLECT);
+      this.distant.set(s, dset);
     }
   }
   private prep(s: LodSet): void {
     for (const m of [s.wood, s.leaves]) {
+      if (!m) continue;
       m.count = 0;
       m.castShadow = true;
       m.receiveShadow = true;
@@ -541,38 +587,47 @@ export class TreeLayer {
   /** re-sort near/far when the camera has moved far enough */
   frame(cam: THREE.Vector3): void {
     const fall = leafFall.value;
-    for (const s of [...this.near.values(), ...this.far.values()]) if (s.deciduous) s.leaves.visible = fall < 0.99;
+    const sets = [...this.near.values(), ...this.far.values(), ...this.distant.values()];
+    for (const s of sets) if (s.deciduous) s.leaves.visible = fall < 0.99;
+    // (the far canopies change colour through the autumn)
+    if (Math.abs(fall - this.lastFall) > 0.05) { this.lastFall = fall; this.dirty = true; }
     if (!this.dirty && Math.hypot(cam.x - this.lastX, cam.z - this.lastZ) < 14) return;
     this.dirty = false;
     this.lastX = cam.x;
     this.lastZ = cam.z;
-    const r2 = this.nearRange * this.nearRange;
-    for (const s of [...this.near.values(), ...this.far.values()]) { s.wood.count = 0; s.leaves.count = 0; }
+    const r2 = this.nearRange * this.nearRange, m2 = this.midRange * this.midRange;
+    for (const s of sets) { if (s.wood) s.wood.count = 0; s.leaves.count = 0; }
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0);
-    const white = new THREE.Color(1, 1, 1);
-    const far2 = 1500 * 1500;
+    const white = new THREE.Color(1, 1, 1), tc = new THREE.Color();
+    const far2 = this.farRange * this.farRange;
     for (let i = 0; i < this.trees.length; i++) {
       const t = this.trees[i];
       const d2 = (t.x - cam.x) ** 2 + (t.z - cam.z) ** 2;
       if (d2 > far2) continue; // lost in the haze
-      const set = d2 < r2 ? this.near.get(`${t.species}:${i & 1}`)! : this.far.get(t.species)!;
-      if (set.wood.count >= set.wood.instanceMatrix.count) continue;
+      const set = d2 < r2 ? this.near.get(`${t.species}:${i & 1}`)! : d2 < m2 ? this.far.get(t.species)! : this.distant.get(t.species)!;
+      if (set.leaves.count >= set.leaves.instanceMatrix.count) continue;
       q.setFromAxisAngle(up, t.rot);
       sc.set(t.scale * (t.sx ?? 1), t.scale, t.scale * (t.sx ?? 1));
       pos.set(t.x, t.y, t.z);
       m4.compose(pos, q, sc);
-      const k = set.wood.count;
-      set.wood.setMatrixAt(k, m4);
+      const k = set.leaves.count;
+      set.wood?.setMatrixAt(k, m4);
       set.leaves.setMatrixAt(k, m4);
-      set.leaves.setColorAt(k, t.tint || white);
-      set.wood.count = set.leaves.count = k + 1;
+      if (set !== this.near.get(`${t.species}:${i & 1}`)) {
+        // (the far canopy's colour: the species', turning with the autumn, and the tree's own tint)
+        tc.copy(this.farTint.get(t.species)!);
+        if (set.deciduous && fall > 0.12) tc.lerp(AUTUMN, Math.min(1, (fall - 0.12) * 1.6));
+        if (t.tint) tc.multiply(t.tint);
+        set.leaves.setColorAt(k, tc);
+      } else set.leaves.setColorAt(k, t.tint || white);
+      if (set.wood) set.wood.count = k + 1;
+      set.leaves.count = k + 1;
     }
-    for (const s of [...this.near.values(), ...this.far.values()]) {
-      s.wood.instanceMatrix.needsUpdate = true;
+    for (const s of sets) {
+      if (s.wood) { s.wood.instanceMatrix.needsUpdate = true; s.wood.visible = s.wood.count > 0; }
       s.leaves.instanceMatrix.needsUpdate = true;
       if (s.leaves.instanceColor) s.leaves.instanceColor.needsUpdate = true;
-      s.wood.visible = s.wood.count > 0;
       s.leaves.visible = s.leaves.count > 0 && (!s.deciduous || leafFall.value < 0.99);
     }
   }

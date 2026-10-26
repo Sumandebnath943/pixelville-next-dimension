@@ -266,8 +266,10 @@ export interface Weatherish {
 }
 
 const _d = new THREE.Vector3();
+const _view = new THREE.Vector3();
 const _c = new THREE.Color();
 const _c2 = new THREE.Color();
+const _c3 = new THREE.Color();
 
 export class SkySystem {
   mesh: THREE.Mesh;
@@ -338,9 +340,12 @@ export class SkySystem {
     moon.normalize();
     (u.moonDir.value as THREE.Vector3).copy(moon);
 
-    // haze and turbidity rise with cloud and precipitation
-    this.params.turbidity = 2.2 + w.overcast * 6 + (1 - w.fog) * 3;
-    this.params.rayleigh = 1.1 + w.overcast * 1.2;
+    // haze and turbidity rise with cloud and precipitation; V2 (Milestone 8): and with a low sun the long path
+    // through the air scatters more (more Rayleigh, a little more haze): the dawn and dusk sky turns gold and rose
+    // around the sun instead of a white glare
+    const low = 1 - THREE.MathUtils.smoothstep(sunDir.y, 0.02, 0.35);
+    this.params.turbidity = 2.2 + w.overcast * 6 + (1 - w.fog) * 3 + low * 2.4;
+    this.params.rayleigh = 1.1 + w.overcast * 1.2 + low * 1.6;
     u.turbidity.value = this.params.turbidity;
     u.rayleigh.value = this.params.rayleigh;
     u.cloudCoverage.value = w.clouds;
@@ -429,8 +434,17 @@ export class SkySystem {
 
     // exposure targets the light actually falling on the street
     this.ambient = sunIrr + skyIrr;
+    // V2 (Milestone 8): …and, like an eye or a camera, what's in view: looking into a low sun the bright sky
+    // around it pulls the exposure down (metering the street alone opened right up at dawn, when the street is
+    // dim, and the whole sunrise burnt out to white). A quarter weight on the view keeps the street readable.
+    camera.getWorldDirection(_view);
+    _view.y = THREE.MathUtils.clamp(_view.y, 0.06, 1);
+    _view.normalize();
+    const seen = skyRadiance(_view, sunDir, this.params, _c3);
+    const viewLum = (seen.r * 0.2126 + seen.g * 0.7152 + seen.b * 0.0722) * (1 - w.overcast * 0.7) * 8 * (1 - night);
+    const meter = viewLum > this.ambient ? Math.pow(this.ambient + 0.02, 0.75) * Math.pow(viewLum, 0.25) : this.ambient + 0.02;
     // incident metering, a touch lower under heavy cloud so grey days stay grey
-    const target = THREE.MathUtils.clamp((1.15 * (1 - w.overcast * 0.22)) / Math.pow(this.ambient + 0.02, 0.82), 0.04, 9);
+    const target = THREE.MathUtils.clamp((1.15 * (1 - w.overcast * 0.22)) / Math.pow(meter, 0.82), 0.04, 9);
     // adapt in log space like an eye; big jumps (scrubbing the clock) settle quickly
     const lr = Math.log(target / this.exposure);
     const rate = Math.abs(lr) > 1.2 ? 8 : 2;

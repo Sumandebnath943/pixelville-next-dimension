@@ -20,20 +20,28 @@ const VERT = /* glsl */ `
 ${GLSL_COMMON}
 uniform vec4 uWaves[${NW}];   // dir.xy, wavelength, amplitude
 uniform float uSteep;
+uniform float uMinLen;
 attribute float aShore;
+attribute vec2 aFlow;
 varying vec3 vWPos;
 varying vec3 vNrm;
 varying float vShore;
+varying vec2 vFlow;
 void main() {
   vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
   vShore = aShore;
-  // waves die down in the shallows
+  vFlow = aFlow;
+  // waves die down in the shallows (V2 (Milestone 8): and far away, where the mesh is coarse and the normal
+  // maps carry the detail)
   float calm = smoothstep(0.0, 6.0, aShore);
+  float near = 1.0 - smoothstep(260.0, 520.0, length(p.xz - cameraPosition.xz));
   vec3 disp = vec3(0.0);
   vec3 n = vec3(0.0, 1.0, 0.0);
   for (int i = 0; i < ${NW}; i++) {
     vec2 d = uWaves[i].xy;
-    float L = uWaves[i].z, A = uWaves[i].w * (0.3 + 0.7 * calm);
+    // (V2 (Milestone 8): a wave shorter than the mesh can carry would make its vertices hop about: those are left
+    // to the normal maps)
+    float L = uWaves[i].z, A = uWaves[i].w * (0.3 + 0.7 * calm) * near * smoothstep(uMinLen, uMinLen * 1.6, L);
     float k = 6.2831853 / L;
     float c = sqrt(9.8 / k);
     float f = k * (dot(d, p.xz) - c * uTime) + float(i) * 1.7;
@@ -66,6 +74,7 @@ uniform float uIce;
 varying vec3 vWPos;
 varying vec3 vNrm;
 varying float vShore;
+varying vec2 vFlow;
 
 vec2 ripple(vec2 p, float t) {
   vec2 acc = vec2(0.0);
@@ -88,9 +97,15 @@ vec2 ripple(vec2 p, float t) {
 void main() {
   vec3 V = normalize(cameraPosition - vWPos);
   float dist = length(cameraPosition - vWPos);
-  vec2 uv1 = vWPos.xz * 0.11 + uFlowDir * uTime * 0.05 * uFlow;
+  // V2 (Milestone 8): the current carries the ripples downstream along the river's own course (a flow map, two
+  // phases cross-faded so the pattern never stretches), slow in the lakes, still at sea; the wind ruffles on top
+  vec2 fl = (vFlow + uFlowDir * 0.04) * uFlow;
+  float ph0 = fract(uTime * 0.16), ph1 = fract(uTime * 0.16 + 0.5);
+  vec2 base = vWPos.xz * 0.11;
+  vec3 nA = texture2D(uNormals, base - fl * ph0 * 2.2).xzy * 2.0 - 1.0;
+  vec3 nB = texture2D(uNormals, base - fl * ph1 * 2.2 + vec2(0.5, 0.31)).xzy * 2.0 - 1.0;
+  vec3 n1 = mix(nA, nB, abs(ph0 - 0.5) * 2.0);
   vec2 uv2 = vWPos.xz * 0.29 + uWindDir * uTime * (0.02 + uWind * 0.06) + vec2(0.37, 0.71);
-  vec3 n1 = texture2D(uNormals, uv1).xzy * 2.0 - 1.0;
   vec3 n2 = texture2D(uNormals, uv2).xzy * 2.0 - 1.0;
   float detail = (0.25 + uWind * 0.9) / (1.0 + dist * 0.012) * (1.0 - uIce);
   vec3 N = normalize(vNrm + vec3(n1.x + n2.x, 0.0, n1.z + n2.z) * detail);
@@ -117,7 +132,7 @@ void main() {
   float spec = pow(nh, 1400.0) * 2.2 + pow(nh, 160.0) * 0.05;
   col += uSunColor * spec * (1.0 - uRain * 0.7) * smoothstep(0.0, 0.08, uSunDir.y) * (1.0 - uIce * 0.8);
   // foam where small waves break on the shore
-  float fn = pvFbm(vWPos.xz * vec2(0.9, 1.4) + vec2(uTime * 0.25 * uFlow, uTime * 0.05));
+  float fn = pvFbm(vWPos.xz * vec2(0.9, 1.4) - vFlow * uTime * 0.6 + vec2(0.0, uTime * 0.05));
   float foam = smoothstep(1.4, 0.0, vShore) * smoothstep(0.42, 0.72, fn + (0.12 + uWind * 0.3)) * (1.0 - uIce);
   col = mix(col, light * vec3(0.75, 0.78, 0.8) + uSunColor * sunUp * 0.06, foam * 0.6);
   // winter: a skin of ice, white where snow has settled on it
@@ -140,13 +155,17 @@ export class WaterSystem {
   /** world-space boxes the water occupies (for the on-screen test) */
   bounds: THREE.Box3[] = [];
 
-  constructor(public level: number, reflScale = 0.5) {
+  /** V2 (Milestone 8): the shortest wave (m) the meshes can carry (about twice their vertex spacing) */
+  minLen = 0;
+  constructor(public level: number, reflScale = 0.5, minLen = 0) {
+    this.minLen = minLen;
     this.wavesU = Array.from({ length: NW }, () => new THREE.Vector4());
     this.reflection = new PlanarReflection(level, reflScale);
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uWaves: { value: this.wavesU },
         uSteep: { value: 0.6 },
+        uMinLen: { value: 0 },
         uFlow: { value: 0.6 },
         uFlowDir: { value: this.flowDir },
         uNormals: { value: waterNormals() },
@@ -162,11 +181,13 @@ export class WaterSystem {
       fragmentShader: FRAG,
     });
     bindEnv(this.material.uniforms);
+    this.material.uniforms.uMinLen.value = minLen;
     this.setWind();
   }
 
   add(mesh: THREE.Mesh): void {
     mesh.material = this.material;
+    if (!mesh.geometry.getAttribute('aFlow')) mesh.geometry.setAttribute('aFlow', new THREE.BufferAttribute(new Float32Array(mesh.geometry.getAttribute('position').count * 2), 2));
     mesh.receiveShadow = false;
     this.meshes.push(mesh);
     mesh.geometry.computeBoundingBox();
@@ -191,7 +212,8 @@ export class WaterSystem {
     const wd = ENV.windDir.value;
     const w = ENV.wind.value;
     const base = Math.atan2(wd.y, wd.x);
-    const spec: [number, number, number][] = [[0, 6.5, 0.05], [0.5, 3.1, 0.035], [-0.6, 1.9, 0.022], [1.1, 1.1, 0.012]];
+    // (V2 (Milestone 8): two long, low swells the coarse town water can carry, and two short chops for fine meshes)
+    const spec: [number, number, number][] = [[0, 21, 0.07], [0.6, 12.5, 0.045], [-0.6, 3.1, 0.03], [1.1, 1.6, 0.014]];
     this.waves = spec.map(([da, L, a]) => ({
       dir: new THREE.Vector2(Math.cos(base + da), Math.sin(base + da)),
       length: L * (0.7 + w * 0.6),
@@ -205,10 +227,12 @@ export class WaterSystem {
   height(x: number, z: number): number {
     const t = ENV.time.value;
     let y = this.level;
+    const m = this.minLen;
     this.waves.forEach((v, i) => {
       const k = (2 * Math.PI) / v.length;
       const c = Math.sqrt(9.8 / k);
-      y += v.amp * Math.sin(k * (v.dir.x * x + v.dir.y * z - c * t) + i * 1.7);
+      const keep = m <= 0 ? 1 : THREE.MathUtils.smoothstep(v.length, m, m * 1.6);
+      y += v.amp * keep * Math.sin(k * (v.dir.x * x + v.dir.y * z - c * t) + i * 1.7);
     });
     return y;
   }
@@ -245,6 +269,9 @@ export class River extends WaterSystem {
     const shore = new Float32Array(p.count);
     for (let i = 0; i < p.count; i++) shore[i] = Math.min(Math.abs(p.getZ(i) - z0), Math.abs(p.getZ(i) - (z1 - 2.5)));
     geo.setAttribute('aShore', new THREE.BufferAttribute(shore, 1));
+    const flow = new Float32Array(p.count * 2);
+    for (let i = 0; i < p.count; i++) flow[i * 2] = 0.5;
+    geo.setAttribute('aFlow', new THREE.BufferAttribute(flow, 2));
     this.mesh = new THREE.Mesh(geo, this.material);
     scene.add(this.mesh);
     this.add(this.mesh);

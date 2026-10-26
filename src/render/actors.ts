@@ -26,16 +26,19 @@ import type { BuildingLayer } from './buildings';
 import { Person, Look, randomLook, Pose } from '../gfx/person';
 import { Car as CarModel } from '../gfx/car';
 import { drivewayCars, DrivewayCar, CAR_COLORS as PARKED_COLORS, styleForPaint } from './parked';
+import { baySpot, PARK_TIME } from '../sim/parking';
+import { trailhead } from '../sim/peak';
+import { Traffic, lanePose, railPose } from '../sim/traffic';
 import { ENV } from '../gfx/env';
 import { FireFX } from '../gfx/fire';
-import { XmasPlaza } from '../gfx/festive';
+import { XmasPlaza, TreeScene } from '../gfx/festive';
 import { interiorDay } from '../gfx/architecture';
 
 /* V2 detail tiers: the nearest villagers are skinned, gait-animated people and the
    nearest cars are full models; everything farther stays light instanced figures */
 const NEAR_PEOPLE = 32, NEAR_PEOPLE_R = 48;
 const NEAR_CARS = 22, NEAR_CARS_R = 80;
-interface CarWant { type: string; x: number; y: number; z: number; yaw: number; paint: THREE.Color; siren: boolean; pitch: number; roll: number }
+interface CarWant { type: string; x: number; y: number; z: number; yaw: number; paint: THREE.Color; siren: boolean; pitch: number; roll: number; parked: boolean }
 interface CarSlot { car: CarModel; kind: string; x: number; z: number; yaw: number; v: number; a: number; used: boolean; seen: number }
 
 const PX = 0.5;
@@ -44,8 +47,11 @@ const PEOPLE_CAP = 900;
 const CAR_COLORS = PARKED_COLORS;
 /* a hose's jet and the spray where it lands */
 const JET = hex('#dfeaf2'), SPLASH = hex('#f2f6f8');
+/* the far (instanced) vehicles' lamps: lit, or dark on a parked car */
+const LIGHTS_ON = new THREE.Color(1, 1, 1), LIGHTS_OFF = new THREE.Color(0.16, 0.16, 0.17);
+interface VehOpts { siren?: boolean; beacon?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number; parked?: boolean }
 
-export type Mode = 'walk' | 'run' | 'stand' | 'lie' | 'sit';
+export type Mode = 'walk' | 'run' | 'stand' | 'lie' | 'sit' | 'work' | 'carry';
 interface PersonDraw {
   x: number; y: number; z: number; yaw: number; kind: string; seed: number; mode: Mode; phase: number;
   shirt?: THREE.Color; pants?: THREE.Color; hair?: THREE.Color; scale?: number;
@@ -75,9 +81,43 @@ function smooth(o: object, x: number, z: number, yawHint: number | null): { yaw:
   return { yaw: s.yaw, phase: s.phase, moving: d > 0.004 };
 }
 
+/** where a parking spot's axis (out through its nose) meets a lane through (lx, lz) heading (hx, hz): the corner a
+ *  car turns at, coming out of the spot or backing into it (metres) */
+function axisMeetsLane(s: { x: number; z: number; yaw: number }, lx: number, lz: number, hx: number, hz: number): { x: number; z: number } {
+  const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+  const den = fx * -hz + fz * hx;
+  let t = Math.abs(den) < 0.2 ? 4 : ((lx - s.x) * -hz + (lz - s.z) * hx) / den;
+  t = Math.max(1.5, Math.min(12, t));
+  return { x: s.x + fx * t, z: s.z + fz * t };
+}
+
+/** V2 (Milestone 8): a vehicle's true heading (through the bends) as a yaw, with no lag behind the turn */
+function headYaw(o: any): number {
+  return Math.atan2(o.hx ?? o.dirx ?? 0, o.hy ?? o.diry ?? 1);
+}
+
 function dirYaw(dx: number, dy: number): number | null {
   if (!dx && !dy) return null;
   return Math.atan2(dx, dy);
+}
+
+/* ---------- a soft round point of light (sparks, fireflies) ---------- */
+const FLIES = 160;
+let GLINT: THREE.Texture | null = null;
+function glintTexture(): THREE.Texture {
+  if (GLINT) return GLINT;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 32;
+  const g = cv.getContext('2d')!;
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.18, 'rgba(255,255,255,0.85)');
+  gr.addColorStop(0.45, 'rgba(255,255,255,0.22)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  GLINT = new THREE.CanvasTexture(cv);
+  return GLINT;
 }
 
 /* ---------- emoji bubbles ---------- */
@@ -137,6 +177,9 @@ export class Actors {
   private sparks: THREE.Points;
   private sparkPos: Float32Array;
   private sparkCol: Float32Array;
+  private flies: THREE.Points;
+  private flyPos: Float32Array;
+  private flyCol: Float32Array;
   private bubbles: THREE.Sprite[] = [];
   private fireLights: THREE.PointLight[] = [];
   lightsMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0x888888 });
@@ -164,7 +207,7 @@ export class Actors {
     this.head = new InstancedPool(PERSON.head, MAT.tint, PEOPLE_CAP, g);
     this.hair = new InstancedPool(PERSON.hair, MAT.tint, PEOPLE_CAP, g);
     this.hairLong = new InstancedPool(PERSON.hairLong, MAT.tint, PEOPLE_CAP, g);
-    const caps: Record<string, number> = { car: 500, taxi: 40, police: 30, fire: 12, bus: 24, moto: 80, loco: 16, coach: 60, wagon: 50, boat: 30, ferry: 3, raft: 12, heli: 4, plane: 5, balloon: 4, ufo: 1, sleigh: 1, ambulance: 8, truck: 24, van: 9, tractor: 3 };
+    const caps: Record<string, number> = { bicycle: 24, car: 500, taxi: 40, police: 30, fire: 12, bus: 24, moto: 80, loco: 16, coach: 60, wagon: 50, boat: 30, ferry: 3, raft: 12, heli: 4, plane: 5, balloon: 4, ufo: 1, sleigh: 1, ambulance: 8, truck: 24, van: 9, tractor: 3 };
     for (const [k, m] of Object.entries(VEHICLES)) {
       const cap = caps[k] || 8;
       this.veh[k] = {
@@ -179,16 +222,26 @@ export class Actors {
       const cap = k === 'puddle' ? 8 : k === 'bulb' ? 6000 : k === 'diya' ? 1200 : k === 'smoke' || k === 'flame' ? 8 : k === 'pole' || k === 'carry' ? 8 : k === 'jet' ? 64 : 160;
       this.props[k] = new InstancedPool(p.geo, p.glow ? this.glowTint : p.tinted ? MAT.tint : MAT.solid, cap, g, !p.glow && k !== 'puddle');
     }
-    // fireworks & celebration sparks
+    // fireworks & celebration sparks (V2 (Milestone 8): soft round glints, not square points)
     const N = 1600;
     this.sparkPos = new Float32Array(N * 3);
     this.sparkCol = new Float32Array(N * 3);
     const sg = new THREE.BufferGeometry();
     sg.setAttribute('position', new THREE.BufferAttribute(this.sparkPos, 3));
     sg.setAttribute('color', new THREE.BufferAttribute(this.sparkCol, 3));
-    this.sparks = new THREE.Points(sg, new THREE.PointsMaterial({ size: 0.9, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const glint = glintTexture();
+    this.sparks = new THREE.Points(sg, new THREE.PointsMaterial({ size: 0.9, map: glint, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.sparks.frustumCulled = false;
     g.add(this.sparks);
+    // fireflies: a few centimetres of cold light each (the same material, smaller, so the same shader)
+    this.flyPos = new Float32Array(FLIES * 3);
+    this.flyCol = new Float32Array(FLIES * 3);
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute('position', new THREE.BufferAttribute(this.flyPos, 3));
+    fg.setAttribute('color', new THREE.BufferAttribute(this.flyCol, 3));
+    this.flies = new THREE.Points(fg, new THREE.PointsMaterial({ size: 0.16, map: glint, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.flies.frustumCulled = false;
+    g.add(this.flies);
     for (let i = 0; i < 40; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: true, transparent: true }));
       s.scale.set(1.1, 1.1, 1);
@@ -215,24 +268,25 @@ export class Actors {
     if (this.people.length >= PEOPLE_CAP) return;
     this.people.push(p);
   }
-  vehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: { siren?: boolean; beacon?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number } = {}): void {
+  /** a vehicle this frame; `parked` ones stand with their lights off */
+  vehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: VehOpts = {}): void {
     // nearby cars, cabs and patrol cars are drawn as full models
     if ((type === 'car' || type === 'taxi' || type === 'police') && !opts.scale && this.carWant.length < NEAR_CARS * 2) {
       const d2 = (x - this.camX) ** 2 + (z - this.camZ) ** 2;
       if (d2 < NEAR_CARS_R * NEAR_CARS_R) {
-        this.carWant.push({ type, x, y, z, yaw, paint: paint.clone(), siren: !!opts.siren, pitch: opts.pitch || 0, roll: opts.roll || 0 });
+        this.carWant.push({ type, x, y, z, yaw, paint: paint.clone(), siren: !!opts.siren, pitch: opts.pitch || 0, roll: opts.roll || 0, parked: !!opts.parked });
         return;
       }
     }
     this.instancedVehicle(type, x, y, z, yaw, paint, opts);
   }
-  private instancedVehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: { siren?: boolean; beacon?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number } = {}): void {
+  private instancedVehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: VehOpts = {}): void {
     const v = this.veh[type];
     if (!v) return;
     const s = opts.scale || 1;
     v.paint.add(x, y, z, yaw, s, paint, opts.pitch || 0, opts.roll || 0);
     v.fixed.add(x, y, z, yaw, s, null, opts.pitch || 0, opts.roll || 0);
-    v.lights.add(x, y, z, yaw, s, null, opts.pitch || 0, opts.roll || 0);
+    v.lights.add(x, y, z, yaw, s, opts.parked ? LIGHTS_OFF : LIGHTS_ON, opts.pitch || 0, opts.roll || 0);
     if (v.siren) {
       const on = opts.siren || opts.beacon ? Math.floor(this.t * 6) % 2 : -1;
       // blue lights for the emergency services, amber beacons for a works van
@@ -267,6 +321,8 @@ export class Actors {
     }
   }
 
+  /** V2 (Milestone 8): the Founder has the first of the hire bikes out */
+  hireOut = false;
   /** the client adds its own figures each frame (the Founder's errands: a runaway dog) */
   extra: ((a: Actors) => void) | null = null;
   private drive: DrivewayCar[] = [];
@@ -344,15 +400,17 @@ export class Actors {
       const t = p.trip;
       const hint = dirYaw(p.dirx || 0, p.diry || 0);
       if (t.car || t.taxi) {
-        const sm = smooth(p, x, z, hint);
+        // V2 (Milestone 8): its true heading through the bends (no lag behind the turn), and out of its drive or
+        // bay onto the road at the start, and reversing into its spot at the end
+        const cp = this.carPose(p, t);
         const col = t.taxi ? hex('#f2c230') : CAR_COLORS[(t.car.seed || 0) % CAR_COLORS.length];
-        const gy = this.groundY(x, z, true);
-        this.vehicle(t.taxi ? 'taxi' : 'car', x, gy, z, sm.yaw, col);
-        if (p.bubble && p.bubbleUntil > now) this.wantBubble(x, gy + 2.3, z, p.bubble); // a driver's mood (the horn)
+        const gy = this.groundY(cp.x, cp.z, !cp.off);
+        this.vehicle(t.taxi ? 'taxi' : 'car', cp.x, gy, cp.z, cp.yaw, col);
+        if (p.bubble && p.bubbleUntil > now) this.wantBubble(cp.x, gy + 2.3, cp.z, p.bubble); // a driver's mood (the horn)
         continue;
       }
       if (t.moto) {
-        const sm = smooth(p, x, z, hint);
+        const sm = { yaw: headYaw(p) };
         const y = this.groundY(x, z, true);
         this.vehicle('moto', x, y, z, sm.yaw, CAR_COLORS[p.seed % CAR_COLORS.length]);
         this.person({ x, y: y + 0.35, z, yaw: sm.yaw, kind: p.kind, seed: p.seed, mode: 'sit', phase: 0 });
@@ -373,6 +431,71 @@ export class Actors {
     }
   }
 
+  /* V2 (Milestone 8): where a villager's car is drawn: in its lane (sim), or pulling out of the drive or bay it
+     stood in (a curve from the spot, out along the drive and round into the lane), or at the end of the drive
+     going past its spot and reversing in (so it ends up standing nose to the street, as the parked cars do) */
+  private cpOut = { x: 0, z: 0, yaw: 0, off: false };
+  private carPose(p: any, t: any): { x: number; z: number; yaw: number; off: boolean } {
+    const o = this.cpOut;
+    o.x = p.x * PX; o.z = p.y * PX; o.yaw = Math.atan2(p.hx ?? p.dirx ?? 0, p.hy ?? p.diry ?? 1); o.off = false;
+    const n = t.path.length;
+    const from = t.from && this.spotFree(p.at, t.from) ? t.from : null, to = t.to && this.spotFree(p.dest, t.to) ? t.to : null;
+    if (from && t.joined === false) { o.x = from.x; o.z = from.z; o.yaw = from.yaw; o.off = true; return o; }
+    if (from && t.prog < 1) {
+      // out of the spot: a curve from the spot, along its axis to the lane, then round into the lane
+      const l0 = lanePose(t.path, 0, Traffic.lanePx(t));
+      const c = axisMeetsLane(from, l0.x * PX, l0.y * PX, l0.hx, l0.hy);
+      const s = t.prog, a = 1 - s;
+      const px = a * a * from.x + 2 * a * s * c.x + s * s * o.x, pz = a * a * from.z + 2 * a * s * c.z + s * s * o.z;
+      const dx = 2 * a * (c.x - from.x) + 2 * s * (o.x - c.x), dz = 2 * a * (c.z - from.z) + 2 * s * (o.z - c.z);
+      o.x = px; o.z = pz; o.yaw = Math.atan2(dx, dz); o.off = s < 0.5;
+      return o;
+    }
+    if (to && (t.parkT || 0) > 0 && t.prog >= n - 1) {
+      // into the spot: on along the lane past it, then back in
+      const u = Math.min(1, t.parkT / PARK_TIME);
+      const hx = Math.sin(o.yaw), hz = Math.cos(o.yaw);
+      const c = axisMeetsLane(to, o.x, o.z, hx, hz);
+      const past = Math.max(0, (c.x - o.x) * hx + (c.z - o.z) * hz + 3);
+      const p0x = o.x + hx * past, p0z = o.z + hz * past;
+      if (u < 0.35) {
+        const k = THREE.MathUtils.smoothstep(u / 0.35, 0, 1);
+        o.x += hx * past * k; o.z += hz * past * k;
+        return o;
+      }
+      const s = THREE.MathUtils.smoothstep((u - 0.35) / 0.65, 0, 1), a = 1 - s;
+      const px = a * a * p0x + 2 * a * s * c.x + s * s * to.x, pz = a * a * p0z + 2 * a * s * c.z + s * s * to.z;
+      const dx = 2 * a * (c.x - p0x) + 2 * s * (to.x - c.x), dz = 2 * a * (c.z - p0z) + 2 * s * (to.z - c.z);
+      o.x = px; o.z = pz; o.off = s > 0.5;
+      // reversing: the nose points against the way it's moving
+      if (Math.hypot(dx, dz) > 1e-4) o.yaw = Math.atan2(-dx, -dz);
+      return o;
+    }
+    return o;
+  }
+  /** is a parking spot clear of the building's own walls (some plots are built right up to the street)? */
+  private spotOk = new Map<string, boolean>();
+  private spotFree(b: any, s: { x: number; z: number; yaw: number }): boolean {
+    if (!b) return false;
+    const key = `${b.id}|${b.variant}|${b.facing || 0}|${s.x.toFixed(1)},${s.z.toFixed(1)}`;
+    let ok = this.spotOk.get(key);
+    if (ok === undefined) {
+      const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+      ok = true;
+      for (const [x0, z0, x1, z1] of this.buildings.solidsNear(s.x, s.z, 4)) {
+        // the car's footprint, as five points along its length (it's 4.5 m by 1.8)
+        for (let k = -2; k <= 2 && ok; k++) for (const w of [-0.8, 0.8]) {
+          const px = s.x + fx * k * 1.05 + fz * w, pz = s.z + fz * k * 1.05 - fx * w;
+          if (px > x0 && px < x1 && pz > z0 && pz < z1) { ok = false; break; }
+        }
+        if (!ok) break;
+      }
+      if (this.spotOk.size > 4000) this.spotOk.clear();
+      this.spotOk.set(key, ok);
+    }
+    return ok;
+  }
+
   /* cars at home in the driveway, and at venues while their drivers are inside */
   private collectParked(): void {
     for (const b of World.buildings) {
@@ -390,16 +513,17 @@ export class Actors {
       if (b.construction > 0) {
         // a building site: no cars yet (its crew and materials are drawn below)
       } else if (d.res && b.cars) {
-        for (const c of drivewayCars(b, this.drive)) this.vehicle('car', c.x, 0.13, c.z, c.yaw, c.color);
+        for (const c of drivewayCars(b, this.drive)) this.vehicle('car', c.x, 0.13, c.z, c.yaw, c.color, { parked: true });
         this.drive.length = 0;
         if (b.bikes) {
           const [x, z] = toWorld(-W / 2 + 1.5, D / 2 - 2);
-          this.vehicle('moto', x, 0.1, z, yaw, CAR_COLORS[(b.id * 3) % CAR_COLORS.length]);
+          this.vehicle('moto', x, 0.1, z, yaw, CAR_COLORS[(b.id * 3) % CAR_COLORS.length], { parked: true });
         }
-      } else if (b.parked > 0 && d.visit) {
+      } else if (b.parked > 0 && !d.res) {
+        // V2 (Milestone 8): in marked bays across the front of the plot, nose in (sim/parking.ts)
         for (let k = 0; k < Math.min(4, b.parked); k++) {
-          const [x, z] = toWorld(-W / 2 + 2 + k * 2.5, D / 2 - 1.5);
-          this.vehicle('car', x, 0.13, z, yaw + Math.PI / 2, CAR_COLORS[(b.id + k * 3) % CAR_COLORS.length]);
+          const s = baySpot(b, k);
+          if (s && this.spotFree(b, s)) this.vehicle('car', s.x, 0.13, s.z, s.yaw, CAR_COLORS[(b.id + k * 3) % CAR_COLORS.length], { parked: true });
         }
       }
       // construction crews on site (V2: idle by an empty yard while they wait for materials)
@@ -409,13 +533,7 @@ export class Actors {
           this.person({ x, y: 0.1, z, yaw: yaw + (k ? 0.6 : -0.4), kind: 'man', seed: b.id * 7 + k, mode: 'stand', phase: 0, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
           if (k === 0 && Math.floor(this.t / 4 + b.id) % 3 === 0) this.wantBubble(x, 2.5, z, '⏳');
         }
-      } else if (b.construction > 0 || b.upgrading > 0) {
-        for (let k = 0; k < 2; k++) {
-          const a = this.t * 0.25 + k * Math.PI + b.id;
-          const x = bx + Math.cos(a) * (b.w * TM * 0.5 + 0.8), z = bz + Math.sin(a) * (b.h * TM * 0.5 + 0.8);
-          this.person({ x, y: 0.1, z, yaw: a + Math.PI, kind: 'man', seed: b.id * 7 + k, mode: 'walk', phase: this.t * 4 + k, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
-        }
-      }
+      } else if (b.construction > 0 || b.upgrading > 0) this.siteCrew(b, f, W, D, toWorld);
       // V2: the materials on site, a pallet for every few loads (none left: the site stalls)
       if (b.construction > 0 && b.mats > 0.3) {
         const n = Math.min(4, Math.ceil(b.mats / 5));
@@ -427,18 +545,68 @@ export class Actors {
     }
   }
 
+  /* V2 (Milestone 8): a crew at work on a building site, sized to the job: bricklayers and carpenters up on the
+     scaffold at the height the walls have reached, hammering away; a labourer carrying loads from the pallets to
+     the foot of the scaffold and walking back for more; a foreman with the plans by the gate. In working hours
+     only (after dark the site stands quiet). They used to be two men walking round and round the plot. */
+  private siteCrew(b: any, f: number, W: number, D: number, toWorld: (lx: number, lz: number) => number[]): void {
+    const c = Sim.clock;
+    if (c < 400 || c > 1110) return;
+    const H = this.buildings.heightOf(b.id);
+    const p = b.construction > 0 ? Math.max(0.04, 1 - b.construction / Math.max(1, b.conTotal || 40 + b.w * b.h * 22)) : 1;
+    const top = H * p;
+    // the plank they stand on: the scaffold's lift just below the top of the walls (on the ground at first)
+    const lift = top < 2.4 ? 0 : Math.min(Math.floor((top - 0.6) / 2) * 2, Math.max(0, H - 2));
+    const x0 = -W / 2 + 0.4, x1 = W / 2 - 0.4, z0 = -D / 2 + 0.4, z1 = D / 2 - 0.4;
+    const yawOf = (dx: number, dz: number): number => {
+      const [rx, rz] = f === 0 ? [dx, dz] : f === 1 ? [dz, -dx] : f === 2 ? [-dx, -dz] : [-dz, dx];
+      return Math.atan2(rx, rz);
+    };
+    const hi = hex('#f26a1a'), hat = hex('#f2c230');
+    const crew = Math.max(2, Math.min(6, 1 + Math.round((W * D) / 90)));
+    // the scaffold's four sides (local), each worker on a stretch of one, facing the wall
+    const sides: [number, number, number, number, number, number][] = [
+      [x0, z1 + 0.05, x1, z1 + 0.05, 0, -1], [x1 + 0.05, z0, x1 + 0.05, z1, -1, 0], [x0, z0 - 0.05, x1, z0 - 0.05, 0, 1], [x0 - 0.05, z0, x0 - 0.05, z1, 1, 0],
+    ];
+    for (let k = 1; k < crew; k++) {
+      const [ax, az, bx2, bz2, fx, fz] = sides[(k + b.id) % 4];
+      // a spot along the plank, moved on every half a minute or so (a few steps along to the next stretch)
+      const seg = Math.floor(this.t / 28 + k * 0.37 + b.id), shift = this.t / 28 + k * 0.37 + b.id - seg;
+      const u0 = ((hash2(b.id * 31 + k, seg) % 1000) / 1000) * 0.8 + 0.1, u1 = ((hash2(b.id * 31 + k, seg + 1) % 1000) / 1000) * 0.8 + 0.1;
+      const walking = shift > 0.9;
+      const u = walking ? u0 + (u1 - u0) * (shift - 0.9) * 10 : u0;
+      const lx = ax + (bx2 - ax) * u, lz = az + (bz2 - az) * u;
+      const [x, z] = toWorld(lx, lz);
+      const along = Math.sign(u1 - u0) || 1;
+      const yaw = walking ? yawOf((bx2 - ax) * along, (bz2 - az) * along) : yawOf(fx, fz);
+      this.person({ x, y: lift + 0.05, z, yaw, kind: 'man', seed: b.id * 7 + k, mode: walking ? 'walk' : 'work', phase: this.t * 4 + k, shirt: hi, hair: hat });
+    }
+    // the labourer: a load from the pallets at the front corner to the foot of the scaffold, and back for more
+    const cyc = (this.t / 14 + b.id * 0.13) % 1;
+    const from = toWorld(W / 2 - 1.2, D / 2 - 1.1), to = toWorld(-W / 4, z1 + 0.6);
+    const out = cyc < 0.42, back = cyc > 0.5 && cyc < 0.92;
+    const k = out ? cyc / 0.42 : back ? 1 - (cyc - 0.5) / 0.42 : cyc <= 0.5 ? 1 : 0;
+    const lx = from[0] + (to[0] - from[0]) * k, lz = from[1] + (to[1] - from[1]) * k;
+    const yaw = out ? Math.atan2(to[0] - from[0], to[1] - from[1]) : Math.atan2(from[0] - to[0], from[1] - to[1]);
+    this.person({ x: lx, y: 0.1, z: lz, yaw, kind: 'man', seed: b.id * 7 + 9, mode: out ? 'carry' : back ? 'walk' : 'work', phase: this.t * 4, shirt: hi, hair: hat });
+    if (out) this.prop('crate', lx + Math.sin(yaw) * 0.45, 0.95, lz + Math.cos(yaw) * 0.45, yaw, 0.55);
+    // the foreman, by the front with the plans
+    const [fx2, fz2] = toWorld(-W / 2 + 1.3, D / 2 + 0.9);
+    this.person({ x: fx2, y: 0.1, z: fz2, yaw: yawOf(0.3, -1), kind: 'man', seed: b.id * 7 + 13, mode: 'stand', phase: 0, shirt: hex('#f4f4f0'), hair: hex('#f4f4f4') });
+  }
+
   /* police, fire brigade, burglars, crashes, disputes, road works, reporters */
   private collectServices(): void {
     for (const u of Life.police) {
       const x = u.x * PX, z = u.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(u, x, z, dirYaw(u.dirx, u.diry));
+      const sm = { yaw: headYaw(u) };
       this.vehicle('police', x, this.groundY(x, z, true), z, sm.yaw, hex('#f4f6f7'), { siren: u.phase === 'go' || u.phase === 'scene' });
     }
     for (const u of Life.fireTrucks) {
       const x = u.x * PX, z = u.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(u, x, z, dirYaw(u.dirx, u.diry));
+      const sm = { yaw: headYaw(u) };
       this.vehicle('fire', x, this.groundY(x, z, true), z, sm.yaw, hex('#c0302a'), { siren: u.phase !== 'return' });
       if (u.phase === 'douse' && u.target) {
         // the crew on the hose
@@ -493,7 +661,7 @@ export class Actors {
     for (const a of Life.ambulances) {
       const x = a.x * PX, z = a.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(a, x, z, dirYaw(a.dirx, a.diry));
+      const sm = { yaw: headYaw(a) };
       this.vehicle('ambulance', x, this.groundY(x, z, true), z, sm.yaw, hex('#f6f6f2'), { siren: a.phase !== 'return' || a.patient?.state === 'amb' });
       if (a.phase === 'treat' && a.patient) {
         // two paramedics over the casualty, the bag open beside them
@@ -510,7 +678,7 @@ export class Actors {
     for (const t of Life.trucks) {
       const x = t.x * PX, z = t.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(t, x, z, dirYaw(t.dirx, t.diry));
+      const sm = { yaw: headYaw(t) };
       this.vehicle('truck', x, this.groundY(x, z, true), z, sm.yaw, hex(GOODS[t.g as keyof typeof GOODS].color));
       if (t.phase === 'drop') {
         // the driver wheels the load in
@@ -523,7 +691,7 @@ export class Actors {
       if (c.phase === 'wait') continue; // still setting out from the county yard
       const x = c.x * PX, z = c.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(c, x, z, dirYaw(c.dirx, c.diry));
+      const sm = { yaw: headYaw(c) };
       this.vehicle('van', x, this.groundY(x, z, true), z, sm.yaw, hex('#f2f0e8'), { beacon: c.phase === 'fix' || c.phase === 'go' });
       if (c.phase === 'fix') {
         // two linesmen in hi-vis at the kerb, one up a ladder at the pole
@@ -581,28 +749,29 @@ export class Actors {
   /* buses, cabs, trains, tourists, campaign cars, boats and the ferry */
   private collectTransit(): void {
     for (const bus of Life.buses) {
+      if (bus.hidden) continue; // (back at the depot for the night)
       const x = bus.x * PX, z = bus.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(bus, x, z, dirYaw(bus.dirx, bus.diry));
+      const sm = { yaw: headYaw(bus) };
       this.vehicle('bus', x, this.groundY(x, z, true), z, sm.yaw, hex('#2a6ab8'));
     }
     for (const cab of Life.taxis) {
       const x = cab.x * PX, z = cab.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(cab, x, z, dirYaw(cab.dirx, cab.diry));
+      const sm = { yaw: headYaw(cab) };
       this.vehicle('taxi', x, this.groundY(x, z, true), z, sm.yaw, hex('#f2c230'));
     }
     for (const t of Life.tourists) {
       if (t.phase === 'visit') continue;
       const x = t.x * PX, z = t.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(t, x, z, dirYaw(t.dirx, t.diry));
+      const sm = { yaw: headYaw(t) };
       this.vehicle('car', x, this.groundY(x, z, true), z, sm.yaw, CAR_COLORS[(t.seed + 3) % 8]);
     }
     for (const cc of Life.campaignCars) {
       const x = cc.x * PX, z = cc.y * PX;
       if (!this.near(x, z, 40)) continue;
-      const sm = smooth(cc, x, z, dirYaw(cc.dirx, cc.diry));
+      const sm = { yaw: headYaw(cc) };
       const col = Gov.campaign ? hex(Gov.campaign.candidates[cc.ci]?.color || '#4f8ede') : hex('#4f8ede');
       this.vehicle('car', x, this.groundY(x, z, true), z, sm.yaw, col);
     }
@@ -614,12 +783,12 @@ export class Actors {
       for (let k = 0; k < n; k++) {
         const prog = tr.prog - tr.dir * k * 1.2;
         if (prog < -0.4 || prog > tr.route.length - 0.6) continue;
-        const pt = pathAt(tr.route, Math.max(0, Math.min(tr.route.length - 1, prog)));
-        const horiz = pt.dx !== 0;
-        const x = pt.x * TM + 4 + (horiz ? 0 : lane), z = pt.y * TM + 4 + (horiz ? lane : 0);
+        // V2 (Milestone 8): every car round the curve on the train's own track (it used to swap tracks at a bend)
+        const pt = railPose(tr.route, Math.max(0, Math.min(tr.route.length - 1, prog)), lane / PX);
+        const x = pt.x * PX, z = pt.y * PX;
         if (!this.near(x, z, 60)) continue;
-        const yaw = Math.atan2(pt.dx * tr.dir, pt.dy * tr.dir);
-        const onBridge = World.ground[World.idx(Math.floor(pt.x + 0.5), Math.floor(pt.y + 0.5))] === 1;
+        const yaw = Math.atan2(pt.hx * tr.dir, pt.hy * tr.dir);
+        const onBridge = World.ground[World.idx(Math.floor(x / TM), Math.floor(z / TM))] === 1;
         const y = onBridge ? 0.5 : 0.38;
         const type = k === 0 ? 'loco' : tr.type === 'freight' ? 'wagon' : 'coach';
         const paint = tr.type === 'freight' ? hex(k === 0 ? '#3a4a3a' : '#8a5a3a') : tr.type === 'express' ? hex('#c8ccd4') : tr.type === 'nightliner' ? hex('#2a3a6a') : tr.type === 'intercity' ? hex(k === 0 ? '#e8e4da' : '#2a5a9a') : hex('#c0392b');
@@ -716,6 +885,18 @@ export class Actors {
       if (!this.near(x, z, 80)) continue;
       const sm = smooth(h, x, z, null);
       const y = heightAt(x, z);
+      if (h.bike) {
+        // (V2 (Milestone 8): a mountain biker, astride; off and standing by it at the top)
+        const kit = SHIRT[(h.seed >> 2) % SHIRT.length];
+        if (h.pause > 0) {
+          this.vehicle('bicycle', x + Math.cos(sm.yaw) * 0.6, y, z - Math.sin(sm.yaw) * 0.6, sm.yaw, CAR_COLORS[h.seed % CAR_COLORS.length], { parked: true });
+          this.person({ x, y, z, yaw: sm.yaw, kind: h.seed % 2 ? 'woman' : 'man', seed: h.seed, mode: 'stand', phase: 0, shirt: kit });
+        } else {
+          this.vehicle('bicycle', x, y, z, sm.yaw, CAR_COLORS[h.seed % CAR_COLORS.length], { parked: true });
+          this.person({ x, y: y + 0.3, z, yaw: sm.yaw, kind: h.seed % 2 ? 'woman' : 'man', seed: h.seed, mode: 'sit', phase: 0, shirt: kit });
+        }
+        continue;
+      }
       this.person({ x, y, z, yaw: sm.yaw, kind: h.seed % 2 ? 'woman' : 'man', seed: h.seed, mode: h.pause > 0 ? 'stand' : 'walk', phase: sm.phase, shirt: hex('#c0703a') });
       if (Sim.clock > 1140 || Sim.clock < 360) this.prop('torch', x, y, z, sm.yaw, 1, hex('#ffb040'));
     }
@@ -735,6 +916,17 @@ export class Actors {
       const flap = Math.sin(b.ph) * 0.6;
       this.props.bird.add(x, 32 + Math.sin(b.ph * 0.3) * 2, z, b.vx > 0 ? Math.PI / 2 : -Math.PI / 2, 1.4, null, 0, flap);
     }
+    // V2 (Milestone 8): the hire bikes in their rack at the foot of each peak's trail
+    for (const pk of World.peaks) {
+      const th = trailhead(pk);
+      if (!this.near(th.x, th.z, 30)) continue;
+      const fx = Math.sin(th.yaw), fz = Math.cos(th.yaw), rx = Math.cos(th.yaw), rz = -Math.sin(th.yaw);
+      for (let k = 0; k < 3; k++) {
+        const s = 2.1 + k * 1.1, bx = th.x + rx * s - fx * 1.2, bz = th.z + rz * s - fz * 1.2;
+        if (this.hireOut && k === 0) continue;
+        this.vehicle('bicycle', bx, 0.02, bz, th.yaw, hex(['#2a6ad0', '#d0402a', '#2aa060'][k]), { parked: true });
+      }
+    }
     // V2: puddles are part of the wet-surface shader (they mirror the street), not discs
     const tn = Calamity.tornado;
     if (tn) {
@@ -751,24 +943,7 @@ export class Actors {
   /* Christmas, Diwali, campaign banners and camps */
   private collectFestive(night: number): void {
     const F = Festivals;
-    const tree = F.tree;
-    let plazaShown = false;
-    if (tree) {
-      const x = tree.x * TM + 8, z = tree.y * TM + 8;
-      if (tree.phase === 'hauling' && tree.haulPath && tree.haulPath.length > 1) {
-        const pt = pathAt(tree.haulPath, Math.min(tree.haulPath.length - 1, tree.prog));
-        const hx = pt.x * TM + 4, hz = pt.y * TM + 4;
-        const yaw = Math.atan2(pt.dx, pt.dy);
-        this.prop('log', hx, 1.2, hz, yaw);
-        this.vehicle('car', hx + Math.sin(yaw) * 7, 0.03, hz + Math.cos(yaw) * 7, yaw, hex('#5a6a3a'), { scale: 1.2 });
-      } else if (tree.phase === 'raising' || tree.phase === 'lit') {
-        const s = tree.phase === 'raising' ? 0.3 + tree.prog * 0.7 : 1;
-        // V2: the tree stands in its own square (gfx/festive), rising while it's raised
-        plazaShown = true;
-        this.plaza.update(this.dt, true, x, z, s, tree.phase === 'lit', night, this.t);
-      }
-    }
-    if (!plazaShown) this.plaza.update(this.dt, false, 0, 0, 0, false, night, this.t);
+    this.plaza.update(this.dt, F.tree ? this.treeScene(F.tree) : null, night, this.t);
     for (const mk of F.markets) {
       const x0 = mk.x * TM, z0 = mk.y * TM;
       if (!this.near(x0, z0)) continue;
@@ -786,7 +961,7 @@ export class Actors {
     const santa = F.santa;
     if (santa) {
       const x = santa.x * PX, z = santa.y * PX;
-      const sm = smooth(santa, x, z, dirYaw(santa.dirx, santa.diry));
+      const sm = smooth(santa, x, z, headYaw(santa));
       this.person({ x, y: this.groundY(x, z, false), z, yaw: sm.yaw, kind: 'man', seed: 4242, mode: 'walk', phase: sm.phase, shirt: hex('#d02020'), pants: hex('#d02020'), hair: hex('#f4f4f4'), scale: 1.08 });
     }
     if (F.sleigh) {
@@ -842,6 +1017,96 @@ export class Actors {
         this.person({ x: x + 2.2, y: 0, z: z + 1, yaw: Math.sin(this.t + cp.ci) * 1.5, kind: cp.ci % 2 ? 'woman' : 'man', seed: cp.ci * 11 + cp.x, mode: 'stand', phase: 0, shirt: hex(camp.candidates[cp.ci]?.color || '#888') });
       }
     }
+  }
+
+  /* V2 (Milestone 8): the great tree's year, Rockefeller-style (sim/festivals.ts tickTree): the head gardener's
+     helicopter over the woods, the crane and the saws at the tree, the flatbed lying in wait and then crawling
+     through town between two squad cars on blue lights, the crane standing it up in the square, the crew on the
+     scaffolding stringing the lights from the bottom up, the star hoisted, the stage and the crowd on lighting
+     night, and then the lights on their hours */
+  private treeScene(tree: any): TreeScene {
+    const H = 24, T2 = this.t;
+    const px = tree.x * TM + 8, pz = tree.y * TM + 8;
+    const sc: TreeScene = { plaza: null, tree: null, lights: 0, lit: false, star: -1, scaffold: false, crane: null, flatbed: null, stage: false };
+    const src = tree.src ? { x: tree.src.x * TM + 4, z: tree.src.y * TM + 4 } : null;
+    // the road beside the tree's garden (where the crane and the flatbed stand), and which way it runs
+    if (src && !tree._road) {
+      const r = World.nearestRoad(tree.src.x, tree.src.y, 30);
+      if (r) tree._road = { x: r.x * TM + 4, z: r.y * TM + 4, yaw: World.isRoad(r.x - 1, r.y) || World.isRoad(r.x + 1, r.y) ? Math.PI / 2 : 0 };
+    }
+    const road = tree._road as { x: number; z: number; yaw: number } | undefined;
+    const lying = (fx: number, fz: number, yaw: number): TreeScene['tree'] => ({ x: fx + Math.sin(yaw) * 6, y: 2.3, z: fz + Math.cos(yaw) * 6, yaw: yaw + Math.PI, tilt: Math.PI / 2 });
+    const ph = tree.phase;
+    if (ph === 'scouting' && src && Sim.clock > 480 && Sim.clock < 1020) {
+      // the head gardener's helicopter, circling the woods
+      const a = T2 * 0.12 + tree.year;
+      this.vehicle('heli', src.x + Math.cos(a) * 70, 72, src.z + Math.sin(a) * 70, a + Math.PI, hex('#2a4a8a'), { rotor: T2 * 30 });
+    }
+    if (ph === 'cutting' && src && road) {
+      sc.crane = { x: road.x + Math.cos(road.yaw) * 5, z: road.z - Math.sin(road.yaw) * 5, hx: src.x, hy: 14, hz: src.z };
+      for (let k = 0; k < 3; k++) {
+        const a = k * 2.1 + 0.4;
+        this.person({ x: src.x + Math.cos(a) * 1.2, y: 0.05, z: src.z + Math.sin(a) * 1.2, yaw: Math.atan2(-Math.cos(a), -Math.sin(a)), kind: 'man', seed: 777 + k, mode: 'work', phase: T2 * 3 + k, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+      }
+    }
+    if (ph === 'loaded' && road) {
+      sc.flatbed = { x: road.x, z: road.z, yaw: road.yaw };
+      sc.tree = lying(road.x, road.z, road.yaw);
+    }
+    if (ph === 'hauling' && tree.cv) {
+      const cv = tree.cv, yaw = Math.atan2(cv.hx ?? cv.dirx ?? 0, cv.hy ?? cv.diry ?? 1), mx = cv.x * PX, mz = cv.y * PX;
+      sc.flatbed = { x: mx, z: mz, yaw };
+      sc.tree = lying(mx, mz, yaw);
+      // the escort: a squad car ahead and one behind, blue lights going
+      const path = tree.haulPath;
+      if (path && path.length > 1) for (const k of [3.4, -2.6]) {
+        const p = lanePose(path, Math.max(0, Math.min(path.length - 1, tree.prog + k)), Traffic.lanePx(null));
+        this.vehicle('police', p.x * PX, 0.03, p.y * PX, Math.atan2(p.hx, p.hy), hex('#f4f6f7'), { siren: true });
+      }
+    }
+    if (['arrived', 'raising', 'decorating', 'ceremony', 'lit'].includes(ph)) {
+      sc.plaza = { x: px, z: pz };
+      const yaw = 0.35;
+      if (ph === 'arrived') {
+        sc.flatbed = { x: px + 18, z: pz, yaw: 0 };
+        sc.tree = lying(px + 18, pz, 0);
+      } else if (ph === 'raising') {
+        const tilt = (Math.PI / 2) * (1 - THREE.MathUtils.smoothstep(tree.prog, 0, 1));
+        sc.tree = { x: px, y: 0.6, z: pz, yaw, tilt };
+        // the hook on the tree, two thirds of the way up its trunk
+        const up = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(tilt, yaw, 0, 'YXZ')).multiplyScalar(H * 0.66);
+        sc.crane = { x: px - 20, z: pz + 6, hx: px + up.x, hy: 0.6 + up.y, hz: pz + up.z };
+      } else sc.tree = { x: px, y: 0.6, z: pz, yaw, tilt: 0 };
+      if (ph === 'decorating') {
+        sc.scaffold = true;
+        sc.lights = tree.prog;
+        if (tree.star) {
+          sc.star = tree.starT || 0;
+          if ((tree.starT || 0) < 1) sc.crane = { x: px - 20, z: pz + 6, hx: px, hy: 1 + (tree.starT || 0) * H + 1.4, hz: pz };
+        }
+        // the crew up on the scaffolding, at the level the lights have reached
+        if (Sim.clock > 420 && Sim.clock < 1080) {
+          const lv = Math.min(6, Math.floor(tree.prog * 7)), y = 1 + lv * 3, r = Math.max(0.3, (1 - y / H) * H * 0.3 * 0.92) + 1.1;
+          for (let k = 0; k < 5; k++) {
+            const a = k * 1.256 + T2 * 0.02;
+            this.person({ x: px + Math.cos(a) * r, y: y + 0.06, z: pz + Math.sin(a) * r, yaw: Math.atan2(-Math.cos(a), -Math.sin(a)), kind: 'man', seed: 900 + k, mode: 'work', phase: T2 * 3 + k, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+          }
+        }
+      }
+      if (ph === 'ceremony' || ph === 'lit') { sc.lights = 1; sc.star = 1; }
+      if (ph === 'ceremony') sc.stage = !!tree.stage || Sim.clock >= 1170;
+      if (ph === 'lit') sc.lit = Festivals.treeLightsOn();
+      // a crowd round the rink: hundreds on lighting night, a gathering on any lit evening
+      const crowd = ph === 'ceremony' && Sim.clock >= 1170 ? 56 : ph === 'lit' && sc.lit && Sim.clock > 1050 && Sim.clock < 1380 ? 18 : 0;
+      for (let k = 0; k < crowd; k++) {
+        const a = k * 2.399 + 0.3, r = 12.2 + (k % 4) * 0.8;
+        const x = px + Math.cos(a) * r, z = pz + Math.sin(a) * r;
+        if (sc.stage && z > pz + 12 && Math.abs(x - px) < 6) continue; // (clear of the stage)
+        this.person({ x, y: 0.1, z, yaw: Math.atan2(px - x, pz - z), kind: k % 3 === 0 ? 'woman' : k % 7 === 0 ? 'kid' : 'man', seed: 5000 + k * 13, mode: 'stand', phase: 0 });
+      }
+      if (sc.stage) for (let k = 0; k < 3; k++) this.person({ x: px - 2.5 + k * 2.5, y: 1.1, z: pz + 16.5, yaw: Math.PI, kind: k === 1 ? 'woman' : 'man', seed: 6100 + k, mode: k === 1 ? 'stand' : 'work', phase: T2 * 2 + k, shirt: hex(['#c0392b', '#f4f0e4', '#2a5a3a'][k]) });
+    }
+    return sc;
   }
 
   /* burning buildings: GPU flames, embers and smoke, and a flickering glow */
@@ -945,11 +1210,11 @@ export class Actors {
       e.seen = this.t;
       const r = e.person.root;
       r.visible = true;
-      const pose: Pose = p.mode === 'walk' || p.mode === 'run' ? 'walk' : p.mode === 'sit' ? 'sit' : p.mode === 'lie' ? 'lie' : 'idle';
+      const pose: Pose = p.mode === 'walk' || p.mode === 'run' ? 'walk' : p.mode === 'sit' ? 'sit' : p.mode === 'lie' ? 'lie' : p.mode === 'work' ? 'work' : p.mode === 'carry' ? 'carry' : 'idle';
       r.position.set(p.x, p.y + (p.mode === 'lie' ? 0.14 : 0), p.z);
       r.rotation.set(p.mode === 'lie' ? -Math.PI / 2 : 0, p.yaw, 0, 'YXZ');
       if (p.mode === 'sit') r.position.y -= 0.02;
-      e.person.animate(this.dt, pose, p.mode === 'run' ? 3.1 : 1.35, rain);
+      e.person.animate(this.dt, pose, p.mode === 'run' ? 3.1 : p.mode === 'carry' ? 1.1 : 1.35, rain);
     }
     for (const [k, e] of this.nearPeople) {
       if (e.seen === this.t) continue;
@@ -971,7 +1236,7 @@ export class Actors {
     const wants = this.carWant.map((w) => ({ w, d: (w.x - this.camX) ** 2 + (w.z - this.camZ) ** 2 })).sort((a, b) => a.d - b.d);
     let shown = 0;
     for (const { w } of wants) {
-      if (shown >= NEAR_CARS) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, pitch: w.pitch, roll: w.roll }); continue; }
+      if (shown >= NEAR_CARS) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, pitch: w.pitch, roll: w.roll, parked: w.parked }); continue; }
       const style = w.type === 'taxi' ? 'sedan' : w.type === 'police' ? 'estate' : styleForPaint(w.paint);
       const kind = `${w.type}:${style}`;
       // the same car as last frame: the nearest slot of this kind within a few metres
@@ -983,7 +1248,7 @@ export class Actors {
       }
       if (!best) best = this.carSlots.find((s) => !s.used && s.kind === kind && this.t - s.seen > 0.4) || null;
       if (!best) {
-        if (this.carSlots.length >= NEAR_CARS + 8) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren }); continue; }
+        if (this.carSlots.length >= NEAR_CARS + 8) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, parked: w.parked }); continue; }
         const car = new CarModel(style, w.paint, w.type !== 'taxi', w.type === 'taxi' ? 'taxi' : w.type === 'police' ? 'police' : undefined);
         this.group.add(car.root);
         best = { car, kind, x: w.x, z: w.z, yaw: w.yaw, v: 0, a: 0, used: false, seen: this.t };
@@ -1003,7 +1268,8 @@ export class Actors {
       best.x = w.x; best.z = w.z; best.yaw = w.yaw; best.seen = this.t;
       best.car.root.visible = true;
       best.car.drive(dt, w.x, w.z, w.yaw, vs, best.a, dy / dt, w.y);
-      best.car.lights(this.night > 0.2 || Weather.isRaining() || Weather.isSnowing(), this.night);
+      // (a parked car stands dark: no headlamps, no tail lamps, no brake lights)
+      best.car.lights(!w.parked && (this.night > 0.2 || Weather.isRaining() || Weather.isSnowing()), this.night, w.parked);
       best.car.setSiren(w.siren, this.t);
     }
     for (const s of this.carSlots) if (!s.used) s.car.root.visible = false;
@@ -1022,7 +1288,7 @@ export class Actors {
       const cy = Math.cos(p.yaw), sy = Math.sin(p.yaw);
       const off = (lx: number, lz: number): [number, number] => [p.x + lx * cy + lz * sy, p.z - lx * sy + lz * cy];
       let swing = 0;
-      if (p.mode === 'walk') swing = Math.sin(p.phase) * 0.55;
+      if (p.mode === 'walk' || p.mode === 'carry') swing = Math.sin(p.phase) * 0.55;
       else if (p.mode === 'run') swing = Math.sin(p.phase * 1.4) * 0.95;
       if (p.mode === 'lie') {
         // lying on a towel: the whole figure tipped flat
@@ -1037,7 +1303,9 @@ export class Actors {
         const [lx, lz] = off(side * 0.11 * s, 0);
         this.legs.add(lx, hipY, lz, p.yaw, s, pants, p.mode === 'sit' ? -1.3 : swing * side);
         const [ax, az] = off(side * 0.3 * s, 0);
-        this.arms.add(ax, hipY + 0.62 * s, az, p.yaw, s, tmpC.copy(shirt), p.mode === 'sit' ? -0.9 : -swing * side * 0.8);
+        // (arms forward under a load; the hammer arm beating on a site)
+        const arm = p.mode === 'sit' ? -0.9 : p.mode === 'carry' ? -1.2 : p.mode === 'work' ? (side > 0 ? -0.6 - Math.abs(Math.sin(this.t * 4.2 + p.seed)) * 1.5 : -0.8) : -swing * side * 0.8;
+        this.arms.add(ax, hipY + 0.62 * s, az, p.yaw, s, tmpC.copy(shirt), arm);
       }
       this.torso.add(p.x, hipY, p.z, p.yaw, s, shirt);
       this.head.add(p.x, hipY + 0.68 * s, p.z, p.yaw, s, skin);
@@ -1053,6 +1321,11 @@ export class Actors {
   /** V2 (Milestone 7): the thought bubbles' shader is compiled with everything else before the first frame
    *  (one bubble, textured, out of sight, while the stage warms up), not the first time someone has a thought */
   prewarm(on: boolean): void {
+    // V2 (Milestone 8): in the Christmas season the great tree's square (and its crane, flatbed, stage) is built and
+    // compiled before the first frame too, out of sight
+    if (Festivals.tree || Festivals.yearDay() >= 14) {
+      this.plaza.update(0, on ? { plaza: { x: 0, z: -900 }, tree: { x: 0, y: -60, z: -900, yaw: 0, tilt: 0 }, lights: 1, lit: true, star: 1, scaffold: true, crane: { x: 20, z: -900, hx: 0, hy: -40, hz: -900 }, flatbed: { x: 0, z: -880, yaw: 0 }, stage: true } : null, 1, 0);
+    }
     const s = this.bubbles[0];
     if (!s) return;
     s.visible = on;
@@ -1098,19 +1371,47 @@ export class Actors {
       c.set(s.hue).multiplyScalar(Math.min(1, s.life + 0.2));
       this.spark(s.x * PX, 8 + (s.gy - s.y) * PX, s.gy * PX, c.r, c.g, c.b);
     }
-    // fireflies on warm nights among the trees
-    if (Weather.season <= 1 && (Sim.clock > 1200 || Sim.clock < 300) && !Weather.isRaining())
-      for (const f of Life.fireflySpots) {
-        const x = f.x * PX + Math.sin(this.t + f.ph) * 2, z = f.y * PX + Math.cos(this.t * 0.7 + f.ph) * 2;
-        if (!this.near(x, z)) continue;
-        const k = (Math.sin(this.t * 3 + f.ph * 5) + 1) / 2;
-        this.spark(x, 1.5 + Math.sin(this.t + f.ph) * 0.6, z, 0.8 * k, 1.0 * k, 0.3 * k);
-      }
     const geo = this.sparks.geometry;
     geo.setDrawRange(0, this.sparkN);
     (geo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
     (geo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
     this.sparkN = 0;
+    this.drawFireflies();
+  }
+
+  /* V2 (Milestone 8): fireflies on warm, dry nights at the edge of the woods: a little swarm at each spot,
+     drifting a metre or two over the grass, each flashing for a moment every few seconds (they were
+     0.9 m squares hovering at head height) */
+  private drawFireflies(): void {
+    let n = 0;
+    const warm = Weather.season <= 1 && (Sim.clock > 1230 || Sim.clock < 270) && !Weather.isRaining();
+    if (warm && this.night > 0.5) {
+      for (let s = 0; s < Life.fireflySpots.length && n < FLIES; s++) {
+        const f = Life.fireflySpots[s];
+        const fx = f.x * PX, fz = f.y * PX;
+        if ((fx - this.camX) ** 2 + (fz - this.camZ) ** 2 > 70 * 70) continue;
+        for (let k = 0; k < 6 && n < FLIES; k++) {
+          const ph = f.ph * 7.1 + k * 2.39;
+          const t = this.t * (0.16 + (k % 3) * 0.05) + ph;
+          // a lazy figure-of-eight drift, rising and settling
+          const x = fx + Math.sin(t) * 3.2 + Math.sin(t * 2.3 + k) * 0.6;
+          const z = fz + Math.sin(t * 0.8 + 1.3) * Math.cos(t * 0.5) * 3.2;
+          const y = 0.35 + (Math.sin(t * 0.7 + k * 0.9) + 1) * 0.6;
+          // the flash: about half a second in every three to five
+          const per = 3 + (k % 4) * 0.6;
+          const u = ((this.t + ph * 3) % per) / per;
+          const b = u < 0.12 ? Math.sin((u / 0.12) * Math.PI) : 0;
+          if (b <= 0.02) continue;
+          const i = n++ * 3;
+          this.flyPos[i] = x; this.flyPos[i + 1] = heightAt(x, z) + y; this.flyPos[i + 2] = z;
+          this.flyCol[i] = 0.55 * b; this.flyCol[i + 1] = 0.9 * b; this.flyCol[i + 2] = 0.18 * b;
+        }
+      }
+    }
+    const geo = this.flies.geometry;
+    geo.setDrawRange(0, n);
+    (geo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    (geo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
   }
 }
 

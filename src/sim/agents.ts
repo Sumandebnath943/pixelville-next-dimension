@@ -12,7 +12,9 @@ import { Gov } from './gov';
 import { Tasks } from './tasks';
 import { Calamity } from './calamity';
 import { Settings } from './settings';
-import { Traffic, CAR_LEN } from './traffic';
+import { Traffic, CAR_LEN, LANE, lanePose } from './traffic';
+import { Walk } from './walking';
+import { spotFor, PARK_TIME } from './parking';
 import { Rep } from './reputation';
 import { Health } from './health';
 import { Edu, ESSENTIAL } from './education';
@@ -1514,12 +1516,29 @@ export const Sim: any = {
       }
       // V2: drivers keep their distance, give way at junctions, stop for people
       // crossing, and brake for red lights and lowered gates (src/sim/traffic.ts)
-      if (t.car || t.taxi || t.moto) t.prog += Traffic.advance(p, t, t.path, t.prog, 1, t.moto ? 1.4 : CAR_SPEED, dt, t.moto ? 0.3 : CAR_LEN);
-      else if (t.hurryT > 0) { // V2: hurrying past someone they'd rather avoid (the Founder, usually)
-        t.hurryT -= dt;
-        t.prog += WALK_SPEED * 1.7 * dt;
-      } else t.prog += WALK_SPEED * dt;
+      if (t.car || t.taxi || t.moto) {
+        // V2 (Milestone 8): waiting in the drive for a gap to pull out into
+        if (t.joined === false) {
+          t.waitJoin = (t.waitJoin || 0) + dt;
+          if (!Traffic.roomToJoin(p, t.path) && t.waitJoin < 20) {
+            const pose = lanePose(t.path, 0, Traffic.lanePx(t));
+            p.x = pose.x; p.y = pose.y; p.dirx = pose.dx; p.diry = pose.dy; p.hx = pose.hx; p.hy = pose.hy;
+            return;
+          }
+          t.joined = true;
+        }
+        t.prog += Traffic.advance(p, t, t.path, t.prog, 1, t.moto ? 1.4 : CAR_SPEED, dt, t.moto ? 0.3 : CAR_LEN);
+      } else {
+        // V2 (Milestone 8): on foot, along a pavement at their own pace, stepping aside for others,
+        // waiting at the kerb before crossing (sim/walking.ts)
+        if (!t.walk) Walk.plan(p, t, p.at, p.dest);
+        let pace = WALK_SPEED;
+        if (t.hurryT > 0) { t.hurryT -= dt; pace *= 1.7; } // V2: hurrying past someone they'd rather avoid (the Founder, usually)
+        t.prog += Walk.step(p, t, dt, pace);
+      }
       if (t.prog >= t.path.length - 1) { // arrived
+        // V2 (Milestone 8): a car reverses into its spot (the drive at home, a bay at the venue) before anyone gets out
+        if (t.car && t.to && (t.parkT || 0) < PARK_TIME) { t.parkT = (t.parkT || 0) + dt; return; }
         const dest = p.dest;
         p.state = 'in'; p.at = dest; p.trip = null; p.dest = null;
         if (dest !== p.home) {
@@ -1580,34 +1599,47 @@ export const Sim: any = {
         }
         return;
       }
-      // interpolate position
-      const i = Math.floor(t.prog), f = t.prog - i;
-      const [ax, ay] = t.path[i], [bx, by] = t.path[Math.min(i + 1, t.path.length - 1)];
-      const dirx = bx - ax, diry = by - ay;
-      // lane offset: vehicles keep right in the carriageway; PEOPLE hug the
-      // footpath — the road edge that faces the grass — so they never trail
-      // down the middle of the avenue where the cars run
-      let ox = 0, oy = 0;
+      // vehicles keep right in the carriageway (V2: in their lane, the oncoming one while overtaking) and
+      // V2 (Milestone 8): take the bends on an arc in that lane
       if (t.car || t.taxi || t.moto) {
-        const off = Traffic.lanePx(t); // V2: its lane (the oncoming one while overtaking)
-        ox = diry !== 0 ? (diry > 0 ? -off : off) : 0;
-        oy = dirx !== 0 ? (dirx > 0 ? off : -off) : 0;
-      } else {
-        const foot = 6; // how far onto the kerb the pavement sits
-        if (dirx !== 0) { // walking E/W → sidewalk is the north or south kerb
-          const nOpen = !World.isRoad(ax, ay - 1), sOpen = !World.isRoad(ax, ay + 1);
-          oy = (nOpen && !sOpen) ? -foot : (sOpen && !nOpen) ? foot : (dirx > 0 ? foot : -foot);
-        } else if (diry !== 0) { // walking N/S → sidewalk is the west or east kerb
-          const wOpen = !World.isRoad(ax - 1, ay), eOpen = !World.isRoad(ax + 1, ay);
-          ox = (wOpen && !eOpen) ? -foot : (eOpen && !wOpen) ? foot : (diry > 0 ? -foot : foot);
-        }
+        const pose = lanePose(t.path, t.prog, Traffic.lanePx(t));
+        p.x = pose.x; p.y = pose.y;
+        p.dirx = pose.dx; p.diry = pose.dy;
+        p.hx = pose.hx; p.hy = pose.hy;
+        this.roadRules(p, t, dt);
+        return;
       }
-      p.x = (ax + (bx - ax) * f) * T + 8 + ox;
-      p.y = (ay + (by - ay) * f) * T + 8 + oy;
-      // keep the LAST real heading: a zero-length step must never blank the
-      // direction, or a car's headlight beam snaps back to pointing east
-      if (dirx || diry) { p.dirx = dirx; p.diry = diry; }
+      // V2 (Milestone 8): people on foot keep to a pavement, go round corners on the kerb and cross at the
+      // junction mouths (sim/walking.ts); they used to snap from kerb to kerb at every corner and drift into
+      // the middle of avenues and junctions
+      Walk.pose(p, t);
     }
+  },
+
+  /* V2 (Milestone 8): the road cameras see villagers too. A driver who stays in the oncoming lane (not just
+     passing something stopped) or drives the oncoming carriageway of an avenue for a few seconds is fined:
+     the household pays the village fund, and they remember it */
+  roadRules(p: Person, t: any, dt: number) {
+    const n = t.path.length, tx = Math.floor(p.x / T), ty = Math.floor(p.y / T);
+    const dx = Math.round(p.dirx || 0), dy = Math.round(p.diry || 0);
+    // (not while standing still, nor inside a junction, where every row crosses another road)
+    const inJunction = World.isRoad(tx - dy, ty + dx) && World.isRoad(tx + dy, ty - dx);
+    const moving = (t.v || 0) > 0.15;
+    const wrongLane = (t.lat ?? LANE) < -0.05 && !t.over;
+    const wrongRow = t.prog > 2 && t.prog < n - 3 && !inJunction && World.isLeftRow(tx, ty, dx, dy);
+    t.wrongT = moving && (wrongLane || wrongRow) ? (t.wrongT || 0) + dt : moving ? 0 : t.wrongT || 0;
+    if (t.wrongT > 4 && !t.ticketed) {
+      t.ticketed = true;
+      this.ticket(p, 'driving on the wrong side of the road', 30);
+    }
+  },
+  ticket(p: Person, why: string, fine: number) {
+    const paid = Math.min(fine, Math.max(0, Math.floor(p.home?.funds || 0)));
+    if (p.home) p.home.funds -= paid;
+    Gov.treasury += paid;
+    Mind.remember(p, 'crime', `got a $${fine} ticket for ${why}`, -0.4, 0);
+    p.bubble = '🎫'; p.bubbleUntil = performance.now() + 3000;
+    if (Math.random() < 0.35) Life.say(`🚓 ${this.fullName(p)} got a $${fine} ticket for ${why}`);
   },
 
   startTrip(p: Person, dest: Building, until: number, backTo: Building) {
@@ -1666,6 +1698,15 @@ export const Sim: any = {
       if (wp && wp.length > 1) usePath = wp;
     }
     p.trip = { path: usePath, prog: 0, car, taxi, moto };
+    // V2 (Milestone 8): a car pulls out of its spot (the family's driveway, the venue's bay it took) once there's
+    // a gap in the traffic, and turns into its spot at the other end, rather than appearing in the road
+    if (car || moto || taxi) {
+      p.trip.joined = false;
+      if (car) {
+        p.trip.from = spotFor(p.at, car, Math.max(0, (p.at!.parked || 0)));
+        p.trip.to = spotFor(dest, car, Math.max(0, dest.parked || 0));
+      }
+    }
     if (!car && !moto && p.kind !== 'kid' && Math.random() < 0.15) p.trip.dog = (Math.random() * 2) | 0; // walk the dog
     if (dest !== p.home && DEST_EMOJI[dest.type]) {
       p.bubble = DEST_EMOJI[dest.type];

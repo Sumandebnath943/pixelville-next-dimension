@@ -322,14 +322,14 @@ export const Power = {
         Life.followPath(c, c.path, Math.min(c.prog, c.path.length - 1), Traffic.lanePx(c));
         if (nearlyThere(c, c.path, step, dt)) {
           if (c.phase === 'back') c.done = true;
-          else if (!this.faults.has(c.d)) { c.phase = 'back'; c.prog = Math.max(0, c.path.length - 1 - c.prog); c.path = [...c.path].reverse(); }
+          else if (!this.faults.has(c.d)) { c.phase = 'back'; c.path = Life.backPath(c.path, c.prog); c.prog = 0; }
           else { c.phase = 'fix'; c.t = 40 + Math.random() * 35; }
         }
       } else if (c.phase === 'fix') {
         c.t -= gm;
         if (c.t <= 0) {
           this.restore(c.d, c.county ? "the county's crew mended the lines" : 'the repair crew mended the lines');
-          c.phase = 'back'; c.prog = Math.max(0, c.path.length - 1 - c.prog); c.path = [...c.path].reverse();
+          c.phase = 'back'; c.path = Life.backPath(c.path, c.prog); c.prog = 0;
         }
       }
     }

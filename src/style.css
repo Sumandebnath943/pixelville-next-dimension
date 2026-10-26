@@ -546,17 +546,69 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
 .help-grid p { margin: 0; color: var(--ink-2); line-height: 1.7; }
 #stats-canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: rgba(0, 0, 0, 0.18); margin-top: 6px; }
 
-/* ---------- loading ---------- */
+/* ---------- loading (Milestone 8: the key art or a dusk sky over a pixel skyline, the logo, a tip) ---------- */
 #loading {
-  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-  background: radial-gradient(ellipse at 50% 40%, #1b2330 0%, #0b0e13 70%); transition: opacity 0.7s ease;
+  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, #120f2a 0%, #2a1d4a 38%, #6b3a5a 64%, #d9875a 86%, #f0c27a 100%); transition: opacity 0.7s ease; overflow: hidden;
 }
-#loading .title { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-#loading .title b { font-size: 30px; font-weight: 650; letter-spacing: 0.01em; }
-#loading .title span { color: var(--accent); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; }
-#loading p { color: var(--ink-2); margin: 0; min-height: 1.4em; }
-#loading-track { width: 200px; height: 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
-#loading-bar { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s ease; }
+#loading .ld-art { position: absolute; inset: 0; background: var(--keyart, none) center / cover no-repeat; opacity: 0; transition: opacity 1.2s ease; }
+#loading.has-art .ld-art { opacity: 1; }
+#loading.has-art .ld-skyline, #loading.has-art .ld-glow { display: none; }
+#loading::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(8, 8, 18, 0.15) 0%, rgba(8, 8, 18, 0.72) 78%); pointer-events: none; }
+.ld-skyline { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 34vh; fill: #0b0a18; stroke: none; }
+.ld-glow { position: absolute; left: 50%; bottom: 16vh; width: 70vmin; height: 70vmin; margin-left: -35vmin; border-radius: 50%; background: radial-gradient(circle, rgba(255, 214, 150, 0.55), rgba(255, 170, 110, 0) 65%); animation: ldSun 6s ease-in-out infinite alternate; }
+@keyframes ldSun { to { transform: translateY(-2vh) scale(1.04); opacity: 0.85; } }
+.ld-main { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 16px; margin-top: -6vh; }
+.ld-logo { width: min(640px, 82vw); filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.55)); animation: ldIn 0.9s ease-out both; }
+@keyframes ldIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+#loading p { color: #f4ead8; margin: 0; min-height: 1.4em; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+#loading-text { font-weight: 600; letter-spacing: 0.02em; }
+#loading-track { width: min(360px, 70vw); height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); }
+#loading-bar { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #f6d6a0, #f0c27a 60%, #ffe6b8); box-shadow: 0 0 12px rgba(240, 194, 122, 0.8); transition: width 0.3s ease; }
+#loading-tip { max-width: min(520px, 86vw); text-align: center; font-size: 13px; color: rgba(244, 234, 216, 0.78) !important; transition: opacity 0.4s; }
+.ld-foot { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; z-index: 1; font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(244, 234, 216, 0.5) !important; }
+
+/* ---------- landing (Milestone 8): the menu over a slow flight across the village ---------- */
+#landing { position: fixed; inset: 0; z-index: 40; display: none; pointer-events: none;
+  background: linear-gradient(90deg, rgba(6, 8, 14, 0.78) 0%, rgba(6, 8, 14, 0.35) 38%, rgba(6, 8, 14, 0) 62%), linear-gradient(0deg, rgba(6, 8, 14, 0.55), rgba(6, 8, 14, 0) 30%); }
+body.landing #landing { display: block; }
+body.landing #hud, body.landing #touch, body.landing #prompt, body.landing #tour, body.landing #toasts { display: none !important; }
+.la-panel { position: absolute; left: clamp(16px, 6vw, 96px); top: 50%; transform: translateY(-50%); width: min(440px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 22px; pointer-events: auto; animation: laIn 0.8s ease-out both; }
+@keyframes laIn { from { opacity: 0; transform: translate(-14px, -50%); } }
+.la-logo { width: 100%; filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6)); }
+.la-village { display: flex; flex-direction: column; gap: 2px; padding-left: 4px; }
+.la-village b { font-size: 22px; font-weight: 650; }
+.la-village span { color: var(--ink-2); }
+.la-buttons { display: flex; flex-direction: column; gap: 8px; }
+.la-buttons button { justify-content: flex-start; gap: 12px; padding: 11px 16px; font-size: 14px; border-radius: 12px; background: rgba(16, 20, 27, 0.62); backdrop-filter: var(--blur); border: 1px solid var(--line); }
+.la-buttons button:hover { background: rgba(30, 36, 48, 0.8); border-color: rgba(240, 194, 122, 0.45); }
+.la-buttons button svg { width: 18px; height: 18px; }
+.la-buttons button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 650; font-size: 15px; padding: 14px 16px; }
+.la-buttons button.primary:hover { background: #f6d39a; }
+.la-buttons button kbd { margin-left: auto; background: rgba(0, 0, 0, 0.16); border-color: rgba(0, 0, 0, 0.2); color: inherit; }
+.la-foot { position: absolute; right: 22px; bottom: 16px; margin: 0; color: var(--ink-3); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
+@media (max-height: 560px) { .la-panel { gap: 12px; } .la-buttons button { padding: 8px 14px; } .la-logo { width: 78%; } }
+
+/* ---------- the controls sheet (Milestone 8) ---------- */
+.help-logo { height: 40px; width: auto; display: block; }
+.ctl-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 6px; }
+.ctl-group { padding: 12px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.ctl-group h4 { margin: 0; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
+.ctl-group p { margin: 0; color: var(--ink-2); line-height: 1.9; }
+.ctl-group p.dim { color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+kbd.cap { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; padding: 0 7px; margin: 0 2px; border-radius: 6px;
+  background: linear-gradient(180deg, #3a4150, #262b36); border: 1px solid rgba(255, 255, 255, 0.14); border-bottom-width: 3px; border-bottom-color: #14171e; color: var(--ink); font: 600 12px var(--font); }
+kbd.cap.big { min-width: 34px; height: 30px; color: var(--accent); }
+.ctl-wasd { display: grid; grid-template-columns: repeat(3, 30px); grid-template-rows: 30px 30px; gap: 4px; }
+.ctl-wasd kbd.cap { width: 30px; height: 30px; margin: 0; }
+.ctl-wasd kbd:first-child { grid-column: 2; }
+.ctl-wasd kbd:nth-child(2) { grid-column: 1; grid-row: 2; }
+.ctl-wasd kbd:nth-child(3) { grid-column: 2; grid-row: 2; }
+.ctl-wasd kbd:nth-child(4) { grid-column: 3; grid-row: 2; }
+.ctl-mouse { width: 34px; height: 50px; border: 2px solid rgba(255, 255, 255, 0.5); border-radius: 17px; position: relative; }
+.ctl-mouse i { position: absolute; left: 50%; top: 9px; width: 3px; height: 9px; margin-left: -1.5px; border-radius: 2px; background: var(--accent); animation: ctlWheel 1.6s ease-in-out infinite; }
+@keyframes ctlWheel { 50% { transform: translateY(5px); opacity: 0.4; } }
+@media (max-width: 900px) { .ctl-board { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- touch ---------- */
 #touch { display: none; }
@@ -728,3 +780,13 @@ body.talking #tour, body.talking #tour-ring, body.phone #tour-ring, body.photo #
 /* in the Planner the walking buttons have nothing to do: only the crane (back down) stays */
 body.touch.planner #tbtns button:not([data-a='planner']) { display: none !important; }
 body.touch.planner #tbtns { grid-template-columns: 52px; }
+
+/* ---------- Milestone 8: hurt (the Founder hit by a vehicle) ---------- */
+#hurt { position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0; transition: opacity 0.6s;
+  background: radial-gradient(ellipse at center, rgba(120, 0, 0, 0) 52%, rgba(150, 10, 10, 0.55) 82%, rgba(110, 0, 0, 0.85) 100%); }
+#hurt.hit { animation: hurtFlash 0.5s ease-out; }
+@keyframes hurtFlash { 0% { background-color: rgba(200, 20, 20, 0.35); } 100% { background-color: rgba(200, 20, 20, 0); } }
+body.calm #hurt.hit { animation: none; }
+/* (Milestone 8: menus opened from the landing screen sit above it) */
+body.landing #modals { position: fixed; inset: 0; z-index: 45; pointer-events: none; }
+body.landing #modals .modal { pointer-events: auto; }

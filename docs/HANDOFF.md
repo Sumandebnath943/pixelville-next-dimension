@@ -19,7 +19,9 @@
 
 **Never modify the V1 repo.** It is the behavioural reference.
 
-### Status (2026-10-25)
+### Status (2026-10-26)
+- **Milestone 8 (the owner's 33-point polish list)** is built on branch `milestone-8` (traffic lanes, bends, keep-right routing, parking, tickets, hits, the night timetable; pavements for walkers; site crews; a steady camera; bloom, sunrise, headlamps, the Planner at night, water; curved shores and rails; pines and firs, light forests; the peak and its trail with bike hire; solid street furniture; Rockefeller-style Christmas; the logo, loading, landing and controls screens). Details in MILESTONES.md. 130 tests pass. Not yet merged or pushed.
+- **Key art**: drop the owner's image at `public/art/keyart.jpg` (1920×1080) and the loading screen uses it.
 - Milestones 1, 1.5, 2 (2a–2f), 3, 4, 5 and 6 are done, merged into `main` and pushed (`3f529f9`).
 - **Milestone 7 (launch polish) is built**, merged into `main` and pushed: Milestone 6 fixes, rebindable controls and gamepad menus, accessibility, the first-day guide, phones, performance, balance, chat guards, launch prep (details in MILESTONES.md).
 - 118 tests pass (`npm test`), typecheck clean (`npm run typecheck`), lint has warnings only (`any` in ported code).

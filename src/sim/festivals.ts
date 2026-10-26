@@ -2,6 +2,7 @@
 import type { Building, XY } from './types';
 import { GH, GW, G_GRASS, World } from './world';
 import { Life } from './life';
+import { FOOT_PX, LANE_PX } from './traffic';
 import { Sim } from './agents';
 import { Settings } from './settings';
 import { MIN_PER_SEC, T } from './core';
@@ -18,7 +19,7 @@ import { Gov } from './gov';
      day 18–19     DIWALI — diyas on every sill, two nights of
                    town-wide fireworks
      day 15–16     tree scouting      ┐
-     day 17–18     the great haul     │ the Christmas tree
+     day 17–18     the cut & the haul │ the Christmas tree (V2 (Milestone 8): Rockefeller's way)
      day 19–21     raising & lights   │ tradition, every winter
      day 22–28     THE TREE IS LIT — a month of celebration,
                    every building decorated, lights all night,
@@ -50,7 +51,7 @@ export const Festivals: any = {
     if (!World.reserveRect) return;
     World.clearReserved();
     for (const mk of this.markets) World.reserveRect(mk.x, mk.y, 5, 4);
-    if (this.tree && (this.tree.phase === 'raising' || this.tree.phase === 'lit'))
+    if (this.tree && !['scouting', 'cutting', 'loaded', 'hauling'].includes(this.tree.phase))
       World.reserveRect(this.tree.x - 1, this.tree.y - 1, 4, 4);
   },
   say(m: string) { Life.say(m); },
@@ -122,7 +123,7 @@ export const Festivals: any = {
     }
     if (this.santa) {
       this.santa.prog += 0.25 * (gm / MIN_PER_SEC); // V2: Santa strolls at walking pace
-      Life.followPath(this.santa, this.santa.path, this.santa.prog, 5.5);
+      Life.followPath(this.santa, this.santa.path, this.santa.prog, FOOT_PX); // V2 (Milestone 8): on the pavement
       if (this.santa.prog >= this.santa.path.length - 1) this.santa = null;
     }
     // …and at midnight, the sleigh crosses the sky, dropping gifts
@@ -208,9 +209,16 @@ export const Festivals: any = {
   },
 
   /* ---------- the Christmas tree: an annual, visible tradition ----------
-     Scouting (15–16) → the great haul along the streets (17–18) →
-     scaffolds & decoration (19–21) → LIT all winter (22–28), then it
-     comes down in the new year. */
+     V2 (Milestone 8): told the way New York's great tree comes to Rockefeller Center, stretched over the
+     village's autumn and winter so every stage can be watched:
+       day 15–16  the head gardener scouts by helicopter; a family offers the giant spruce in its garden
+       day 17     cut: a crane holds the tree while the crew saws, then lays it on a flatbed
+       day 18     the haul: the flatbed crawls through town at 10:00 with a police escort, crowds watching
+       day 19     raised: a crane stands it up in the square (from 10:00); scaffolding goes up round it
+       day 19–21  decorated: 50,000 lights strung from the bottom up; on day 21 the star is hoisted to the top
+       day 22     the lighting ceremony on PVTV: stage and crowd from 20:00, the lights go on at 21:50
+       then       lit 05:00–midnight daily, all night Christmas Eve and Day, till 21:00 on New Year's Eve
+       day 2      taken down in the new year; its lumber goes to build homes */
   findTreeSpot() {
     const c = Gov.townCenter();
     const plaza = World.buildings.find((b: Building) => (b.type === 'plaza' || b.type === 'grandpark') && !b.ruined);
@@ -228,57 +236,146 @@ export const Festivals: any = {
     }
     return null;
   },
+  /** the tree to bring: a conifer in a family's garden (they offer it, as families do for New York's), else the
+   *  grandest in the farthest woods */
+  findTreeSource(spot: XY): { src: XY | null; family: string | null } {
+    let best: XY | null = null, bd = -1, family: string | null = null;
+    for (const b of World.buildings as Building[]) {
+      if (!CAT[b.type]?.res || !b.residents?.length || b.type === 'lodge') continue;
+      for (let j = -3; j <= b.h + 2; j++) for (let i = -3; i <= b.w + 2; i++) {
+        const x = b.x + i, y = b.y + j;
+        if (!World.inB(x, y) || World.tree[World.idx(x, y)] !== 2) continue;
+        const d = Math.abs(x - spot.x) + Math.abs(y - spot.y);
+        if (d > bd && d > 12) { bd = d; best = { x, y }; family = b.residents[0].surname; }
+      }
+    }
+    if (best) return { src: best, family };
+    for (let i = 0; i < World.tree.length; i++) {
+      if (!World.tree[i]) continue;
+      const x = i % GW, y = (i / GW) | 0;
+      const d = Math.abs(x - spot.x) + Math.abs(y - spot.y) + (World.tree[i] === 2 ? 40 : 0);
+      if (d > bd) { bd = d; best = { x, y }; }
+    }
+    return { src: best, family: null };
+  },
+  /** are the great tree's lights on right now? */
+  treeLightsOn(): boolean {
+    const tr = this.tree;
+    if (!tr || tr.phase !== 'lit') return false;
+    const yd = this.yearDay(), c = Sim.clock;
+    if (yd === 24 || yd === 25) return true;           // all night on Christmas Eve and Christmas Day
+    if (yd === 28) return c >= 300 && c < 1260;         // New Year's Eve: till 21:00
+    return c >= 300;                                    // 05:00 to midnight
+  },
 
   tickTree(gm: number) {
-    const yd = this.yearDay(), yr = this.year();
-    if (Sim.people.length < 8) { this.tree = null; return; } // traditions need a village
-    if (yd >= 15) {
-      if (!this.tree || this.tree.year !== yr) {
-        const spot = this.findTreeSpot();
-        if (!spot) return;
-        // the grandest tree in the farthest woods
-        let src = null, bd = -1;
-        for (let i = 0; i < World.tree.length; i++) {
-          if (!World.tree[i]) continue;
-          const x = i % GW, y = (i / GW) | 0;
-          const d = Math.abs(x - spot.x) + Math.abs(y - spot.y);
-          if (d > bd) { bd = d; src = { x, y }; }
-        }
-        this.tree = { year: yr, x: spot.x, y: spot.y, src, phase: 'scouting', prog: 0, haulPath: null };
-        this.say("🎄 The tree committee set out into the far woods to choose this year's Christmas tree — the great tradition begins!");
-        News.breaking('Tree committee departs — the hunt for the perfect tree is on');
+    const yd = this.yearDay(), yr = this.year(), c = Sim.clock;
+    if (Sim.people.length < 8) { this.tree = null; Life.convoy = null; return; } // traditions need a village
+    // the new year: on its second day the tree comes down, and its timber builds homes
+    if (this.tree && yd >= 2 && yd < 15) {
+      if (this.tree.phase === 'lit') {
+        const site = World.buildings.find((b: Building) => b.construction > 0 && CAT[b.type].res);
+        if (site) site.mats = (site.mats || 0) + 12;
+        this.say(`🎄 The great tree came down for another year — its timber goes to build homes${site ? ` (the ${CAT[site.type].name} going up has it)` : ''}. See you next winter.`);
+        News.breaking('The great tree comes down — its lumber will build homes');
       }
-      const tr = this.tree;
-      if (tr.phase === 'scouting' && yd >= 17) {
-        tr.phase = 'hauling'; tr.prog = 0;
-        const a = tr.src ? World.nearestRoad(tr.src.x, tr.src.y, 30) : null;
-        const b = World.nearestRoad(tr.x, tr.y, 12);
-        tr.haulPath = a && b ? World.roadPath(a.x, a.y, b.x, b.y) : null;
-        if (tr.src) { World.tree[World.idx(tr.src.x, tr.src.y)] = 0; World.dirty = true; } // felled!
-        this.say(`🚛 They found it — a giant from the ${tr.src ? Gov.districtName(tr.src.x, tr.src.y) : 'deep woods'}! The great tree is on the move; whole streets are lining up to watch it pass.`);
+      this.tree = null;
+      return;
+    }
+    if (yd < 15) return;
+    if (!this.tree || this.tree.year !== yr) {
+      const spot = this.findTreeSpot();
+      if (!spot) return;
+      const { src, family } = this.findTreeSource(spot);
+      this.tree = { year: yr, x: spot.x, y: spot.y, src, family, phase: 'scouting', prog: 0, haulPath: null, chosen: false };
+      if (yd <= 16) {
+        this.say("🚁 The head gardener is up in the helicopter, scouting the countryside for this year's Christmas tree — the great tradition begins!");
+        News.breaking("The hunt is on: the head gardener scouts for this year's great tree");
+      } else {
+        // a village loaded part-way through the season picks the tradition up where it would be, quietly
+        const t = this.tree;
+        t.chosen = true;
+        const felled = (): void => { if (t.src) { World.tree[World.idx(t.src.x, t.src.y)] = 0; World.dirty = true; } };
+        if (yd >= 23 || (yd === 22 && c >= 1310)) { t.phase = 'lit'; t.prog = 1; t.star = true; t.starT = 1; felled(); this.reserveGround(); }
+        else if (yd === 22) { t.phase = 'ceremony'; t.prog = 1; t.star = true; t.starT = 1; felled(); this.reserveGround(); }
+        else if (yd >= 19) {
+          t.phase = 'decorating'; t.prog = Math.min(1, (yd - 19 + c / 1440) / 2.1); t.star = yd === 21 && c >= 660; t.starT = t.star ? 1 : 0;
+          felled(); this.reserveGround();
+        } else if (yd === 18 || c >= 780) { t.phase = 'loaded'; felled(); }
       }
-      if (tr.phase === 'hauling') {
-        if (tr.haulPath && tr.haulPath.length > 1) {
-          tr.prog += (gm / (1.6 * 1440)) * tr.haulPath.length; // the haul takes about two days
-          if (tr.prog >= tr.haulPath.length - 1 || yd >= 19) { tr.phase = 'raising'; tr.prog = 0; this.reserveGround(); }
-        } else if (yd >= 19) { tr.phase = 'raising'; tr.prog = 0; this.reserveGround(); }
+    }
+    const tr = this.tree;
+    if (tr.phase === 'scouting') {
+      if (!tr.chosen && (yd > 15 || c >= 900)) {
+        tr.chosen = true;
+        const where = tr.src ? Gov.districtName(tr.src.x, tr.src.y) : 'the deep woods';
+        this.say(tr.family ? `🎄 This year's tree is chosen: a giant spruce from the ${tr.family} family's garden in ${where} — they've offered it to the village!` : `🎄 This year's tree is chosen: a giant spruce from ${where}.`);
+        News.breaking(tr.family ? `The ${tr.family} family gives the village its Christmas tree` : "This year's Christmas tree is chosen");
       }
-      if (tr.phase === 'raising') {
-        tr.prog = Math.min(1, tr.prog + gm / (2.5 * 1440)); // scaffolds, ladders, tangled lights
-        if (tr.prog >= 1 || yd >= 22) {
-          tr.phase = 'lit';
-          this.say('✨ TREE-LIGHTING NIGHT! The great tree blazes into light at the town centre — carols, cocoa and half the village in scarves.');
-          News.breaking('The Christmas tree is LIT — celebrations all month at the town centre');
-          Life.celebrate(tr.x * T + 16, tr.y * T + 16, '#ffd160');
-          for (const p of Sim.people) p.mood = Math.min(98, (p.mood === undefined ? 60 : p.mood) + 8);
-        }
+      if (yd >= 17 && c >= 540) { tr.phase = 'cutting'; tr.prog = 0; this.say('🪚 The crew is at the tree: a crane takes its weight while they saw through the trunk.'); }
+    }
+    if (tr.phase === 'cutting') {
+      tr.prog = Math.min(1, tr.prog + gm / 240); // four hours with the crane and the saws
+      if (tr.prog >= 1 || yd >= 18) {
+        tr.phase = 'loaded'; tr.prog = 0;
+        if (tr.src) { World.tree[World.idx(tr.src.x, tr.src.y)] = 0; World.dirty = true; } // felled
+        this.say('🌲 Down, wrapped and lashed to a flatbed: the great tree sets off for the square tomorrow at 10:00.');
       }
-    } else if (this.tree) {
-      if (this.tree.phase === 'lit' && this.tree.year !== yr) {
-        this.say('🎄 The great tree came down for another year — needles everywhere, memories all round. See you next winter.');
-        this.tree = null;
-      } else if (this.tree.year !== yr) {
-        this.tree = null; // an unfinished tradition resets quietly
+    }
+    if (tr.phase === 'loaded' && yd >= 18 && c >= 600) {
+      const a = tr.src ? World.nearestRoad(tr.src.x, tr.src.y, 30) : null;
+      const b = World.nearestRoad(tr.x, tr.y, 12);
+      tr.haulPath = a && b ? World.roadPath(a.x, a.y, b.x, b.y) : null;
+      tr.phase = 'hauling'; tr.prog = 0;
+      this.say('🚛 The great tree is on the move! A police escort leads the flatbed through town — whole streets are out to watch it pass.');
+      News.breaking('LIVE: the great tree rolls through town under police escort');
+    }
+    if (tr.phase === 'hauling') {
+      const path = tr.haulPath;
+      if (path && path.length > 1) {
+        tr.prog += 0.45 * (gm / MIN_PER_SEC); // a procession's pace, about 13 km/h
+        // (the flatbed's own position: the tree's x, y are the square it's bound for)
+        tr.cv ??= { x: 0, y: 0, dirx: 1, diry: 0 };
+        Life.followPath(tr.cv, path, Math.min(tr.prog, path.length - 1), LANE_PX);
+        Life.convoy = tr.cv;
+      }
+      if (!path || path.length < 2 || tr.prog >= path.length - 1 || yd >= 19) {
+        Life.convoy = null;
+        tr.phase = 'arrived'; tr.prog = 0; this.reserveGround();
+        this.say('🎄 The great tree has arrived in the square. Tomorrow a crane stands it up.');
+      }
+    }
+    if (tr.phase === 'arrived' && yd >= 19 && c >= 600) { tr.phase = 'raising'; tr.prog = 0; this.say('🏗️ The crane lifts the great tree upright in the square — slowly, slowly…'); }
+    if (tr.phase === 'raising') {
+      tr.prog = Math.min(1, tr.prog + gm / 120); // two hours on the crane
+      if (tr.prog >= 1) {
+        tr.phase = 'decorating'; tr.prog = 0;
+        this.say('🪜 The tree stands tall! Scaffolding goes up around it, and the crew begins stringing 50,000 lights.');
+      }
+    }
+    if (tr.phase === 'decorating') {
+      // the lights go on from the bottom up through days 19–21 (working hours); the star on day 21 at 11:00
+      if (c > 420 && c < 1080) tr.prog = Math.min(1, tr.prog + gm / (2.1 * 660));
+      if (yd >= 21 && c >= 660 && !tr.star) {
+        tr.star = true; tr.starT = 0;
+        this.say('⭐ The crane hoists the great star to the very top of the tree. Everything is ready for the lighting.');
+        News.breaking('The star is on top — the lighting ceremony is tomorrow night');
+      }
+      if (tr.star) tr.starT = Math.min(1, (tr.starT || 0) + gm / 60);
+      if (yd >= 22) { tr.prog = 1; tr.star = true; tr.starT = 1; tr.phase = 'ceremony'; }
+    }
+    if (tr.phase === 'ceremony') {
+      if (c >= 1200 && !tr.stage) {
+        tr.stage = true;
+        this.say('🎤 The tree-lighting ceremony is starting in the square — singers on the stage, PVTV live, half the village in scarves!');
+        News.breaking('LIVE on PVTV: the tree-lighting ceremony');
+      }
+      if (c >= 1310 || yd >= 23) {
+        tr.phase = 'lit'; tr.stage = false;
+        this.say('✨ 3… 2… 1… The great tree blazes into light! Cheers, carols and cocoa all round.');
+        News.breaking('The Christmas tree is LIT — lit every day 05:00 to midnight, all night on Christmas Eve and Day');
+        Life.celebrate(tr.x * T + 16, tr.y * T + 16, '#ffd160');
+        for (const p of Sim.people) p.mood = Math.min(98, (p.mood === undefined ? 60 : p.mood) + 8);
       }
     }
   },
