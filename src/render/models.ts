@@ -335,7 +335,6 @@ export const PROPS: Record<string, { geo: THREE.BufferGeometry; tinted?: boolean
   bucket: { geo: new MeshBuilder().cyl(0, 0.55, 0.32, 0.13, 0.22, 6, hex('#7a7f86')).build() },
   camera: { geo: new MeshBuilder().box(0.12, 1.45, 0.05, 0.32, 1.62, 0.42, hex('#222')).build() },
   placard: { geo: new MeshBuilder().box(-0.02, 1.0, 0.3, 0.02, 2.4, 0.34, hex('#8a6a42')).box(-0.45, 2.0, 0.3, 0.45, 2.6, 0.34, W).build(), tinted: true },
-  soapbox: { geo: new MeshBuilder().box(-0.6, 0, -0.5, 0.6, 0.6, 0.5, hex('#a07a4a')).build() },
   booth: { geo: new MeshBuilder().box(-0.6, 0, -0.5, 0.6, 2.1, 0.5, W).box(-0.65, 2.1, -0.55, 0.65, 2.2, 0.55, hex('#333')).build(), tinted: true },
   dog: { geo: new MeshBuilder().box(-0.13, 0.22, -0.32, 0.13, 0.45, 0.25, W).box(-0.1, 0.38, 0.22, 0.1, 0.58, 0.45, W).box(-0.12, 0, -0.3, -0.04, 0.24, -0.22, W).box(0.04, 0, -0.3, 0.12, 0.24, -0.22, W).box(-0.12, 0, 0.14, -0.04, 0.24, 0.22, W).box(0.04, 0, 0.14, 0.12, 0.24, 0.22, W).build(), tinted: true },
   duck: { geo: new MeshBuilder().box(-0.15, 0, -0.25, 0.15, 0.22, 0.2, hex('#f4f0e4')).box(-0.08, 0.2, 0.12, 0.08, 0.38, 0.28, hex('#2a7a3a')).box(-0.04, 0.26, 0.28, 0.04, 0.3, 0.38, hex('#e0a020')).build() },
@@ -377,4 +376,41 @@ export const PROPS: Record<string, { geo: THREE.BufferGeometry; tinted?: boolean
   carry: { geo: new MeshBuilder().box(-0.28, 0.95, 0.22, 0.28, 1.3, 0.62, hex('#a07a4a')).build() },
   /* V2 (Milestone 7): a slug of water in a hose's jet, lit like everything else so it shows in daylight */
   jet: { geo: new MeshBuilder().blob(0, 0, 0, 0.12, 0.12, 0.42, W).build(), tinted: true },
+  /* V2: an election on the ground (sim/hustings.ts). The rally's stage, facing +z: a skirted platform with a board
+     deck, steps up the +x side and a lectern with a microphone at the front (the candidate's colours hang behind it
+     on the banner poles) */
+  stage: {
+    geo: new MeshBuilder()
+      .box(-1.6, 0, -1.05, 1.6, 0.5, 1.05, hex('#26304a'))
+      .box(-1.66, 0.5, -1.1, 1.66, 0.56, 1.1, hex('#7a5c3c'), hex('#9a7a52'))
+      .box(1.66, 0, 0.15, 2.2, 0.19, 0.95, hex('#6a4e32'), hex('#8a6a46'))
+      .box(1.66, 0.19, 0.15, 1.94, 0.38, 0.95, hex('#6a4e32'), hex('#8a6a46'))
+      .box(-0.32, 0.56, 0.36, 0.32, 1.52, 0.7, hex('#3a2a1e'))
+      .box(-0.38, 1.52, 0.3, 0.38, 1.58, 0.78, hex('#4a3626'))
+      .box(-0.015, 1.58, 0.42, 0.015, 1.86, 0.45, hex('#1a1a1a'))
+      .build(),
+  },
+  /* the polling station: a white canopy over the booths, a ballot box on a table, and the sign by the street */
+  canopy: {
+    geo: new MeshBuilder()
+      .box(-2.34, 0, -1.64, -2.26, 2.5, -1.56, hex('#c8c8c4')).box(2.26, 0, -1.64, 2.34, 2.5, -1.56, hex('#c8c8c4'))
+      .box(-2.34, 0, 1.56, -2.26, 2.5, 1.64, hex('#c8c8c4')).box(2.26, 0, 1.56, 2.34, 2.5, 1.64, hex('#c8c8c4'))
+      .box(-2.45, 2.5, -1.75, 2.45, 2.56, 1.75, hex('#ecece8'))
+      .gableX(-2.45, 2.45, 2.56, 3.0, -1.75, 1.75, hex('#f2f2ee'), hex('#e4e4e0'))
+      .build(),
+  },
+  ballotBox: {
+    geo: new MeshBuilder()
+      .box(-0.45, 0, -0.35, 0.45, 0.74, 0.35, hex('#7a5c3c'), hex('#8a6a46'))
+      .box(-0.24, 0.74, -0.19, 0.24, 1.12, 0.19, hex('#1e3a6a'))
+      .box(-0.12, 1.12, -0.02, 0.12, 1.13, 0.02, hex('#0c0c0e'))
+      .build(),
+  },
+  pollSign: {
+    geo: new MeshBuilder()
+      .box(-0.04, 0, -0.04, 0.04, 1.75, 0.04, hex('#2a2a2c'))
+      .box(-0.64, 1.05, -0.03, 0.64, 1.72, 0.03, hex('#1e4a8a'))
+      .box(-0.52, 1.46, 0.03, 0.52, 1.58, 0.04, hex('#f2f2ee')).box(-0.4, 1.22, 0.03, 0.4, 1.32, 0.04, hex('#f2f2ee'))
+      .build(),
+  },
 };

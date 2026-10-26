@@ -21,6 +21,7 @@ import { Edu, ESSENTIAL } from './education';
 import { Supply } from './supply';
 import { Power } from './power';
 import { Gateways } from './gateways';
+import { Hustings } from './hustings';
 /* ============================================================
    PixelVille — citizens, jobs, daily schedules, movement.
    People live in residential buildings, get jobs at workplaces,
@@ -1531,18 +1532,24 @@ export const Sim: any = {
       } else {
         // V2 (Milestone 8): on foot, along a pavement at their own pace, stepping aside for others,
         // waiting at the kerb before crossing (sim/walking.ts)
+        // (standing at a rally or the polls: sim/hustings.ts has them, off the pavement)
+        if (t.civic && t.prog >= t.path.length - 1) { Hustings.step(p, t, dt); return; }
         if (!t.walk) Walk.plan(p, t, p.at, p.dest);
         let pace = WALK_SPEED;
         if (t.hurryT > 0) { t.hurryT -= dt; pace *= 1.7; } // V2: hurrying past someone they'd rather avoid (the Founder, usually)
         t.prog += Walk.step(p, t, dt, pace);
       }
+      // V2: at a rally or the polling station: off the pavement onto the open ground, and back (sim/hustings.ts)
+      if (t.civic && t.prog >= t.path.length - 1) { Hustings.step(p, t, dt); return; }
       if (t.prog >= t.path.length - 1) { // arrived
         // V2 (Milestone 8): a car reverses into its spot (the drive at home, a bay at the venue) before anyone gets out
         if (t.car && t.to && (t.parkT || 0) < PARK_TIME) { t.parkT = (t.parkT || 0) + dt; return; }
         const dest = p.dest;
         p.state = 'in'; p.at = dest; p.trip = null; p.dest = null;
         if (dest !== p.home) {
-          p.carHeld = t.car || null; // keep the car parked at the venue for the return trip
+          // keep the car parked at the venue for the return trip (V2: or the one left in its bay while its driver
+          // walked over to the polls, sim/hustings.ts)
+          p.carHeld = t.car || t.keepCar || null;
           p.returnAt = p.until;
           dest.inside++;
           if (t.car) dest.parked++;

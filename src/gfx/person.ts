@@ -323,7 +323,7 @@ function umbrella(color: THREE.Color): THREE.Group {
   return g;
 }
 
-export type Pose = 'walk' | 'idle' | 'wait' | 'sit' | 'lie' | 'work' | 'carry' | 'pedal';
+export type Pose = 'walk' | 'idle' | 'wait' | 'sit' | 'lie' | 'work' | 'carry' | 'pedal' | 'speak' | 'cheer';
 
 export class Person {
   root = new THREE.Group();
@@ -331,6 +331,8 @@ export class Person {
   bones = {} as Record<BoneName, THREE.Bone>;
   look: Look;
   private phase = Math.random();
+  /** this person's own way of doing things (clapping or a fist in the air, the speaker's rhythm) */
+  private style = Math.random();
   private t = Math.random() * 100;
   private lookYaw = 0;
   private lookT = 0;
@@ -441,6 +443,30 @@ export class Person {
       B.faR.rotation.x = -0.4 - swing * 0.7;
       B.uaL.rotation.x = -0.7; B.uaL.rotation.z = 0.2;
       B.faL.rotation.x = -0.6;
+    } else if (pose === 'speak') {
+      // V2: at the lectern: one hand resting on it, the other making the point in time with the words, the eyes
+      // going round the crowd
+      const beat = Math.sin(this.t * (2 + this.style) + this.style * 6);
+      B.spine.rotation.x = 0.04;
+      B.uaL.rotation.x = -0.5; B.uaL.rotation.z = 0.12; B.faL.rotation.x = -0.95;
+      B.uaR.rotation.x = -0.95 - beat * 0.35; B.uaR.rotation.z = -0.32 - Math.max(0, beat) * 0.18;
+      B.faR.rotation.x = -1.05 - beat * 0.4;
+      B.head.rotation.x = -0.05;
+    } else if (pose === 'cheer') {
+      // V2: in the crowd when it cheers: most clap, hands up in front; some punch the air
+      if (this.style < 0.3) {
+        const pump = Math.abs(Math.sin(this.t * 5.5 + this.style * 9));
+        B.uaR.rotation.x = -2.75 + pump * 0.25; B.uaR.rotation.z = -0.12; B.faR.rotation.x = -0.25 - pump * 0.5;
+        B.uaL.rotation.z = 0.1;
+      } else {
+        const clap = 0.5 + 0.5 * Math.sin(this.t * 16 + this.style * 9);
+        for (const [side, sgn] of [['L', 1], ['R', -1]] as const) {
+          B[`ua${side}`].rotation.x = -1.0;
+          B[`ua${side}`].rotation.z = sgn * (0.04 + clap * 0.26);
+          B[`fa${side}`].rotation.x = -1.3;
+        }
+      }
+      B.head.rotation.x = -0.1;
     }
     if (pose === 'pedal') {
       // V2 (Milestone 8): on a bike: perched on the saddle, leaning to the bars, legs going round with the cranks
@@ -483,6 +509,7 @@ export class Person {
     this.lookT -= dt;
     if (this.lookT <= 0) {
       if (pose === 'wait') { this.lookTarget = this.lookTarget > 0 ? -0.9 : 0.9; this.lookT = 1.2 + Math.random() * 1.2; }
+      else if (pose === 'speak') { this.lookTarget = (Math.random() - 0.5) * 1.3; this.lookT = 1.4 + Math.random() * 1.8; }
       else { this.lookTarget = Math.random() < 0.7 ? 0 : (Math.random() - 0.5) * 1.1; this.lookT = 2 + Math.random() * 4; }
     }
     this.lookYaw += (this.lookTarget - this.lookYaw) * Math.min(1, dt * 4);

@@ -33,6 +33,7 @@ import { ENV } from '../gfx/env';
 import { FireFX } from '../gfx/fire';
 import { XmasPlaza, TreeScene } from '../gfx/festive';
 import { interiorDay } from '../gfx/architecture';
+import { STAGE_DECK } from '../sim/hustings';
 
 /* V2 detail tiers: the nearest villagers are skinned, gait-animated people and the
    nearest cars are full models; everything farther stays light instanced figures */
@@ -47,11 +48,13 @@ const PEOPLE_CAP = 900;
 const CAR_COLORS = PARKED_COLORS;
 /* a hose's jet and the spray where it lands */
 const JET = hex('#dfeaf2'), SPLASH = hex('#f2f6f8');
+/* polling booths: plain, not in any candidate's colours */
+const BOOTH = hex('#d6d4cc');
 /* the far (instanced) vehicles' lamps: lit, or dark on a parked car */
 const LIGHTS_ON = new THREE.Color(1, 1, 1), LIGHTS_OFF = new THREE.Color(0.16, 0.16, 0.17);
 interface VehOpts { siren?: boolean; beacon?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number; parked?: boolean }
 
-export type Mode = 'walk' | 'run' | 'stand' | 'lie' | 'sit' | 'work' | 'carry';
+export type Mode = 'walk' | 'run' | 'stand' | 'lie' | 'sit' | 'work' | 'carry' | 'speak' | 'cheer';
 interface PersonDraw {
   x: number; y: number; z: number; yaw: number; kind: string; seed: number; mode: Mode; phase: number;
   shirt?: THREE.Color; pants?: THREE.Color; hair?: THREE.Color; scale?: number;
@@ -417,11 +420,18 @@ export class Actors {
         continue;
       }
       const sm = smooth(p, x, z, hint);
-      const y = this.groundY(x, z, false);
+      // V2: at a rally or the polls (sim/hustings.ts): up on the stage speaking, clapping in the crowd, in the queue
+      const cv = t.civic && t.civic.phase !== 'go' ? t.civic : null;
+      const y = this.groundY(x, z, false) + (cv && cv.lift ? STAGE_DECK * cv.lift : 0);
       const frozen = p.freezeT > 0;
       const down = frozen && p.knocked; // knocked down by the Founder's car
-      this.person({ x, y, z, yaw: sm.yaw, kind: p.kind, seed: p.seed, mode: down ? 'lie' : frozen || !sm.moving ? 'stand' : 'walk', phase: sm.phase });
+      let mode: Mode = down ? 'lie' : frozen || !sm.moving ? 'stand' : 'walk';
+      if (cv && mode === 'stand') mode = cv.speak ? 'speak' : cv.cheer ? 'cheer' : 'stand';
+      this.person({ x, y, z, yaw: sm.yaw, kind: p.kind, seed: p.seed, mode, phase: sm.phase });
       this.pickables.push({ x, y, z, ref: p });
+      // (a few supporters brought a placard in the candidate's colours, and wave it when the crowd cheers)
+      if (cv && cv.kind === 'rally' && cv.role === 'crowd' && cv.phase === 'at' && p.seed % 4 === 0 && Life.rally)
+        this.prop('placard', x, y + (cv.cheer ? 0.22 : 0), z, sm.yaw, 1, hex(Life.rally.color));
       if (raining && p.kind !== 'kid') this.prop('handUmbrella', x, y, z, sm.yaw, p.kind === 'kid' ? 0.7 : 1, SHIRT[(p.seed >> 3) % SHIRT.length]);
       if (t.dog !== undefined) {
         const ox = Math.cos(sm.yaw) * 0.7, oz = -Math.sin(sm.yaw) * 0.7;
@@ -826,14 +836,26 @@ export class Actors {
     }
     for (const k of Life.buckets) for (const h of k.helpers) this.lerpPerson(h, 'stand', { bucket: true, face: { x: (k.b.x + k.b.w / 2) * TM, z: (k.b.y + k.b.h / 2) * TM } });
     if (Life.disaster) for (const h of Life.disaster.helpers) this.lerpPerson(h, 'stand', { face: { x: (Life.disaster.b.x + Life.disaster.b.w / 2) * TM, z: (Life.disaster.b.y + Life.disaster.b.h / 2) * TM } });
+    // V2: the rally's stage on its green, the candidate's colours behind it (sim/hustings.ts). The crowd and the
+    // candidate are villagers, drawn with everyone else; a candidate from outside the village is drawn here
     const rally = Life.rally;
     if (rally) {
-      const sx = rally.x * PX, sz = rally.y * PX;
-      this.prop('soapbox', sx, 0.1, sz);
-      this.person({ x: sx, y: 0.7, z: sz, yaw: 0, kind: rally.speakerKind, seed: rally.speakerSeed, mode: 'stand', phase: this.t * 3, shirt: hex(rally.color) });
-      for (const c of rally.crowd) {
-        const x = c.x * PX, z = c.y * PX + 2;
-        this.person({ x, y: 0.2, z, yaw: Math.atan2(sx - x, sz - z), kind: c.kind, seed: c.seed, mode: 'stand', phase: 0 });
+      const sx = rally.x * PX, sz = rally.y * PX, yaw = Math.atan2(rally.fx, rally.fy);
+      if (this.near(sx, sz, 40)) {
+        const gy = this.groundY(sx, sz, false);
+        this.prop('stage', sx, gy, sz, yaw);
+        const bx = sx - Math.sin(yaw) * 1.18, bz = sz - Math.cos(yaw) * 1.18;
+        this.prop('bannerPoles', bx, gy, bz, yaw);
+        this.prop('banner', bx, gy, bz, yaw, 1, hex(rally.color));
+        const si = rally.standIn;
+        if (si && si.shown) {
+          const x = si.x * PX, z = si.y * PX;
+          const walking = si.phase === 'in' || si.phase === 'out' || si.phase === 'climb' || si.phase === 'down';
+          this.person({
+            x, y: this.groundY(x, z, false) + STAGE_DECK * si.lift, z, yaw: Math.atan2(si.dirx || 0, si.diry || 1), kind: si.kind, seed: si.seed,
+            mode: walking ? 'walk' : rally.phase === 'speech' ? 'speak' : 'stand', phase: this.t * 3, shirt: hex(rally.color),
+          });
+        }
       }
     }
     const riot = Life.riot;
@@ -845,11 +867,21 @@ export class Actors {
         this.prop('placard', x, 0.2 + Math.abs(Math.sin(this.t * 4 + c.seed)) * 0.3, z, yaw, 1, hex('#f4f0e4'));
       }
     }
+    // V2: the polling station on its green, 08:00–20:00: booths under a canopy, the ballot box, the sign by the
+    // street; the voters and their queue are villagers (sim/hustings.ts)
     const vb = Life.votingBooths;
     if (vb) {
-      const x0 = vb.x * PX, z0 = vb.y * PX;
-      vb.colors.forEach((c: string, i: number) => this.prop('booth', x0 - 3 + i * 1.6, 0.1, z0 - 1.2, 0, 1, hex(c)));
-      vb.queue.forEach((q: any, i: number) => this.person({ x: x0 + 3 + (i % 5) * 0.9, y: 0.1, z: z0 + Math.floor(i / 5) * 1.2, yaw: Math.PI, kind: q.kind, seed: q.seed, mode: 'stand', phase: 0 }));
+      const cx = vb.x * PX, cz = vb.y * PX, yaw = Math.atan2(vb.fx, vb.fy);
+      if (this.near(cx, cz, 40)) {
+        this.prop('canopy', cx, this.groundY(cx, cz, false), cz, yaw);
+        for (const b of vb.booths) {
+          const x = b.x * PX, z = b.y * PX;
+          this.prop('booth', x, this.groundY(x, z, false), z, yaw, 1, BOOTH);
+        }
+        const bx = vb.box.x * PX, bz = vb.box.y * PX, sx = vb.sign.x * PX, sz = vb.sign.y * PX;
+        this.prop('ballotBox', bx, this.groundY(bx, bz, false), bz, yaw);
+        this.prop('pollSign', sx, this.groundY(sx, sz, false), sz, yaw);
+      }
     }
     // queues at bus shelters and taxi ranks
     for (const [id, q] of Life.stopQueues as Map<number, any>) {
@@ -1014,7 +1046,9 @@ export class Actors {
         const x = cp.x * TM + 4, z = cp.y * TM + 4;
         if (!this.near(x, z)) continue;
         this.prop('tent', x, 0, z, 0, 1, hex(camp.candidates[cp.ci]?.color || '#888'));
-        this.person({ x: x + 2.2, y: 0, z: z + 1, yaw: Math.sin(this.t + cp.ci) * 1.5, kind: cp.ci % 2 ? 'woman' : 'man', seed: cp.ci * 11 + cp.x, mode: 'stand', phase: 0, shirt: hex(camp.candidates[cp.ci]?.color || '#888') });
+        // a volunteer handing out leaflets in the daytime (V2: they go home at night; the tent stays up)
+        if (Sim.clock >= 540 && Sim.clock < 1170 && !camp.votingDay)
+          this.person({ x: x + 2.2, y: 0, z: z + 1, yaw: Math.sin(this.t * 0.4 + cp.ci) * 1.5, kind: cp.ci % 2 ? 'woman' : 'man', seed: cp.ci * 11 + cp.x, mode: 'stand', phase: 0, shirt: hex(camp.candidates[cp.ci]?.color || '#888') });
       }
     }
   }
@@ -1210,7 +1244,7 @@ export class Actors {
       e.seen = this.t;
       const r = e.person.root;
       r.visible = true;
-      const pose: Pose = p.mode === 'walk' || p.mode === 'run' ? 'walk' : p.mode === 'sit' ? 'sit' : p.mode === 'lie' ? 'lie' : p.mode === 'work' ? 'work' : p.mode === 'carry' ? 'carry' : 'idle';
+      const pose: Pose = p.mode === 'walk' || p.mode === 'run' ? 'walk' : p.mode === 'sit' ? 'sit' : p.mode === 'lie' ? 'lie' : p.mode === 'work' ? 'work' : p.mode === 'carry' ? 'carry' : p.mode === 'speak' ? 'speak' : p.mode === 'cheer' ? 'cheer' : 'idle';
       r.position.set(p.x, p.y + (p.mode === 'lie' ? 0.14 : 0), p.z);
       r.rotation.set(p.mode === 'lie' ? -Math.PI / 2 : 0, p.yaw, 0, 'YXZ');
       if (p.mode === 'sit') r.position.y -= 0.02;
@@ -1303,8 +1337,11 @@ export class Actors {
         const [lx, lz] = off(side * 0.11 * s, 0);
         this.legs.add(lx, hipY, lz, p.yaw, s, pants, p.mode === 'sit' ? -1.3 : swing * side);
         const [ax, az] = off(side * 0.3 * s, 0);
-        // (arms forward under a load; the hammer arm beating on a site)
-        const arm = p.mode === 'sit' ? -0.9 : p.mode === 'carry' ? -1.2 : p.mode === 'work' ? (side > 0 ? -0.6 - Math.abs(Math.sin(this.t * 4.2 + p.seed)) * 1.5 : -0.8) : -swing * side * 0.8;
+        // (arms forward under a load; the hammer arm beating on a site; V2: a speaker's gesturing hand, a crowd's
+        // hands up when it cheers)
+        const arm = p.mode === 'sit' ? -0.9 : p.mode === 'carry' ? -1.2 : p.mode === 'work' ? (side > 0 ? -0.6 - Math.abs(Math.sin(this.t * 4.2 + p.seed)) * 1.5 : -0.8)
+          : p.mode === 'speak' ? (side > 0 ? -1.2 - Math.sin(this.t * 2.3 + p.seed) * 0.35 : -0.5)
+          : p.mode === 'cheer' ? -2.2 - Math.abs(Math.sin(this.t * 9 + p.seed + side)) * 0.3 : -swing * side * 0.8;
         this.arms.add(ax, hipY + 0.62 * s, az, p.yaw, s, tmpC.copy(shirt), arm);
       }
       this.torso.add(p.x, hipY, p.z, p.yaw, s, shirt);

@@ -10,6 +10,7 @@ import { Health } from './health';
 import { Power } from './power';
 import { Supply } from './supply';
 import { Edu } from './education';
+import { Hustings } from './hustings';
 /* ============================================================
    PixelVille — village government, elections & community spirit.
    Adults vote once every 28 in-game days. Their vote is based on
@@ -339,30 +340,23 @@ export const Gov: any = {
       this.elect({ reason: c.reason || 'annual election', candidates: c.candidates });
         Tasks.done('election' + c.electionDay, true, `${c.reason || 'Election'} held — ${this.leader ? this.leader.name + ' won' : 'votes counted'}`);
       this.campaign = null;
-      { Life.rally = null; Life.votingBooths = null; }
+      Hustings.clear();
       return;
     }
     if (Sim.day === c.electionDay) {
-      // VOTING DAY: booths go up outside the town hall, queues form all day
+      // VOTING DAY: the polling station opens at 08:00 and closes at 18:00 (sim/hustings.ts); results at midnight
       if (!c.votingDay) {
         c.votingDay = true;
-        this.say('🗳️ POLLS ARE OPEN! Villagers are queueing at the voting booths — results tonight.');
-        Life.setupVotingBooths(c);
+        this.say('🗳️ It\'s polling day! The polling station opens at 08:00 — results tonight.');
+        Hustings.openPolls();
       }
       return;
     }
-    // today's rally, rotating through the candidates
-    const cand = c.candidates[c.nextRally % c.candidates.length];
+    // today's rally, rotating through the candidates: in the evening (late morning at the weekend), on a green near
+    // the town hall, never in the road (sim/hustings.ts); the news reports it when the candidate speaks
+    const ci = c.nextRally % c.candidates.length;
     c.nextRally++;
-    Life.startRally(cand);
-    if (cand.incumbent) {
-      const rec = (this.leader && this.leader.built || []).slice(-3);
-      this.say(rec.length
-        ? `📣 Rally: Mayor ${cand.name} points at the new ${rec.join(', ')} — "four more seasons!"`
-        : `📣 Rally: Mayor ${cand.name} asks the village for more time to deliver.`);
-    } else {
-      this.say(`📣 Rally: ${cand.name} ${cand.type.emoji} promises ${cand.promise}.`);
-    }
+    Hustings.planRally(c.candidates[ci], ci);
   },
 
   shuffledTypes() {

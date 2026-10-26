@@ -1,7 +1,7 @@
 // Ported from PixelVille V1 js/life.js (see docs/DESIGN.md §3), typed against src/sim/types.ts. Behaviour changes for 3D are marked "V2:".
 import type { Building, Person } from './types';
 import { Tasks } from './tasks';
-import { GH, GW, G_GRASS, G_SAND, G_WATER, MSIZE, World } from './world';
+import { GH, GW, G_WATER, MSIZE, World } from './world';
 import { MIN_PER_SEC, Snd, T, midPx } from './core';
 import { News } from './news';
 import { Weather } from './weather';
@@ -17,6 +17,7 @@ import { Rep } from './reputation';
 import { Health } from './health';
 import { Supply } from './supply';
 import { Gateways } from './gateways';
+import { Hustings } from './hustings';
 /* ============================================================
    PixelVille — ambient life & the crime and justice system.
    Hikers trek up mountains (torches at night), birds cross the
@@ -66,6 +67,7 @@ export const Life: any = {
     this.boats = []; this.ferry = null; this.ferrySig = '';
     this.helis = []; this.heliCd = 300;
     this.campaignCars = []; this.votingBooths = null;
+    Hustings.reset();
     this.trials = []; this.graveCases = 0; this.graveCd = 2400; this.graveCrime = null;
     this.reporters = []; this.beachfolk = []; this.sandTiles = [];
     Tasks.reset();
@@ -157,34 +159,12 @@ export const Life: any = {
     for (const bf of this.beachfolk) bf.ph += dt;
   },
 
-  /* ---------------- election rallies & celebrations ---------------- */
+  /* ---------------- election rallies & celebrations ----------------
+     V2: the rally (and polling day) happen on open ground, in daylight, with real villagers walking there and
+     back: sim/hustings.ts. `rally` and `votingBooths` are what's standing there now (for the renderer and PVTV). */
   rally: null,
-  startRally(cand: any) {
-    const venue = World.buildings.find((b: Building) => b.type === 'townhall' && b.connected && !b.ruined) ||
-                  World.buildings.find((b: Building) => (b.type === 'park' || b.type === 'school') && b.connected && !b.ruined) ||
-                  World.buildings.find((b: Building) => b.connected && !b.ruined);
-    if (!venue) return;
-    const cx = venue.door.x * T + 8, cy = venue.door.y * T + 22;
-    const crowd = [];
-    const adults = Sim.people.filter((p: Person) => p.kind !== 'kid');
-    const n = Math.min(9, 3 + (adults.length / 3 | 0));
-    for (let i = 0; i < n; i++)
-      crowd.push({
-        x: cx + (i % 5) * 9 - 18 + ((i * 7) % 3),
-        y: cy + ((i / 5) | 0) * 8 + 6,
-        seed: i * 449 + venue.id, kind: i % 3 === 0 ? 'woman' : 'man',
-      });
-    const speaker = cand.personId ? Sim.people.find((p: Person) => p.id === cand.personId) : null;
-    this.rally = {
-      x: cx, y: cy - 2, t: 150, crowd, color: cand.color || '#4f8ede',
-      speakerKind: speaker ? speaker.kind : 'man',
-      speakerSeed: speaker ? speaker.seed : cand.name.length * 37,
-    };
-  },
   tickRally(dt: number) {
-    if (!this.rally) return;
-    this.rally.t -= dt * MIN_PER_SEC;
-    if (this.rally.t <= 0) this.rally = null;
+    Hustings.tick(dt);
   },
   celebrate(x: number, y: number, color: string) {
     for (let i = 0; i < 44; i++) {
@@ -892,8 +872,8 @@ export const Life: any = {
   tickCampaignLife(dt: number) {
     const campaigning = Gov.campaign && !Gov.campaign.votingDay;
     if (!campaigning) { this.campaignCars = []; return; }
-    // a couple of cars with candidate banners cruise the streets with a megaphone
-    if (this.campaignCars.length < 2 && Math.random() < dt * 0.05) {
+    // a couple of cars with candidate banners cruise the streets with a megaphone (V2: in the daytime, not at 3 a.m.)
+    if (this.campaignCars.length < 2 && Sim.clock >= 540 && Sim.clock < 1200 && Math.random() < dt * 0.05) {
       const roads = [];
       for (let i = 0; i < World.roadMap.length; i++)
         if (World.roadMap[i]) roads.push([i % GW, (i / GW) | 0]);
@@ -914,42 +894,6 @@ export const Life: any = {
     }
     this.campaignCars = this.campaignCars.filter((c: any) => !c.done);
   },
-  setupVotingBooths(campaign: any) {
-    const venue = World.buildings.find((b: Building) => b.type === 'townhall' && b.connected && !b.ruined) ||
-                  World.buildings.find((b: Building) => (b.type === 'school' || b.type === 'park') && b.connected && !b.ruined) ||
-                  World.buildings.find((b: Building) => b.connected && !b.ruined);
-    if (!venue) return;
-    // the polling station stands on open ground BESIDE the hall — booths,
-    // ballot box and the whole queue need a clear lawn, not the middle of
-    // the road outside the front door
-    const vcx = venue.x + (venue.w >> 1), vcy = venue.y + venue.h;
-    let spot = null;
-    for (let r = 1; r <= 7 && !spot; r++) {
-      for (let j = -r; j <= r && !spot; j++) for (let i = -r; i <= r; i++) {
-        if (Math.max(Math.abs(i), Math.abs(j)) !== r) continue;
-        const x = vcx + i, y = vcy + j;
-        let ok = true;
-        for (let dx = -2; dx <= 2 && ok; dx++) for (let dy = 0; dy <= 1; dy++) {
-          if (!World.inB(x + dx, y + dy)) { ok = false; break; }
-          const k = World.idx(x + dx, y + dy);
-          const gk = World.ground[k];
-          if ((gk !== G_GRASS && gk !== G_SAND) || World.bmap[k] || World.roadMap[k] || World.railMap[k]) { ok = false; break; }
-        }
-        if (ok) spot = { x, y };
-      }
-    }
-    const cx = spot ? spot.x * T + 8 : venue.door.x * T + 8;
-    const cy = spot ? spot.y * T + 8 : venue.door.y * T + 30;
-    const queue = [];
-    const adults = Sim.people.filter((p: Person) => p.kind !== 'kid');
-    const n = Math.min(10, 4 + (adults.length / 4 | 0));
-    for (let i = 0; i < n; i++) {
-      const p = adults[i % adults.length];
-      queue.push({ seed: p ? p.seed : i * 331, kind: p ? p.kind : (i % 2 ? 'woman' : 'man') });
-    }
-    this.votingBooths = { x: cx, y: cy, queue, colors: campaign.candidates.map((c: any) => c.color) };
-  },
-
   /* ---------------- grave crimes, trials & the ultimate penalty ---------------- */
   trials: [], graveCases: 0, graveCd: 2400, graveCrime: null,
   tickJustice(dt: number) {
