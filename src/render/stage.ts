@@ -22,7 +22,7 @@ import { setTextureScale } from '../gfx/textures';
 import { interiorDay, lightsOn } from '../gfx/architecture';
 import { GLOW } from '../gfx/props';
 import { leafFall } from '../gfx/vegetation';
-import { setHeadlightPool, setGlare, VIEW } from '../gfx/car';
+import { flushBeams, setGlare, VIEW } from '../gfx/car';
 import { snowUniform, MAT } from './kit';
 
 export type { Quality } from '../gfx/pipeline';
@@ -219,7 +219,6 @@ export class Stage {
     this.lampK = lampK;
     GLOW.lantern.emissiveIntensity = lampK * 5;
     this.updateLamps(focus, lamps, lampK);
-    setHeadlightPool(0.06 * this.sky.nightK);
     setGlare(0.9 * this.sky.nightK);
     VIEW.copy(this.camera.position);
 
@@ -308,6 +307,8 @@ export class Stage {
   private lastCam = new THREE.Matrix4();
 
   render(): void {
+    // the headlamps lighting the street, once everything has moved this frame (none indoors)
+    flushBeams(this.camera.position, this.indoor ? 0 : this.sky.nightK, this.quality === 'high' ? 8 : this.quality === 'medium' ? 6 : 3);
     if (this.lost) return;
     if (this.indoor) {
       this.camera.updateMatrixWorld();

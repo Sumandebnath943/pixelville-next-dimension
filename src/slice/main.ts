@@ -14,7 +14,7 @@ import { setAnisotropy, setTextureScale, texturesReady } from '../gfx/textures';
 import { interiorDay, lightsOn } from '../gfx/architecture';
 import { GLOW } from '../gfx/props';
 import { Precipitation } from '../gfx/precip';
-import { setHeadlightPool } from '../gfx/car';
+import { flushBeams, setGlare, VIEW } from '../gfx/car';
 import { buildStreet, farForest, groundAt, Street } from './street';
 import { StreetLife } from './traffic';
 
@@ -113,12 +113,6 @@ async function main(): Promise<void> {
     const l = new THREE.PointLight(0xffc68a, 0, 28, 2);
     scene.add(l);
     lampLights.push(l);
-  }
-  const headLights: THREE.SpotLight[] = [];
-  for (let i = 0; i < P.spotLights; i++) {
-    const s = new THREE.SpotLight(0xfff0d8, 0, 45, 0.5, 0.65, 2);
-    scene.add(s, s.target);
-    headLights.push(s);
   }
 
   /* ---------- state ---------- */
@@ -312,19 +306,11 @@ async function main(): Promise<void> {
     street.beacons.emissiveIntensity = Math.floor(ENV.time.value * 1.4) % 2 ? sigK * 0.7 : 0.05;
     const headsOn = sky.nightK > 0.2 || st.rain > 0.3 || st.snowfall > 0.3 || st.fog < 0.6;
     const cars = life.cars.filter((c) => c.root.visible);
+    // (each lit car lights the street itself: its beams go to the shaders just before the frame is drawn; its glare,
+    // as in the game, is drawn for where the eye is)
+    setGlare(0.9 * sky.nightK);
+    VIEW.copy(camera.position);
     for (const c of cars) c.lights(headsOn, sky.nightK);
-    setHeadlightPool(0.06 * sky.nightK);
-    const byDist = cars.filter((c) => c.headOn).sort((a, b) => a.root.position.distanceToSquared(camera.position) - b.root.position.distanceToSquared(camera.position));
-    headLights.forEach((s, i) => {
-      const c = byDist[i];
-      if (!c || sky.nightK < 0.15) { s.intensity = 0; return; }
-      const yawC = c.root.rotation.y;
-      const dx = Math.sin(yawC), dz = Math.cos(yawC);
-      s.position.set(c.root.position.x + dx * (c.dims.L / 2), 0.75, c.root.position.z + dz * (c.dims.L / 2));
-      s.target.position.set(s.position.x + dx * 18, 0, s.position.z + dz * 18);
-      s.target.updateMatrixWorld();
-      s.intensity = 70 * sky.nightK;
-    });
     for (const f of street.floaters) {
       const duck = f.obj.userData.duck as { phase: number; speed: number } | undefined;
       if (duck) {
@@ -359,6 +345,7 @@ async function main(): Promise<void> {
     (g.tint.value as THREE.Vector3).set(1 + warm * 0.04 - st.snowfall * 0.02, 1, 1 - warm * 0.05 + st.overcast * 0.03 + st.snowfall * 0.03);
     g.saturation.value = 1.06 - st.overcast * 0.16;
     g.contrast.value = 1.05 - st.overcast * 0.06;
+    flushBeams(camera.position, sky.nightK, quality === 'high' ? 8 : quality === 'medium' ? 6 : 3);
     if (lost) return;
     const t0 = performance.now();
     if (off.has('post')) {

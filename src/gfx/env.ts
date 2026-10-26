@@ -6,6 +6,9 @@
    ============================================================ */
 import * as THREE from 'three';
 
+/** how many headlamp beams the surface shader can take at once */
+export const MAX_BEAMS = 8;
+
 export const ENV = {
   /** seconds since start, for animation */
   time: { value: 0 },
@@ -42,6 +45,12 @@ export const ENV = {
   /** V2 (Milestone 4): one texel per map tile, 1 where the power is on (blackouts turn lit windows,
       signs and lanterns off); the map is 256 tiles of 8 m. Lit everywhere until the game says otherwise. */
   power: { value: powerTexture() as THREE.Texture },
+  /** V2: the headlamps lighting the street (gfx/car.ts sends the nearest few each frame): per lamp pair its
+      position (w = strength), the way it shines and its right hand */
+  beamN: { value: 0 },
+  beamP: { value: Array.from({ length: MAX_BEAMS }, () => new THREE.Vector4()) },
+  beamF: { value: Array.from({ length: MAX_BEAMS }, () => new THREE.Vector4()) },
+  beamR: { value: Array.from({ length: MAX_BEAMS }, () => new THREE.Vector4()) },
 };
 
 function powerTexture(): THREE.DataTexture {

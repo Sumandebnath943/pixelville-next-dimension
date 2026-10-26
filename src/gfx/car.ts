@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { surface } from './surface';
+import { ENV, MAX_BEAMS } from './env';
 
 export type CarStyle = 'hatch' | 'sedan' | 'suv' | 'estate';
 interface Dim { L: number; WB: number; W: number; H: number; belt: number; hood: number; deck: number; hoodLen: number; screen: number; rear: 'notch' | 'hatch' | 'estate'; wheelR: number; clearance: number }
@@ -68,7 +69,7 @@ function extrudeAcross(shape: THREE.Shape, width: number, bevel: number): THREE.
   return g.index ? g.toNonIndexed() : g;
 }
 
-interface Models { paint: THREE.BufferGeometry; glass: THREE.BufferGeometry; trim: THREE.BufferGeometry; chrome: THREE.BufferGeometry; head: THREE.BufferGeometry; bulb: THREE.BufferGeometry; drl: THREE.BufferGeometry; tail: THREE.BufferGeometry; plate: THREE.BufferGeometry; dims: Dim; headAt: [number, number, number][] }
+interface Models { paint: THREE.BufferGeometry; glass: THREE.BufferGeometry; trim: THREE.BufferGeometry; chrome: THREE.BufferGeometry; head: THREE.BufferGeometry; bulb: THREE.BufferGeometry; drl: THREE.BufferGeometry; tail: THREE.BufferGeometry; plate: THREE.BufferGeometry; dims: Dim; headAt: [number, number, number][]; beamAt: [number, number, number] }
 const CACHE = new Map<CarStyle, Models>();
 
 function merge(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
@@ -113,13 +114,131 @@ function lamp(w: number, h: number, depth: number, r: number, x: number, y: numb
   g.rotateY(ry);
   return g.translate(x, y, z);
 }
-/** a bulb: a small disc on its lamp's face, (ox, oy) from the lamp's centre, turned and tipped like the lamp */
-function disc(r: number, ox: number, oy: number, x: number, y: number, z: number, ry: number, rx: number): THREE.BufferGeometry {
-  const g = new THREE.CircleGeometry(r, 14);
-  g.translate(ox, oy, 0.004);
-  g.rotateX(rx);
-  g.rotateY(ry);
-  return g.translate(x, y, z);
+
+/* V2: headlamps laid on the nose itself. They used to be blocks set a few centimetres inside the bodywork (the
+   bevelled panels stand proud of the side profile), so only scraps of lens and half-buried bulbs showed through
+   the paint. Now the front of the body is found by looking straight back at it (-z), and each part of the lamp
+   follows the paint (its curve, the bevel round the corner, the bonnet's droop) a few millimetres proud. */
+type Nose = (x: number, y: number) => { z: number; n: THREE.Vector3 };
+/** where the body's front is at (x, y) seen from ahead, and which way it faces there (between heights y0 and y1) */
+function noseOf(body: THREE.BufferGeometry, zMin: number, y0: number, y1: number): Nose {
+  const p = body.attributes.position.array, nr = body.attributes.normal.array;
+  const tris: number[] = [];
+  for (let i = 0; i < p.length; i += 9) {
+    if (Math.max(p[i + 2], p[i + 5], p[i + 8]) < zMin || Math.max(p[i + 1], p[i + 4], p[i + 7]) < y0 || Math.min(p[i + 1], p[i + 4], p[i + 7]) > y1) continue;
+    // (facing forward: the front, not the panel behind it)
+    if (nr[i + 2] + nr[i + 5] + nr[i + 8] > 0) tris.push(i);
+  }
+  const seen = new Map<string, { z: number; n: THREE.Vector3 }>();
+  return (x, y) => {
+    const key = `${Math.round(x * 1e5)},${Math.round(y * 1e5)}`;
+    const hit = seen.get(key);
+    if (hit) return hit;
+    let best = -Infinity, bi = -1, bu = 0, bv = 0;
+    for (const i of tris) {
+      const ax = p[i], ay = p[i + 1], bx = p[i + 3], by = p[i + 4], cx = p[i + 6], cy = p[i + 7];
+      const den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+      if (Math.abs(den) < 1e-12) continue;
+      const u = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / den;
+      const v = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / den;
+      if (u < -1e-6 || v < -1e-6 || u + v > 1 + 1e-6) continue;
+      const z = u * p[i + 2] + v * p[i + 5] + (1 - u - v) * p[i + 8];
+      if (z > best) { best = z; bi = i; bu = u; bv = v; }
+    }
+    const out = { z: bi < 0 ? zMin : best, n: new THREE.Vector3(0, 0, 1) };
+    if (bi >= 0) {
+      const w = 1 - bu - bv;
+      for (let k = 0; k < 3; k++) out.n.setComponent(k, bu * nr[bi + k] + bv * nr[bi + 3 + k] + w * nr[bi + 6 + k]);
+      out.n.normalize();
+    }
+    seen.set(key, out);
+    return out;
+  };
+}
+/** flat shapes drawn in front view (x, y), laid on the nose `lift` metres proud of the paint */
+class NoseLayer {
+  private pos: number[] = [];
+  private nor: number[] = [];
+  constructor(private nose: Nose, private lift: number) {}
+  private put(q: THREE.Vector2): void {
+    const s = this.nose(q.x, q.y), l = this.lift;
+    this.pos.push(q.x + s.n.x * l, q.y + s.n.y * l, s.z + s.n.z * l);
+    this.nor.push(s.n.x, s.n.y, s.n.z);
+  }
+  /** a triangle facing out of the nose, whichever way round its corners come */
+  private tri(a: THREE.Vector2, b: THREE.Vector2, c: THREE.Vector2): void {
+    const cw = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) < 0;
+    this.put(a);
+    this.put(cw ? c : b);
+    this.put(cw ? b : c);
+  }
+  /** a closed outline, filled from its middle in rings that close up towards the edge (where a lens wraps the corner) */
+  fill(ring: THREE.Vector2[]): this {
+    const c = new THREE.Vector2();
+    for (const q of ring) c.add(q);
+    c.divideScalar(ring.length);
+    const rings = [0.4, 0.66, 0.84, 0.94, 1].map((f) => ring.map((q) => c.clone().lerp(q, f)));
+    for (let i = 0; i < ring.length; i++) {
+      const j = (i + 1) % ring.length;
+      this.tri(c, rings[0][i], rings[0][j]);
+      for (let k = 1; k < rings.length; k++) {
+        this.tri(rings[k - 1][i], rings[k][i], rings[k][j]);
+        this.tri(rings[k - 1][i], rings[k][j], rings[k - 1][j]);
+      }
+    }
+    return this;
+  }
+  /** the strip between two matching outlines, along the steps where `keep` holds at both ends */
+  band(inner: THREE.Vector2[], outer: THREE.Vector2[], keep: boolean[]): this {
+    for (let i = 0; i < inner.length; i++) {
+      const j = (i + 1) % inner.length;
+      if (!keep[i] || !keep[j]) continue;
+      this.tri(inner[i], outer[i], outer[j]);
+      this.tri(inner[i], outer[j], inner[j]);
+    }
+    return this;
+  }
+  geo(): THREE.BufferGeometry {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
+    return g;
+  }
+}
+/** a headlamp's outline: u runs from the grille end (-a) to the wing end (+a), v up. A rounded slot, slimmer at
+ *  the grille end and swept up towards the wing, as an even ring of points (anticlockwise) */
+function lampSlot(a: number, b: number, n = 72): THREE.Vector2[] {
+  const dense: THREE.Vector2[] = [];
+  for (let i = 0; i < 480; i++) {
+    const t = (i / 480) * Math.PI * 2, c = Math.cos(t), s = Math.sin(t);
+    dense.push(sweep(a, Math.sign(c) * a * Math.abs(c) ** 0.45, Math.sign(s) * b * Math.abs(s) ** 0.45));
+  }
+  // even steps round it
+  const cum = [0];
+  for (let i = 1; i <= dense.length; i++) cum.push(cum[i - 1] + dense[i % dense.length].distanceTo(dense[i - 1]));
+  const out: THREE.Vector2[] = [];
+  for (let k = 0, j = 0; k < n; k++) {
+    const s = (k / n) * cum[dense.length];
+    while (cum[j + 1] < s) j++;
+    out.push(dense[j].clone().lerp(dense[(j + 1) % dense.length], (s - cum[j]) / (cum[j + 1] - cum[j] || 1)));
+  }
+  return out;
+}
+/** the slot's shape at (u, v): slimmer towards the grille end, swept up towards the wing */
+function sweep(a: number, u: number, v: number): THREE.Vector2 {
+  return new THREE.Vector2(u, v * (0.78 + 0.11 * (u / a + 1)) + 0.022 * (u / a));
+}
+/** an anticlockwise outline moved `d` metres outwards (inwards when negative), square to its smoothed edge */
+function grow(ring: THREE.Vector2[], d: number): THREE.Vector2[] {
+  const n = ring.length;
+  return ring.map((q, i) => {
+    const t = ring[(i + 3) % n].clone().sub(ring[(i - 3 + n) % n]).normalize();
+    return new THREE.Vector2(q.x + t.y * d, q.y - t.x * d);
+  });
+}
+/** a circle of radius r round (u, v), anticlockwise */
+function circle(u: number, v: number, r: number, n = 24): THREE.Vector2[] {
+  return Array.from({ length: n }, (_, i) => new THREE.Vector2(u + Math.cos((i / n) * Math.PI * 2) * r, v + Math.sin((i / n) * Math.PI * 2) * r));
 }
 
 function models(style: CarStyle): Models {
@@ -201,22 +320,35 @@ function models(style: CarStyle): Models {
   }
   const chrome: THREE.BufferGeometry[] = [];
   for (const sx of [-1, 1]) chrome.push(boxAt(0.012, 0.018, cab.zA - cab.zC - 0.1, sx * (hw - 0.085), d.belt - 0.035, (cab.zA + cab.zC) / 2));
-  // V2 (Milestone 8): lamp units, not glowing boxes: a rounded lens swept round the corner of the body, and behind
-  // it two small projector bulbs and a slim running-light strip (the hot spots are small, so they glare like real
-  // lamps instead of blooming into a white slab); tail lamps are rounded clusters with a brighter inner bar
+  // V2 (Milestone 8): lamp units, not glowing boxes: a slim lens swept up towards the wing in a dark seam, two small
+  // projector bulbs in it and a running-light strip along its lower edge and round its outer end (the hot spots are
+  // small, so they glare like real lamps instead of blooming into a white slab), all laid on the paint (see noseOf);
+  // tail lamps are rounded clusters with a brighter inner bar
   const head: THREE.BufferGeometry[] = [], bulb: THREE.BufferGeometry[] = [], drl: THREE.BufferGeometry[] = [], tail: THREE.BufferGeometry[] = [];
   const headAt: [number, number, number][] = [];
+  const hy = d.hood - 0.15, hc = hw - 0.3, LA = 0.2, LB = 0.065;
+  const nose = noseOf(body, L2 - 0.5, hy - 0.2, hy + 0.2);
+  const slot = lampSlot(LA, LB);
+  const strip = slot.map((q) => q.y < -LB * 0.25 || q.x > LA * 0.62);
   for (const sx of [-1, 1]) {
-    const hx = sx * (hw - 0.3), hy = d.hood - 0.15, hz = L2 - 0.03;
-    head.push(lamp(0.4, 0.13, 0.045, 0.05, hx, hy, hz, sx * 0.28, -0.3));
-    for (const k of [-1, 1]) bulb.push(disc(0.031, k * 0.085, 0.012, hx, hy, hz, sx * 0.28, -0.3));
-    drl.push(lamp(0.3, 0.018, 0.012, 0.009, hx, hy - 0.046, hz + 0.006, sx * 0.28, -0.3));
-    headAt.push([hx, hy, hz + 0.06]);
+    const at = (r: THREE.Vector2[]): THREE.Vector2[] => r.map((q) => new THREE.Vector2(sx * (hc + q.x), hy + q.y));
+    trim.push(new NoseLayer(nose, 0.004).fill(at(grow(slot, 0.012))).geo());
+    head.push(new NoseLayer(nose, 0.008).fill(at(slot)).geo());
+    drl.push(new NoseLayer(nose, 0.011).band(at(grow(slot, -0.017)), at(grow(slot, -0.007)), strip).geo());
+    const lit = new NoseLayer(nose, 0.011);
+    for (const k of [-1, 1]) {
+      const c = sweep(LA, k * 0.085, 0.012);
+      lit.fill(at(circle(c.x, c.y, 0.031)));
+    }
+    bulb.push(lit.geo());
+    const mid = hy + sweep(LA, 0, 0).y;
+    headAt.push([sx * hc, mid, nose(sx * hc, mid).z + 0.02]);
     const tx = sx * (hw - 0.25), ty = d.deck - 0.21, tz = -L2 + 0.02;
     tail.push(lamp(0.36, 0.15, 0.04, 0.045, tx, ty, tz, Math.PI - sx * 0.22, 0.2));
   }
   const plate = merge([boxAt(0.52, 0.12, 0.02, 0, 0.42, L2 + 0.04), boxAt(0.52, 0.12, 0.02, 0, d.deck - 0.4, -L2 - 0.02)]);
-  const m: Models = { paint: merge(paintParts), glass, trim: merge(trim), chrome: merge(chrome), head: merge(head), bulb: merge(bulb), drl: merge(drl), tail: merge(tail), plate, dims: d, headAt };
+  const beamAt: [number, number, number] = [0, hy, (headAt[0][2] + headAt[1][2]) / 2 + 0.03];
+  const m: Models = { paint: merge(paintParts), glass, trim: merge(trim), chrome: merge(chrome), head: merge(head), bulb: merge(bulb), drl: merge(drl), tail: merge(tail), plate, dims: d, headAt, beamAt };
   m.glass.computeBoundingSphere();
   CACHE.set(style, m);
   return m;
@@ -269,47 +401,74 @@ function shared(): NonNullable<typeof SHARED> {
   return SHARED;
 }
 
-/* ---------- headlight pool on the road (cheap stand-in for a spotlight) ---------- */
-let POOL: { geo: THREE.BufferGeometry; mat: THREE.MeshBasicMaterial } | null = null;
-function pool(): NonNullable<typeof POOL> {
-  if (POOL) return POOL;
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 128;
-  const g = c.getContext('2d')!;
-  const gr = g.createRadialGradient(32, 128, 4, 32, 96, 92);
-  gr.addColorStop(0, 'rgba(255,255,255,1)');
-  gr.addColorStop(0.35, 'rgba(255,255,255,0.55)');
-  gr.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = gr;
-  g.fillRect(0, 0, 64, 128);
-  const tex = new THREE.CanvasTexture(c);
-  const geo = new THREE.PlaneGeometry(4.2, 11);
-  geo.rotateX(-Math.PI / 2);
-  geo.rotateY(Math.PI);
-  POOL = { geo, mat: new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0x000000 }) };
-  return POOL;
+/* ---------- V2: headlamp beams ----------
+   A lit car's headlamps light what is in front of it through the surface shader (gfx/surface.ts): the road in its
+   own colour (lane paint brighter than tarmac, a wet road shining), the kerb, a wall, a person, the car ahead, on
+   any slope. They used to lay a bright square of light flat on the road, which ignored all of that and showed its
+   edges. The lamps nearest the eye go to the shaders each frame. */
+const BEAMS = new Map<THREE.Object3D, [number, number, number, number]>();
+/** the lamp pair at (x, y, z) in `o`'s frame, shining along its +z, lights the street this frame (`k` how strongly) */
+export function addBeam(o: THREE.Object3D, x: number, y: number, z: number, k = 1): void {
+  BEAMS.set(o, [x, y, z, k]);
 }
-/** brightness of every car's headlight pool (scene radiance units) */
-export function setHeadlightPool(k: number): void {
-  pool().mat.color.setRGB(1, 0.93, 0.8).multiplyScalar(k);
+/** a dipped beam's strength (candela-like, against the street lamps' 11) */
+const BEAM_CD = 28000;
+const _bv = new THREE.Vector3();
+/** send the lamps nearest `eye` to the shaders, at most `cap` (`k` how strong beams look now: 0 by day), and start
+ *  the next frame's list */
+export function flushBeams(eye: THREE.Vector3, k: number, cap = MAX_BEAMS): void {
+  const near: { o: THREE.Object3D; p: THREE.Vector3; k: number; d: number }[] = [];
+  if (k > 0.001)
+    for (const [o, [x, y, z, s]] of BEAMS) {
+      if (!shown(o)) continue;
+      o.updateWorldMatrix(true, false);
+      const p = new THREE.Vector3(x, y, z).applyMatrix4(o.matrixWorld);
+      near.push({ o, p, k: s, d: p.distanceToSquared(eye) });
+    }
+  BEAMS.clear();
+  near.sort((a, b) => a.d - b.d);
+  const n = Math.min(near.length, cap, MAX_BEAMS);
+  for (let i = 0; i < n; i++) {
+    const { o, p, k: s } = near[i], e = o.matrixWorld.elements;
+    ENV.beamP.value[i].set(p.x, p.y, p.z, BEAM_CD * k * s);
+    _bv.set(e[8], e[9], e[10]).normalize();
+    ENV.beamF.value[i].set(_bv.x, _bv.y, _bv.z, 0);
+    _bv.set(-e[0], -e[1], -e[2]).normalize(); // (a car's right hand is its -x)
+    ENV.beamR.value[i].set(_bv.x, _bv.y, _bv.z, 0);
+  }
+  ENV.beamN.value = n;
+}
+/** drawn this frame: it and everything it hangs from are visible, up to the scene */
+function shown(o: THREE.Object3D): boolean {
+  for (let q: THREE.Object3D | null = o; q; q = q.parent) {
+    if (!q.visible) return false;
+    if ((q as THREE.Scene).isScene) return true;
+  }
+  return false;
 }
 
 /* ---------- V2 (Milestone 8): the glare of a lit headlamp, brightest seen from in front ---------- */
 let GLARE: THREE.SpriteMaterial | null = null;
 function glare(): THREE.SpriteMaterial {
   if (GLARE) return GLARE;
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const g = c.getContext('2d')!;
-  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gr.addColorStop(0, 'rgba(255,250,235,1)');
-  gr.addColorStop(0.12, 'rgba(255,244,220,0.65)');
-  gr.addColorStop(0.4, 'rgba(255,236,205,0.14)');
-  gr.addColorStop(1, 'rgba(255,230,200,0)');
-  g.fillStyle = gr;
-  g.fillRect(0, 0, 64, 64);
+  // a tight hot core in a halo that fades all the way out: at night's exposure the old one burnt out into a flat white
+  // disc a metre across. (Half floats, so the long faint tail doesn't band into rings.)
+  const N = 128, px = new Uint16Array(N * N * 4);
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      const r = Math.hypot(x - (N - 1) / 2, y - (N - 1) / 2) / (N / 2);
+      const a = r >= 1 ? 0 : (Math.exp(-r * 16) + 0.18 * Math.exp(-r * 4.5)) * (1 - r * r) ** 2;
+      const i = (y * N + x) * 4;
+      px[i] = THREE.DataUtils.toHalfFloat(a);
+      px[i + 1] = THREE.DataUtils.toHalfFloat(a * 0.96);
+      px[i + 2] = THREE.DataUtils.toHalfFloat(a * 0.89);
+      px[i + 3] = THREE.DataUtils.toHalfFloat(1);
+    }
+  const tex = new THREE.DataTexture(px, N, N, THREE.RGBAFormat, THREE.HalfFloatType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
   // the same features as the thought bubbles' sprites, so it compiles no new shader
-  GLARE = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0x000000 });
+  GLARE = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0x000000 });
   return GLARE;
 }
 /** where the camera is this frame (set by the stage), for how much of a lamp's glare it sees */
@@ -321,7 +480,6 @@ export function setGlare(k: number): void {
 
 export class Car {
   root = new THREE.Group();
-  private pool: THREE.Mesh;
   body = new THREE.Group();
   wheels: THREE.Group[] = [];
   paint: THREE.MeshPhysicalMaterial;
@@ -331,6 +489,8 @@ export class Car {
   tail: THREE.MeshStandardMaterial;
   dims: Dim;
   private glares: THREE.Sprite[] = [];
+  private headAt: [number, number, number][];
+  private beamAt: [number, number, number];
   private spin = 0;
   private pitch = 0;
   private roll = 0;
@@ -343,10 +503,13 @@ export class Car {
   constructor(style: CarStyle, color: THREE.Color, metallic = true, extra?: 'taxi' | 'police') {
     const m = models(style), s = shared();
     this.dims = m.dims;
+    this.headAt = m.headAt;
+    this.beamAt = m.beamAt;
     this.paint = surface(new THREE.MeshPhysicalMaterial({ color, metalness: metallic ? 0.6 : 0.05, roughness: metallic ? 0.32 : 0.4, clearcoat: 1, clearcoatRoughness: 0.035 }), { snow: 0.9, wet: 0.15 }, 'carPaint') as THREE.MeshPhysicalMaterial;
-    this.head = new THREE.MeshStandardMaterial({ color: 0x9aa2aa, roughness: 0.08, metalness: 0.35, emissive: 0xfff4dc, emissiveIntensity: 0 });
-    this.bulb = new THREE.MeshStandardMaterial({ color: 0xd8dce0, roughness: 0.15, metalness: 0.5, emissive: 0xfff6e4, emissiveIntensity: 0 });
-    this.drl = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.2, metalness: 0.3, emissive: 0xf4f8ff, emissiveIntensity: 0 });
+    // (the lamp's layers lie millimetres apart on the paint: pulled forward in depth too, so they never flicker into it)
+    this.head = new THREE.MeshStandardMaterial({ color: 0x9aa2aa, roughness: 0.08, metalness: 0.35, emissive: 0xfff4dc, emissiveIntensity: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+    this.bulb = new THREE.MeshStandardMaterial({ color: 0xd8dce0, roughness: 0.15, metalness: 0.5, emissive: 0xfff6e4, emissiveIntensity: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    this.drl = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, roughness: 0.2, metalness: 0.3, emissive: 0xf4f8ff, emissiveIntensity: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
     this.tail = new THREE.MeshStandardMaterial({ color: 0x5a0808, roughness: 0.15, emissive: 0xff1a0a, emissiveIntensity: 0 });
     const add = (g: THREE.BufferGeometry, mat: THREE.Material, shadow = true): THREE.Mesh => {
       const mesh = new THREE.Mesh(g, mat);
@@ -407,12 +570,6 @@ export class Car {
       b.position.set(0.3, d.H + 0.12, -0.15);
       this.body.add(base, r, b);
     }
-    const pl = pool();
-    this.pool = new THREE.Mesh(pl.geo, pl.mat);
-    this.pool.position.set(0, 0.06, d.L / 2 + 5.2);
-    this.pool.renderOrder = 3;
-    this.pool.visible = false;
-    this.root.add(this.pool);
   }
 
   /** pose for this frame; `accel` m/s² along travel, `turn` = yaw rate (rad/s) */
@@ -452,26 +609,32 @@ export class Car {
    *  (V2 (Milestone 8): it used to keep its lamps lit and its brake lights on in the drive) */
   lights(on: boolean, night: number, parked = false): void {
     this.headOn = on;
-    // the lens itself glows softly; the light comes from the small bulbs behind it
-    this.head.emissiveIntensity = on ? 1.6 : 0;
-    this.bulb.emissiveIntensity = on ? 34 : 0;
+    // how squarely the eye faces each lamp, from in front of it (in the body's own frame, which follows the Founder's
+    // car inside its group too): a lamp throws its light forward, so it dazzles head-on, shows its shape from the
+    // side, and from behind, or from the driver's seat, has no glare at all
+    const eye = on ? this.body.worldToLocal(_bv.copy(VIEW)) : _bv;
+    const face = this.headAt.map(([x, , z]) => (on ? Math.max(0, (eye.z - z) / (Math.hypot(eye.x - x, eye.z - z) || 1)) : 0));
+    const ahead = (face[0] ** 4 + face[1] ** 4) / 2;
+    // the lens itself glows softly; the light comes from the small bulbs behind it (the whole lens shows now that it
+    // sits on the paint, so its glow is kept low enough for the bulbs and the strip to read through it)
+    this.head.emissiveIntensity = on ? 0.7 * (0.4 + 0.6 * ahead) : 0;
+    this.bulb.emissiveIntensity = on ? 34 * (0.12 + 0.88 * ahead) : 0;
     // daytime running lights whenever the engine is on
     this.drl.emissiveIntensity = parked ? 0 : on ? 9 : 5;
     this.tail.emissiveIntensity = parked ? 0 : (on ? 2.2 : 0) + (this.braking ? 8 : 0);
-    this.pool.visible = on && night > 0.12;
-    // the glare: seen head-on it is a broad bloom, side-on a small point, from behind nothing
+    // the beam on the road ahead (it dips with the body under braking)
+    if (on && night > 0.12) addBeam(this.body, ...this.beamAt);
+    // the glare: seen head-on a broad bloom, side-on a small point
     const show = on && night > 0.15;
-    let face = 0;
-    if (show) {
-      // (from the world matrix: the Founder's own car is posed inside a group of its own)
-      const e = this.root.matrixWorld.elements;
-      const dx = VIEW.x - e[12], dz = VIEW.z - e[14], d = Math.hypot(dx, dz) || 1, fl = Math.hypot(e[8], e[10]) || 1;
-      face = Math.max(0, (e[8] * dx + e[10] * dz) / (d * fl));
-    }
-    for (const g of this.glares) {
-      g.visible = show && face > 0.02;
-      if (g.visible) g.scale.setScalar(0.25 + 1.15 * face * face);
-    }
+    this.glares.forEach((g, i) => {
+      g.visible = show && face[i] > 0.02;
+      if (!g.visible) return;
+      // drawn part of the way to the eye (and shrunk to match), so the car's own nose never cuts a bite out of it
+      const [x, y, z] = this.headAt[i];
+      const dx = eye.x - x, dy = eye.y - y, dz = eye.z - z, d = Math.hypot(dx, dy, dz) || 1, pull = Math.min(0.6, d * 0.5) / d;
+      g.position.set(x + dx * pull, y + dy * pull, z + dz * pull);
+      g.scale.setScalar((0.08 + 0.6 * face[i] ** 6) * (1 - pull));
+    });
   }
 }
 
@@ -493,7 +656,6 @@ export class Moto {
   private spinF = new THREE.Group();
   private spinR = new THREE.Group();
   private spin = 0;
-  private pool: THREE.Mesh;
 
   constructor(color: THREE.Color) {
     const s = shared(), w = wheelGeo(), d = this.dims;
@@ -563,13 +725,6 @@ export class Moto {
     plate.translate(0, 0.74, -0.88);
     put(plate, s.plate);
     this.root.add(this.body);
-    const pl = pool();
-    this.pool = new THREE.Mesh(pl.geo, pl.mat);
-    this.pool.scale.set(0.7, 1, 0.8);
-    this.pool.position.set(0, 0.06, 5);
-    this.pool.renderOrder = 3;
-    this.pool.visible = false;
-    this.root.add(this.pool);
   }
 
   drive(dt: number, x: number, z: number, yaw: number, speed: number, accel: number, turn: number, y = 0): void {
@@ -590,7 +745,8 @@ export class Moto {
   lights(on: boolean, night: number, parked = false): void {
     this.head.emissiveIntensity = on ? 9 : 0;
     this.tail.emissiveIntensity = parked ? 0 : (on ? 2.2 : 0) + (this.braking ? 8 : 0);
-    this.pool.visible = on && night > 0.12;
+    // one lamp, turning with the bars
+    if (on && night > 0.12) addBeam(this.front, 0, 0.55, 0, 0.55);
   }
 }
 

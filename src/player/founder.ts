@@ -16,7 +16,7 @@ import type { BuildingLayer } from '../render/buildings';
 import { emit, on } from '../sim/core';
 import type { FounderSave } from '../sim/game';
 import { Person } from '../gfx/person';
-import { Car as CarModel, Moto, Bike, Ride, CarStyle } from '../gfx/car';
+import { Car as CarModel, Moto, Bike, Ride, CarStyle, addBeam } from '../gfx/car';
 import { Fleet, Vehicle, specOf } from './fleet';
 import type { BagItem } from './shopping';
 import { surface } from '../gfx/surface';
@@ -143,7 +143,6 @@ export class Founder {
 
   constructor(scene: THREE.Scene, private buildings: BuildingLayer) {
     this.buildBody();
-    this.buildCar();
     scene.add(this.mesh, this.carMesh, this.parkedMesh);
     on('founderHit', (h) => this.runOver(h.speed, h.mass, h.what, h.dx, h.dy));
   }
@@ -216,13 +215,6 @@ export class Founder {
     this.mesh.add(ring);
   }
 
-  private buildCar(): void {
-    const head = new THREE.SpotLight(0xfff2d0, 0, 60, 0.5, 0.5, 1.2);
-    head.position.set(0, 0.8, 2.2);
-    head.target.position.set(0, 0, 14);
-    this.carMesh.add(head, head.target);
-    this.carMesh.userData.head = head;
-  }
   /** draw the vehicle that's out (or none) */
   private setRide(v: Vehicle | null): void {
     if (this.ride) this.carMesh.remove(this.ride.root);
@@ -896,7 +888,12 @@ export class Founder {
     }
     this.carMesh.position.set(c.x, c.y, c.z);
     this.carMesh.rotation.set(c.pitch, c.yaw, 0, 'YXZ');
-    if (!this.ride) return; // (a work vehicle drawn by the actors layer: just its headlamps here)
+    if (!this.ride) {
+      // (a work vehicle drawn by the actors layer: just its headlamps' beam here, from its nose)
+      const sp = specOf(this.vehicle);
+      if (this.driving && this.vehicle && ENV.night.value > 0.2) addBeam(this.carMesh, 0, 1, sp.reach + sp.radius * 0.8, 1.2);
+      return;
+    }
     if (this.ride instanceof CarModel) this.ride.setSiren(this.siren, performance.now() / 1000);
     // the vehicle's own suspension, wheels and lights
     const accel = (c.speed - this.lastCar.speed) / Math.max(dt, 1e-3);
@@ -910,9 +907,7 @@ export class Founder {
   }
 
   /** place the street camera: third-person orbit with collision, or eyes */
-  applyCamera(cam: THREE.PerspectiveCamera, dt: number, night: number): void {
-    const head = this.carMesh.userData.head as THREE.SpotLight;
-    head.intensity = this.driving || night > 0.3 ? 30 * night : 0;
+  applyCamera(cam: THREE.PerspectiveCamera, dt: number, _night: number): void {
     const aboard = this.passenger;
     if (this.firstPerson && !this.driving && !aboard) {
       // V2 (Milestone 7): a gentle head bob while walking (Settings → Accessibility turns it off)

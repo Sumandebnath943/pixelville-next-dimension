@@ -12,7 +12,7 @@
      lit interiors without losing the weather.
    ============================================================ */
 import * as THREE from 'three';
-import { ENV, GLSL_COMMON, bindEnv } from './env';
+import { ENV, GLSL_COMMON, MAX_BEAMS, bindEnv } from './env';
 
 export interface SurfaceOpts {
   /** how readily snow settles here (0 never … 1 fully) */
@@ -62,6 +62,53 @@ vec2 pvRipple(vec2 p, float t) {
 }
 `;
 
+/* V2: headlamps light whatever is in front of them (road, kerb, wall, people, the car ahead) with its own colour and
+   gloss, as a dipped beam does: cut off flat on the oncoming side and kicked up on the kerb side, most of the light
+   thrown far down the road and little just before the bonnet, spread wide near the car. The lamps are summed into
+   one light (their directions weighted by how much each brings: exact for the diffuse part), so the full lighting
+   model runs once, not once per lamp: the shader stays small and quick to compile. */
+const BEAMS = /* glsl */ `
+{
+  vec3 pvBeam = vec3(0.0);
+  for (int i = 0; i < ${MAX_BEAMS}; i++) {
+    if (i >= uBeamN) break;
+    vec3 bd = vWPos - uBeamP[i].xyz;
+    vec3 bf = uBeamF[i].xyz, br = uBeamR[i].xyz;
+    float bz = dot(bd, bf), bdd = dot(bd, bd);
+    if (bz < 0.15 || bdd > 4900.0) continue;
+    // across the beam (+ towards the kerb), from a little behind the lamps: the two of them already light the
+    // width of the car just ahead of it
+    float bh = dot(bd, br) / (bz + 1.5);
+    float bs = -dot(bd, cross(br, bf)) / bz;    // + below the lamps
+    float bcut = 0.006 - 0.032 * smoothstep(0.03, 0.3, bh);
+    float bI = smoothstep(bcut - 0.004, bcut + 0.014, bs);
+    bI *= pow(0.02 / max(bs, 0.02), 2.3) * (1.0 - smoothstep(0.1, 0.4, bs));
+    // wide just ahead, narrowing far down the road
+    float bc = bh - 0.03;
+    bI *= 0.78 * exp(-bc * bc * 12.0) + 0.22 * exp(-bh * bh * mix(1.8, 6.0, 1.0 - smoothstep(0.025, 0.08, bs)));
+    bI *= uBeamP[i].w * smoothstep(0.15, 1.0, bz) * (1.0 - smoothstep(2500.0, 4900.0, bdd)) / max(bdd, 0.25);
+    vec3 bl = -bd * inversesqrt(max(bdd, 1e-4));
+    // what squarely faces the lamps (the back of the car ahead, a wall) is lit brightly, but eased off before it
+    // burns out white
+    float bn = max(dot(pvN, bl), 0.0) * bI;
+    pvBeam += bl * (bI / (1.0 + bn / 2.0));
+  }
+  float pvBeamE = length(pvBeam);
+  if (pvBeamE > 1e-4) {
+    IncidentLight beam;
+    beam.direction = normalize((viewMatrix * vec4(pvBeam, 0.0)).xyz);
+    beam.color = vec3(1.0, 0.94, 0.84) * pvBeamE;
+    beam.visible = true;
+    // (dry tarmac facing oncoming lamps would mirror them back almost white: rough surfaces keep only a sheen of
+    // that; a wet road, a puddle or paint keeps all of its shine)
+    ReflectedLight pvBR = ReflectedLight(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
+    RE_Direct(beam, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, pvBR);
+    reflectedLight.directDiffuse += pvBR.directDiffuse;
+    reflectedLight.directSpecular += pvBR.directSpecular * mix(1.0, 0.2, smoothstep(0.35, 0.8, material.roughness));
+  }
+}
+`;
+
 export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, key = ''): THREE.MeshStandardMaterial {
   const snowK = o.snow ?? 0;
   const wetK = o.wet ?? 0.6;
@@ -83,6 +130,10 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
     sh.uniforms.uReflOn = ENV.reflOn;
     sh.uniforms.uWearTex = ENV.wearTex;
     sh.uniforms.uWearRect = ENV.wearRect;
+    sh.uniforms.uBeamN = ENV.beamN;
+    sh.uniforms.uBeamP = ENV.beamP;
+    sh.uniforms.uBeamF = ENV.beamF;
+    sh.uniforms.uBeamR = ENV.beamR;
     if (o.uniforms) Object.assign(sh.uniforms, o.uniforms);
 
     sh.vertexShader = sh.vertexShader
@@ -128,6 +179,10 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         uniform float uReflOn;
         uniform sampler2D uWearTex;
         uniform vec4 uWearRect;
+        uniform int uBeamN;
+        uniform vec4 uBeamP[${MAX_BEAMS}];
+        uniform vec4 uBeamF[${MAX_BEAMS}];
+        uniform vec4 uBeamR[${MAX_BEAMS}];
         ${o.fDecl || ''}`,
       )
       .replace(
@@ -209,6 +264,7 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         #endif
         ${o.fEmissive || ''}`,
       )
+      .replace('#include <lights_fragment_begin>', `#include <lights_fragment_begin>\n${BEAMS}`)
       .replace(
         '#include <lights_fragment_maps>',
         `#include <lights_fragment_maps>
