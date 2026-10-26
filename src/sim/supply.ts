@@ -26,7 +26,7 @@ import { News } from './news';
 import { Gov } from './gov';
 import { Mind } from './mind';
 import { Power, nearlyThere } from './power';
-import { Traffic } from './traffic';
+import { Traffic, kerbside } from './traffic';
 
 export type Good = 'food' | 'mats' | 'tex' | 'prod';
 export const GOODS: Record<Good, { name: string; emoji: string; color: string; unit: number }> = {
@@ -235,6 +235,7 @@ export const Supply = {
   /** send a truck along `path` carrying `n` of `g` to `to` (from `from`, or null for off the map) */
   send(kind: 'deliver' | 'import' | 'export' | 'haul', g: Good, n: number, path: number[][], to: any, from: any): void {
     if (path.length < 2) path = [path[0], path[0]];
+    path = kerbside(path); // (V2: it unloads on the near row of an avenue, in line with the traffic)
     const [sx, sy] = path[0];
     Life.trucks.push({ path, prog: 0, x: sx * T + 8, y: sy * T + 8, dirx: 1, diry: 0, phase: 'go', kind, g, n, to, from, t: 0, seed: (Math.random() * 1e6) | 0 });
   },
@@ -400,11 +401,16 @@ export const Supply = {
         }
       } else if (t.phase === 'drop') {
         t.t -= gm;
-        if (t.t <= 0) {
+        if (t.t <= 0 && !t.unloaded) {
+          t.unloaded = true;
           this.unload(t);
           // imports and exports leave the way they came; deliveries go back to the yard
           if (t.kind === 'export') t.done = true;
-          else { t.phase = 'back'; t.path = Life.backPath(t.path, t.prog); t.prog = 0; }
+        }
+        // V2: it turns round once there's room in the lane it pulls out into (it used to jump into whatever was there)
+        if (t.unloaded && !t.done) {
+          const back = (t.turn ??= Life.backPath(t.path, t.prog));
+          if (Traffic.roomToJoin(t, back, t.t < -20) || t.t < -120) { t.phase = 'back'; t.path = back; t.prog = 0; t.turn = null; }
         }
       }
     }

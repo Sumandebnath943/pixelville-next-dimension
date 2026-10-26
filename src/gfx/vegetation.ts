@@ -325,7 +325,7 @@ function foliageMaterial(tex: THREE.Texture, key: string, translucency = 0.35): 
   const m = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, vertexColors: true, roughness: 0.75, metalness: 0, side: THREE.DoubleSide });
   m.alphaToCoverage = true;
   return surface(m, {
-    snow: 0.85, wet: 0.35, keepNormals: true,
+    snow: 0.85, wet: 0.35, keepNormals: true, softBeam: true,
     vDecl: WIND_DECL,
     vDisplace: WIND_DISPLACE,
     fDecl: 'varying float vRand;\nvarying float vLeafH;\nuniform float uLeafFall;',
@@ -791,7 +791,7 @@ let GRASS_MAT: THREE.MeshStandardMaterial | null = null;
 function grassMaterial(): THREE.MeshStandardMaterial {
   if (GRASS_MAT) return GRASS_MAT;
   GRASS_MAT = surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, side: THREE.DoubleSide }), {
-    snow: 1, wet: 0.4, keepNormals: true,
+    snow: 1, wet: 0.4, keepNormals: true, softBeam: true,
     vDecl: GRASS_DECL, vDisplace: GRASS_DISPLACE,
     fDecl: 'varying float vBlade;',
     fEmissive: `

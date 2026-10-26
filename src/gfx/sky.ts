@@ -115,6 +115,7 @@ uniform vec3 fogSun;
 uniform float haze;
 uniform vec2 windDir;
 uniform float wind;
+uniform float skyCap;
 
 const float pi = 3.141592653589793;
 const float rayleighZenithLength = 8.4E3;
@@ -129,6 +130,13 @@ float noise(vec2 p) {
   return mix(mix(dot(grad(i), f), dot(grad(i + vec2(1, 0)), f - vec2(1, 0)), u.x),
              mix(dot(grad(i + vec2(0, 1)), f - vec2(0, 1)), dot(grad(i + vec2(1, 1)), f - vec2(1, 1)), u.x), u.y) * 1.6;
 }
+/* V2: noise on the sky's sphere, from the three planes weighted by how squarely each faces the direction: noise of
+   one plane alone (dir.xz) stretched into streaks fanning up from the horizon */
+float sphereNoise(vec3 d, float k) {
+  vec3 w = pow(abs(d), vec3(4.0));
+  w /= w.x + w.y + w.z;
+  return w.x * noise(d.yz * k) + w.y * noise(d.xz * k) + w.z * noise(d.xy * k);
+}
 float fbm(vec2 p, float drift) {
   float r = 0.0, a = 1.0;
   for (int i = 0; i < 5; i++) { r += a * noise(p); a *= 0.5; p = p * 2.03 + drift; }
@@ -140,6 +148,9 @@ float hgPhase(float c, float g) { float g2 = g * g; return 0.07957747154594767 *
 void main() {
   vec3 dir = normalize(vWorldPosition - cameraPosition);
   float dy = max(0.0, dir.y);
+  // (how big a pixel is in the star grid: worked out here, outside any branch, where derivatives are defined)
+  vec3 starW = fwidth(dir * 260.0);
+  float starPx = starW.x + starW.y + starW.z;
   float zen = acos(dy);
   float inv = 1.0 / (cos(zen) + 0.15 * pow(93.885 - ((zen * 180.0) / pi), -1.253));
   vec3 Fex = exp(-(vBetaR * rayleighZenithLength * inv + vBetaM * mieZenithLength * inv));
@@ -163,26 +174,30 @@ void main() {
       float tw = 0.65 + 0.35 * sin(time * (1.5 + h * 4.0) + h * 80.0);
       float mag = pow((h - 0.985) / 0.015, 3.0);
       vec3 tint = mix(vec3(1.0, 0.85, 0.7), vec3(0.75, 0.85, 1.0), h12(c.xz));
-      col += tint * smoothstep(0.32, 0.0, d) * (0.04 + mag * 0.5) * tw * stars * Fex;
+      // (V2: never smaller than a pixel or so, with the light kept the same: sub-pixel stars flickered as the view moved)
+      float rad = max(0.32, starPx * 0.9);
+      col += tint * smoothstep(rad, 0.0, d) * (0.32 * 0.32) / (rad * rad) * (0.04 + mag * 0.5) * tw * stars * Fex;
     }
     // faint milky band
     float band = exp(-pow(dot(dir, normalize(vec3(0.3, 0.2, 1.0))) * 3.5, 2.0));
-    col += stars * vec3(0.004, 0.0045, 0.006) * band * (0.5 + 0.5 * noise(dir.xz * 40.0));
+    col += stars * vec3(0.004, 0.0045, 0.006) * band * (0.5 + 0.5 * sphereNoise(dir, 40.0));
   }
-  // moon disc with maria, and its halo
+  // moon disc with maria, and its halo (V2: the discs are added last, over the sky's glow, behind the clouds)
+  vec3 discs = vec3(0.0);
   float cm = dot(dir, moonDir);
   if (moonDir.y > -0.1) {
     float disc = smoothstep(0.99988, 0.99991, cm);
     vec2 mp = (dir - moonDir * cm).xy * 900.0;
     float maria = 0.75 + 0.25 * noise(mp * 0.25 + 3.0);
-    col += disc * vec3(0.85, 0.86, 0.82) * maria * 0.9 * night * (1.0 - overcast * 0.9);
+    discs += disc * vec3(0.85, 0.86, 0.82) * maria * 0.9 * night * (1.0 - overcast * 0.9);
     col += vec3(0.08, 0.1, 0.14) * pow(max(cm, 0.0), 900.0) * night * (1.0 - overcast * 0.6) * 0.25;
   }
   // sun disc
   float sund = smoothstep(sunAngularDiameterCos, sunAngularDiameterCos + 0.00002, cosT) * showSun * (1.0 - overcast);
-  col += sund * min(vSunE * Fex * 0.5, vec3(30.0));
+  discs += sund * min(vSunE * Fex * 0.5, vec3(30.0));
 
   // clouds: two layers projected onto a dome, lit from the sky itself
+  float cloudA = 0.0;
   if (dir.y > 0.0 && cloudCoverage > 0.0) {
     vec2 drift = windDir * time * (0.002 + wind * 0.006);
     vec2 uv = dir.xz / (dir.y * 0.55 + 0.08);
@@ -205,6 +220,7 @@ void main() {
     cc *= max(day, 0.0);
     cc += night * vec3(0.0016, 0.0022, 0.0035) * (0.4 + moonUp);
     col = mix(col, mix(col, cc, Fex), alpha);
+    cloudA = alpha * Fex.g;
   }
 
   // overcast greys and flattens the whole dome
@@ -215,7 +231,15 @@ void main() {
   // haze near the horizon, matched to the scene fog
   float sunK = pow(max(0.0, dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(sunDir.x, 0.0, sunDir.z)))), 3.0);
   vec3 fc = mix(fogAway, fogSun, sunK);
-  col = mix(col, fc, haze * exp(-dy * 7.0));
+  float hz = haze * exp(-dy * 7.0);
+  col = mix(col, fc, hz);
+  // V2: around a low sun the sky's glow was many times brighter than white at any exposure the street could be seen
+  // by (more so under cloud, which greyed it but didn't dim it): a wide patch of sky burnt out white and bloomed
+  // over everything at dawn. It eases off short of white now (skyCap: set from the exposure, only round a low sun),
+  // keeping its colour; the sun and moon themselves still shine past it
+  float pk = max(max(col.r, col.g), col.b), knee = skyCap * 0.6;
+  if (pk > knee) col *= (knee + (pk - knee) / (1.0 + (pk - knee) / (skyCap - knee))) / pk;
+  col += discs * (1.0 - cloudA) * (1.0 - hz);
   if (dir.y < 0.0) col = mix(fc, groundColor, smoothstep(0.0, -0.08, dir.y));
 
   gl_FragColor = vec4(col, 1.0);
@@ -245,6 +269,7 @@ function makeSkyMaterial(): THREE.ShaderMaterial {
       haze: { value: 0.3 },
       windDir: ENV.windDir,
       wind: ENV.wind,
+      skyCap: { value: 1e6 },
     },
     vertexShader: SKY_VERT,
     fragmentShader: SKY_FRAG,
@@ -449,6 +474,9 @@ export class SkySystem {
     const lr = Math.log(target / this.exposure);
     const rate = Math.abs(lr) > 1.2 ? 8 : 2;
     this.exposure *= Math.exp(lr * Math.min(1, dt * rate));
+    // V2: the brightest the sky's glow may be, a little short of white at this exposure (and under the bloom's
+    // threshold), round a low sun (the sun high in the sky keeps its glare)
+    u.skyCap.value = THREE.MathUtils.lerp(1.4, 60, THREE.MathUtils.smoothstep(sunDir.y, 0.25, 0.5)) / this.exposure;
     ENV.interiorDay.value = Math.min(1, this.ambient * 0.012);
 
     this.mesh.position.copy(camera.position);

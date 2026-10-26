@@ -27,7 +27,7 @@ import { News } from './news';
 import { Gov } from './gov';
 import { Mind } from './mind';
 import { Edu } from './education';
-import { Traffic } from './traffic';
+import { Traffic, kerbside } from './traffic';
 
 /** tiles per side of a grid district */
 export const DIST = 32;
@@ -290,6 +290,7 @@ export const Power = {
     }
     if (!path) { f.fixAt = now() + 240; return null; }
     if (path.length < 2) path = [path[0], path[0]];
+    path = kerbside(path); // (V2: it works from the near row of an avenue, in line with the traffic)
     f.crew = true;
     const [sx, sy] = path[0];
     Life.crews.push({ path, prog: 0, x: sx * T + 8, y: sy * T + 8, dirx: 1, diry: 0, phase: county ? 'wait' : 'go', t: county ? COUNTY_DELAY : 0, d, county, seed: (d * 97 + Sim.day) >>> 0 });
@@ -327,9 +328,14 @@ export const Power = {
         }
       } else if (c.phase === 'fix') {
         c.t -= gm;
-        if (c.t <= 0) {
+        if (c.t <= 0 && !c.mended) {
+          c.mended = true;
           this.restore(c.d, c.county ? "the county's crew mended the lines" : 'the repair crew mended the lines');
-          c.phase = 'back'; c.path = Life.backPath(c.path, c.prog); c.prog = 0;
+        }
+        // V2: it turns round once there's room in the lane it pulls out into (it used to jump into whatever was there)
+        if (c.mended) {
+          const back = (c.turn ??= Life.backPath(c.path, c.prog));
+          if (Traffic.roomToJoin(c, back, c.t < -20) || c.t < -120) { c.phase = 'back'; c.path = back; c.prog = 0; c.turn = null; }
         }
       }
     }

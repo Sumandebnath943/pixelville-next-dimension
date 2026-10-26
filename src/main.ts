@@ -393,7 +393,7 @@ canvas.addEventListener('mouseup', (e) => {
 });
 
 /* ---------- busted, wasted: the hours that pass behind a curtain ---------- */
-let scene: { left: number; until: number; done: () => void } | null = null;
+let scene: { left: number; from: number; until: number; done: () => void } | null = null;
 const curtain = $('curtain');
 function blackout(kind: 'busted' | 'wasted', title: string, text: string, minutes: number, done: () => void): void {
   if (scene) return;
@@ -406,15 +406,20 @@ function blackout(kind: 'busted' | 'wasted', title: string, text: string, minute
   curtain.className = `on ${kind}`;
   requestAnimationFrame(() => curtain.classList.add('shown'));
   Game.setSpeed(1);
-  scene = { left: minutes, until: performance.now() + 4200, done };
+  scene = { left: minutes, from: performance.now(), until: performance.now() + 4200, done };
 }
-/** run the skipped hours a slice per frame, then lift the curtain */
+/** run the skipped hours a slice per frame, then lift the curtain (V2: only once the curtain is down, and a few
+ *  minutes at a time within a small budget each frame: it used to run them in 45-minute slices from the first frame,
+ *  so the picture locked up before the curtain could even fade in, and the game seemed to freeze) */
 function playScene(now: number): void {
   if (!scene) return;
-  if (scene.left > 0) {
-    const n = Math.min(scene.left, 45);
-    Game.catchUp(n);
-    scene.left -= n;
+  if (scene.left > 0 && now > scene.from + 750) {
+    const t0 = performance.now();
+    do {
+      const n = Math.min(scene.left, 5);
+      Game.catchUp(n);
+      scene.left -= n;
+    } while (scene.left > 0 && performance.now() - t0 < 10);
   }
   $('curtain-clock').textContent = `Day ${Sim.day} · ${Sim.timeStr()}`;
   if (scene.left <= 0 && now > scene.until) {

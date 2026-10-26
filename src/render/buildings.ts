@@ -1273,21 +1273,65 @@ function scaffold(kit: Kit, W: number, D: number, H: number): void {
     for (const z of [z0 - 0.3, z1 + 0.3]) kit.rod('metal', V(x0, y + 1, z), V(x1, y + 1, z), 0.025, pole, 5);
   }
 }
+/* V2: a tower crane that reads as one from anywhere: a lattice mast on a concrete footing, the slewing unit and the
+   operator's cab on top of it, a lattice jib and counter-jib held by tie rods from an A-frame, concrete
+   counterweights, and a trolley with its hoist ropes and hook block. (It was a thin mast that all but vanished at a
+   distance, a plank of a jib, and a grey box and a glass box hung on it: from the street they looked like boxes
+   floating in the sky.) */
 function crane(kit: Kit, H: number, W: number, ox: number, oz: number): void {
-  const y = new THREE.Color(0.95, 0.68, 0.12);
-  const m = new THREE.Matrix4().makeTranslation(ox, 0, oz);
+  const y = new THREE.Color(0.95, 0.68, 0.12), dark = new THREE.Color(0.16, 0.17, 0.18), grey = new THREE.Color(0.3, 0.31, 0.32);
+  const conc = new THREE.Color(0.66, 0.64, 0.6);
+  // (turned so the jib reaches back over the site from the mast at its corner)
+  const m = new THREE.Matrix4().makeTranslation(ox, 0, oz).multiply(new THREE.Matrix4().makeRotationY(Math.PI));
   const save = kit.base.clone();
   kit.base = save.clone().multiply(m);
-  // lattice mast: four chords with cross bracing
-  for (const [x, z] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) kit.box('paint', x - 0.06, 0, z - 0.06, x + 0.06, H, z + 0.06, y);
-  for (let h = 0; h < H; h += 1.6) {
-    kit.rod('paint', V(-0.6, h, -0.6), V(0.6, h + 1.6, -0.6), 0.03, y, 4);
-    kit.rod('paint', V(0.6, h, 0.6), V(-0.6, h + 1.6, 0.6), 0.03, y, 4);
+  const bar = (a: THREE.Vector3, b: THREE.Vector3, r = 0.045, c = y): void => kit.rod('paint', a, b, r, c, 4);
+  // footing and lattice mast: four chords, braced on every face
+  kit.box('stone', -1.6, 0, -1.6, 1.6, 0.6, 1.6, conc);
+  const M = 0.8, step = 2;
+  for (const [x, z] of [[-M, -M], [M, -M], [-M, M], [M, M]]) kit.box('paint', x - 0.09, 0.6, z - 0.09, x + 0.09, H, z + 0.09, y);
+  const faces: [number, number, number, number][] = [[-M, -M, M, -M], [M, -M, M, M], [M, M, -M, M], [-M, M, -M, -M]];
+  for (let h = 0.6, i = 0; h < H - 0.1; h += step, i++) {
+    const h1 = Math.min(H, h + step);
+    for (const [ax, az, bx, bz] of faces) {
+      bar(V(ax, h, az), V(bx, h, bz));
+      if (i % 2) bar(V(ax, h, az), V(bx, h1, bz)); else bar(V(bx, h, bz), V(ax, h1, az));
+    }
   }
-  kit.box('paint', -W * 0.3, H, -0.35, W * 0.8, H + 0.7, 0.35, y);
-  kit.box('metal', -W * 0.3, H - 1, -0.6, -W * 0.3 + 2, H + 0.7, 0.6, new THREE.Color(0.5, 0.52, 0.55));
-  kit.box('glassPlain', -0.7, H - 1.6, 0.3, 0.7, H - 0.2, 1.4);
-  kit.rod('metal', V(W * 0.6, H - 6, 0), V(W * 0.6, H, 0), 0.03, new THREE.Color(0.2, 0.2, 0.2), 4);
+  // slewing unit, and the cab beside the root of the jib
+  const T = H + 0.9; // the jib's underside
+  kit.box('paint', -1.1, H, -1.1, 1.1, T, 1.1, grey);
+  kit.box('paint', 0.15, H - 1.3, 1.1, 1.75, T + 0.2, 2.6, y);
+  kit.box('glassPlain', 0.1, H - 1.0, 2.6, 1.8, T - 0.05, 2.66);
+  kit.box('glassPlain', 1.75, H - 1.0, 1.25, 1.81, T - 0.05, 2.5);
+  // the jib: a triangular lattice, its top chord falling towards the tip
+  const L = Math.max(14, W * 0.85), h0 = 1.6, h1 = 0.7, zj = 0.6;
+  const top = (x: number): number => T + h0 + (h1 - h0) * ((x - 1.1) / (L - 1.1));
+  for (const z of [-zj, zj]) kit.box('paint', 1.1, T, z - 0.08, L, T + 0.16, z + 0.08, y);
+  bar(V(1.1, top(1.1), 0), V(L, top(L), 0), 0.08);
+  for (let x = 1.1, i = 0; x < L - 0.05; x += 1.6, i++) {
+    const x1 = Math.min(L, x + 1.6);
+    bar(V(x, T, -zj), V(x, T, zj));
+    for (const z of [-zj, zj]) bar(i % 2 ? V(x, T, z) : V(x, top(x), 0), i % 2 ? V(x1, top(x1), 0) : V(x1, T, z));
+  }
+  // the counter-jib with its walkway, and the concrete counterweights at its end
+  const C = Math.max(6, W * 0.3), zc = 0.75;
+  for (const z of [-zc, zc]) kit.box('paint', -C, T, z - 0.1, -1.1, T + 0.3, z + 0.1, y);
+  for (let x = -1.1; x > -C; x -= 1.4) bar(V(x, T + 0.15, -zc), V(x, T + 0.15, zc));
+  kit.box('metal', -C + 0.2, T + 0.3, -0.55, -1.1, T + 0.36, 0.55, dark);
+  for (let k = 0; k < 3; k++) kit.box('stone', -C + 0.15 + k * 0.8, T - 2.4, -0.95, -C + 0.85 + k * 0.8, T + 0.25, 0.95, conc);
+  // the A-frame over the slewing unit, and its tie rods out to the jib and the counter-jib
+  const apex = V(0, T + 5.5, 0);
+  for (const [x, z] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) bar(V(x, T, z), apex, 0.09);
+  const tie = 1.1 + (L - 1.1) * 0.62;
+  kit.rod('paint', apex, V(tie, top(tie), 0), 0.05, dark, 4);
+  kit.rod('paint', apex, V(-C + 0.4, T + 0.3, 0), 0.05, dark, 4);
+  // the trolley partway out, its hoist ropes and the hook block
+  const tx = 1.1 + (L - 1.1) * 0.55, drop = Math.min(8, H * 0.45);
+  kit.box('metal', tx - 0.55, T - 0.35, -0.65, tx + 0.55, T, 0.65, dark);
+  for (const z of [-0.18, 0.18]) kit.rod('metal', V(tx, T - 0.35, z), V(tx, T - drop, z), 0.02, dark, 4);
+  kit.box('paint', tx - 0.3, T - drop - 0.7, -0.22, tx + 0.3, T - drop, 0.22, y);
+  kit.box('metal', tx - 0.08, T - drop - 1.05, -0.06, tx + 0.08, T - drop - 0.7, 0.06, dark);
   kit.base = save;
 }
 

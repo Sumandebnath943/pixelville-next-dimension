@@ -39,6 +39,8 @@ export interface SurfaceOpts {
   uniforms?: Record<string, THREE.IUniform>;
   /** double-sided foliage: don't flip normals on back faces */
   keepNormals?: boolean;
+  /** V2: thin blades and leaves: the headlamps light them evenly, through and through, with no glints */
+  softBeam?: boolean;
 }
 
 const RIPPLE = /* glsl */ `
@@ -94,6 +96,15 @@ const BEAMS = /* glsl */ `
     pvBeam += bl * (bI / (1.0 + bn / 2.0));
   }
   float pvBeamE = length(pvBeam);
+  #ifdef PV_SOFTBEAM
+  // (V2: grass blades and leaf cards face every which way: lit blade by blade, each one turned to the lamps flared
+  // and glinted far brighter than the ground they stand on, which the beam only grazes, and the beam's pool on a
+  // verge or under a tree glittered like confetti. Lit evenly instead, about as the ground beneath them is)
+  if (pvBeamE > 1e-4) {
+    float pvBeamK = max(normalize(pvBeam).y, 0.0) * 0.9 + 0.06;
+    reflectedLight.directDiffuse += BRDF_Lambert(material.diffuseColor) * vec3(1.0, 0.94, 0.84) * pvBeamE * pvBeamK;
+  }
+  #else
   if (pvBeamE > 1e-4) {
     IncidentLight beam;
     beam.direction = normalize((viewMatrix * vec4(pvBeam, 0.0)).xyz);
@@ -106,6 +117,7 @@ const BEAMS = /* glsl */ `
     reflectedLight.directDiffuse += pvBR.directDiffuse;
     reflectedLight.directSpecular += pvBR.directSpecular * mix(1.0, 0.2, smoothstep(0.35, 0.8, material.roughness));
   }
+  #endif
 }
 `;
 
@@ -118,6 +130,7 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
   if (o.puddles) defs.push('#define PV_PUDDLES');
   if (o.wear) defs.push('#define PV_WEAR');
   if (o.antiTile) defs.push('#define PV_ANTITILE');
+  if (o.softBeam) defs.push('#define PV_SOFTBEAM');
   const head = defs.join('\n') + '\n';
   const hooked = !!(o.vDecl || o.vDisplace || o.fDecl || o.fColor || o.fEmissive || o.keepNormals);
   const strengths = { uSnowK: { value: snowK }, uWetK: { value: wetK }, uAntiK: { value: o.antiTile ?? 0 } };

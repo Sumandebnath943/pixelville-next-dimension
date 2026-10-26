@@ -2,7 +2,7 @@
    carriageway, and take turns at junctions without gridlock. */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { World } from '../src/sim/world';
-import { Traffic, CAR_LEN, LANE, LANE_PX, PAVEMENT_M, lanePose } from '../src/sim/traffic';
+import { Traffic, CAR_LEN, LANE, LANE_PX, PAVEMENT_M, lanePose, kerbside } from '../src/sim/traffic';
 
 const T = 16;
 const DT = 0.05;
@@ -228,6 +228,92 @@ describe('traffic', () => {
     run([car], [car], 30, () => { const s = car.trip.prog; if (s > 10.6 && s < 11.4) inBend = Math.min(inBend, 1); if (s > 10.5 && s < 11.5) inBend = Math.max(inBend === Infinity ? 0 : inBend, car.trip.v); });
     expect(inBend).toBeLessThan(0.8);
     expect(car.trip.prog).toBe(path.length - 1);
+  });
+
+  /* ---------- V2: junction boxes: nothing drives through anything, and the town never jams ---------- */
+  it('cars from all four sides of a crossroads take turns across it without ever touching', () => {
+    const ew = line(10, 20, 1, 0, 21), we = line(30, 20, -1, 0, 21), ns = line(20, 10, 0, 1, 21), sn = line(20, 30, 0, -1, 21);
+    for (const [x, y] of [...ew, ...ns]) World.roadMap[World.idx(x, y)] = 1;
+    // two cars in each direction, one turning at the crossroads
+    const turnL = [...line(10, 20, 1, 0, 11), ...line(20, 19, 0, -1, 10)], turnR = [...line(30, 20, -1, 0, 11), ...line(20, 19, 0, -1, 10)];
+    const cars = [rider(ew, 4), rider(we, 4.4), rider(ns, 4.2), rider(sn, 4.6), rider(turnL, 2), rider(turnR, 2.3), rider(ns, 2.5), rider(sn, 2.8)];
+    let closest = Infinity;
+    run(cars, cars, 60, () => {
+      for (const c of cars) if (c.trip.prog >= c.trip.path.length - 1) c.state = 'in'; // (there: off the road)
+      for (let i = 0; i < cars.length; i++)
+        for (let j = i + 1; j < cars.length; j++)
+          if (cars[i].state === 'walk' && cars[j].state === 'walk') closest = Math.min(closest, Math.hypot(cars[i].x - cars[j].x, cars[i].y - cars[j].y) / T);
+    });
+    for (const c of cars) expect(c.trip.prog).toBe(c.trip.path.length - 1);
+    expect(closest).toBeGreaterThan(0.24); // (a car is 0.23 tiles wide: side by side at the least, never one inside another)
+  });
+
+  it('a busy grid of streets and avenues, with lights, trucks unloading and cars parking, never jams', () => {
+    let seed = 3;
+    const rnd = (): number => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (const x of [20, 30, 50, 60]) for (let y = 20; y <= 60; y++) World.roadMap[World.idx(x, y)] = 1;
+    for (const y of [20, 45, 60]) for (let x = 20; x <= 60; x++) World.roadMap[World.idx(x, y)] = 1;
+    for (let x = 20; x <= 60; x++) for (const y of [30, 31]) World.roadMap[World.idx(x, y)] = 1;
+    for (let y = 20; y <= 60; y++) for (const x of [40, 41]) World.roadMap[World.idx(x, y)] = 1;
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) World.signals.add(World.idx(40 + dx, 30 + dy));
+    World.roadStamp++;
+    const roads: number[][] = [];
+    for (let y = 0; y < 80; y++) for (let x = 0; x < 80; x++) if (World.isRoad(x, y)) roads.push([x, y]);
+    const route = (from: number[]): number[][] => {
+      for (;;) {
+        const to = roads[(rnd() * roads.length) | 0];
+        const p = Math.abs(to[0] - from[0]) + Math.abs(to[1] - from[1]) > 10 && World.roadPath(from[0], from[1], to[0], to[1]);
+        if (p && p.length > 6) return kerbside(p).map((q: number[]) => q.slice());
+      }
+    };
+    let t = 0;
+    const nsGreen = World.nsGreen;
+    World.nsGreen = () => Math.floor(t / 8) % 2 === 0;
+    const people: any[] = [], life: any = { trucks: [], trainNearTile: () => false };
+    const all: any[] = [];
+    for (let i = 0; i < 50; i++) {
+      const truck = i % 8 === 0, path = route(roads[(i * 37) % roads.length]);
+      const o: any = truck ? { phase: 'go', x: 0, y: 0, dirx: 1, diry: 0 } : { state: 'walk', trip: { path, prog: 0, car: {}, joined: true }, x: 0, y: 0, dirx: 1, diry: 0 };
+      (truck ? life.trucks : people).push(o);
+      all.push({ o, st: truck ? o : o.trip, path, prog: 0, len: truck ? 0.9 : CAR_LEN, truck, still: 0, wait: 0, away: 0 });
+    }
+    const place = (a: any): void => {
+      const p = lanePose(a.path, a.prog, Traffic.lanePx(a.st));
+      Object.assign(a.o, { x: p.x, y: p.y, dirx: p.dx, diry: p.dy, hx: p.hx, hy: p.hy });
+      if (!a.truck) Object.assign(a.o.trip, { prog: a.prog, path: a.path });
+    };
+    all.forEach(place);
+    let longest = 0, trips = 0;
+    for (let s = 0; s < 400 / 0.1; s++) {
+      t += 0.1;
+      Traffic.begin(people, life);
+      for (const a of all) {
+        if (a.away > 0) { // parked inside, or unloading: then back out when there's room
+          a.away -= 0.1;
+          if (a.away > 0 || !Traffic.roomToJoin(a.o, a.next, false, a.away < -120)) continue;
+          a.path = a.next; a.prog = 0; a.st.v = 0; a.st.over = null; a.st.lat = undefined; a.st.box = null;
+          if (a.truck) a.o.phase = 'go'; else a.o.state = 'walk';
+          place(a);
+          continue;
+        }
+        if (!a.truck && a.o.trip.joined === false) {
+          if (!Traffic.roomToJoin(a.o, a.path)) continue;
+          a.o.trip.joined = true;
+        }
+        a.prog = Math.min(a.path.length - 1, a.prog + Traffic.advance(a.o, a.st, a.path, a.prog, 1, a.truck ? 1.3 : 1.6, 0.1, a.len));
+        place(a);
+        a.still = (a.st.v || 0) < 0.03 ? a.still + 0.1 : 0;
+        longest = Math.max(longest, a.still);
+        if (a.prog >= a.path.length - 1) {
+          trips++;
+          a.still = 0; a.away = a.truck ? 20 : 3; a.next = route(a.path[a.path.length - 1]);
+          if (a.truck) a.o.phase = 'drop'; else a.o.state = 'in';
+        }
+      }
+    }
+    World.nsGreen = nsGreen;
+    expect(trips).toBeGreaterThan(250);
+    expect(longest).toBeLessThan(150); // nobody waits for ever: no box is ever blocked both ways at once
   });
 
   it('waits at a red light and goes on green', () => {

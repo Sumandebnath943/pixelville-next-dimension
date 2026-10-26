@@ -12,7 +12,7 @@ import { Gov } from './gov';
 import { Tasks } from './tasks';
 import { Calamity } from './calamity';
 import { Settings } from './settings';
-import { Traffic, CAR_LEN, LANE, lanePose } from './traffic';
+import { Traffic, CAR_LEN, LANE, lanePose, kerbside } from './traffic';
 import { Walk } from './walking';
 import { spotFor, PARK_TIME } from './parking';
 import { Rep } from './reputation';
@@ -1521,7 +1521,9 @@ export const Sim: any = {
         // V2 (Milestone 8): waiting in the drive for a gap to pull out into
         if (t.joined === false) {
           t.waitJoin = (t.waitJoin || 0) + dt;
-          if (!Traffic.roomToJoin(p, t.path) && t.waitJoin < 20) {
+          // (V2: after a while it stops waiting for a gap in moving traffic, and after a long while for something parked
+          // there, but it never pulls out into a car in the traffic)
+          if (!Traffic.roomToJoin(p, t.path, t.waitJoin > 20, t.waitJoin > 120)) {
             const pose = lanePose(t.path, 0, Traffic.lanePx(t));
             p.x = pose.x; p.y = pose.y; p.dirx = pose.dx; p.diry = pose.dy; p.hx = pose.hx; p.hy = pose.hy;
             return;
@@ -1704,7 +1706,8 @@ export const Sim: any = {
       const wp = World.walkPath(p.at!.door.x, p.at!.door.y, dest.door.x, dest.door.y);
       if (wp && wp.length > 1) usePath = wp;
     }
-    p.trip = { path: usePath, prog: 0, car, taxi, moto };
+    // (V2: a car parks from the near row of an avenue, in line with the traffic, not across the far row: sim/traffic.ts)
+    p.trip = { path: car || taxi || moto ? kerbside(usePath) : usePath, prog: 0, car, taxi, moto };
     // V2 (Milestone 8): a car pulls out of its spot (the family's driveway, the venue's bay it took) once there's
     // a gap in the traffic, and turns into its spot at the other end, rather than appearing in the road
     if (car || moto || taxi) {

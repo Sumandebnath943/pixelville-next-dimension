@@ -135,6 +135,8 @@ export class Founder {
   private parkedMesh = new THREE.Group();
   private parkedRide: Ride | null = null;
   private stillT = 0;
+  /** V2: where the car last stood clear of everything (to back it out of open water) */
+  private lastFree = new THREE.Vector2();
   private speedT = 0;
   private wrongT = 0;
   private lastTile = -1;
@@ -815,23 +817,47 @@ export class Founder {
     v.fuel = Math.max(0, v.fuel - (Math.abs(c.speed) * dt) / (sp.range * 1000));
     const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
     const nx = c.x + fx * c.speed * dt, nz = c.z + fz * c.speed * dt;
-    // front and rear contact circles
-    const front = { x: nx + fx * sp.reach, z: nz + fz * sp.reach };
-    const rear = { x: nx - fx * sp.reach, z: nz - fz * sp.reach };
-    const hitF = this.collide(front, sp.radius);
-    const hitR = this.collide(rear, sp.radius);
-    if (hitF || hitR) {
-      c.x = (front.x + rear.x) / 2;
-      c.z = (front.z + rear.z) / 2;
-      if (Math.abs(c.speed) > 6) {
-        emit('sound', { name: 'crunch' });
-        this.damage = Math.min(100, this.damage + Math.abs(c.speed) * 0.8);
-        if (Math.abs(c.speed) > 16) this.onWreck?.(Math.abs(c.speed)); // into a wall at speed
+    // front and rear contact circles, pushed clear of whatever they overlap and the car with them (V2: all the way
+    // clear: it used to move half way, so the car stayed touching and bounced on the spot frame after frame, its
+    // speed flipped and quartered each time, and it couldn't be reversed away)
+    let x = nx, z = nz, hit = false, stuck = false;
+    for (let it = 0; it < 4; it++) {
+      const front = { x: x + fx * sp.reach, z: z + fz * sp.reach }, rear = { x: x - fx * sp.reach, z: z - fz * sp.reach };
+      const f0x = front.x, f0z = front.z, r0x = rear.x, r0z = rear.z;
+      const hitF = this.collide(front, sp.radius), hitR = this.collide(rear, sp.radius);
+      if (!hitF && !hitR) break;
+      hit = true;
+      const pfx = front.x - f0x, pfz = front.z - f0z, prx = rear.x - r0x, prz = rear.z - r0z;
+      const [dx, dz] = pfx * pfx + pfz * pfz >= prx * prx + prz * prz ? [pfx, pfz] : [prx, prz];
+      // (an end deep in open water has no way out it can feel for: back to where the car last stood clear)
+      stuck = dx * dx + dz * dz < 1e-8;
+      if (stuck) {
+        const far = Math.hypot(this.lastFree.x - c.x, this.lastFree.y - c.z) > 25; // (it was placed somewhere new since)
+        x = far ? c.x : this.lastFree.x; z = far ? c.z : this.lastFree.y;
+        break;
       }
-      c.speed *= -0.25;
-    } else {
-      c.x = nx;
-      c.z = nz;
+      x += dx; z += dz;
+    }
+    if (hit) {
+      // how squarely it met what it hit: the push back against the way it was going (1 head on, 0 along it or away)
+      const px = x - nx, pz = z - nz, pl = Math.hypot(px, pz), dir = Math.sign(c.speed);
+      const into = pl > 1e-5 ? -(px * fx * dir + pz * fz * dir) / pl : 0;
+      if (into > 0.05) {
+        const impact = Math.abs(c.speed) * into;
+        if (impact > 6) {
+          emit('sound', { name: 'crunch' });
+          this.damage = Math.min(100, this.damage + impact * 0.8);
+          if (impact > 16) this.onWreck?.(impact); // into a wall at speed
+        }
+        // head on it bounces back a little; a glancing blow only slows it (V2: and backing away is never fought)
+        c.speed = into > 0.7 ? -c.speed * 0.25 : c.speed * (1 - into);
+      }
+    }
+    c.x = x;
+    c.z = z;
+    if (!hit || !stuck) {
+      const front = { x: x + fx * sp.reach, z: z + fz * sp.reach }, rear = { x: x - fx * sp.reach, z: z - fz * sp.reach };
+      if (!hit || (!this.collide(front, sp.radius) && !this.collide(rear, sp.radius))) this.lastFree.set(x, z);
     }
     // V2: the village's cars, buses and people are in the way too
     this.bumpTraffic(c, fx, fz, dt);

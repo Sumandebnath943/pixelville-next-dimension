@@ -11,7 +11,7 @@ import { Mind } from './mind';
 import { Calamity } from './calamity';
 import { Gov } from './gov';
 import { Festivals } from './festivals';
-import { Traffic, lanePose, railPose, LANE_PX, FOOT_PX } from './traffic';
+import { Traffic, lanePose, railPose, FOOT_PX, kerbside } from './traffic';
 import { peakTrail } from './peak';
 import { Rep } from './reputation';
 import { Health } from './health';
@@ -216,7 +216,7 @@ export const Life: any = {
       }
       return false;
     }
-    this.fireTrucks.push({ path: bp, prog: 0, x: best.door.x * T + 8, y: best.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', target: b, douse: 0 });
+    this.fireTrucks.push({ path: kerbside(bp), prog: 0, x: best.door.x * T + 8, y: best.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', target: b, douse: 0 });
     this.say(`🚒 Fire brigade dispatched from the ${CAT[best.type].name}!`);
     return true;
   },
@@ -308,9 +308,12 @@ export const Life: any = {
     // trucks
     for (const u of this.fireTrucks) {
       if (u.phase === 'go') {
-        u.prog += 2.5 * dt * Traffic.pedBrake(u, u.path, u.prog); // V2: fire engines ~72 km/h (V2 (Milestone 8): slowing for people in the road)
-        this.followPath(u, u.path, u.prog, LANE_PX);
-        if (u.prog >= u.path.length - 1) { u.phase = 'douse'; u.douse = 22; }
+        // V2: fire engines ~72 km/h, on blue lights in the traffic (sim/traffic.ts): through red lights and first across
+        // junctions, past a queue when the other lane is clear, never through a car (they used to drive through them)
+        const step = Traffic.advance(u, (u.drv ??= {}), u.path, u.prog, 1, 2.5, dt, 1.1, true);
+        u.prog += step;
+        this.followPath(u, u.path, Math.min(u.prog, u.path.length - 1), Traffic.lanePx(u.drv));
+        if (Traffic.there(u.drv, u.path.length - 1 - u.prog, step, dt)) { u.phase = 'douse'; u.douse = 22; }
       } else if (u.phase === 'douse') {
         u.douse -= gm;
         if (u.douse <= 0 || !u.target.fire) {
@@ -319,12 +322,13 @@ export const Life: any = {
             this.say(`🧯 Fire at the ${CAT[u.target.type].name} put out — building saved!`);
             Tasks.done('fire' + u.target.id, true, `Fire brigade saved the ${CAT[u.target.type].name}`);
           }
-          u.phase = 'return'; u.path = this.backPath(u.path); u.prog = 0;
+          u.phase = 'return'; u.path = this.backPath(u.path, u.prog); u.prog = 0; u.drv = {};
         }
       } else {
-        u.prog += 2.5 * dt * Traffic.pedBrake(u, u.path, u.prog); // V2: fire engines ~72 km/h (V2 (Milestone 8): slowing for people in the road)
-        this.followPath(u, u.path, u.prog, LANE_PX);
-        if (u.prog >= u.path.length - 1) u.done = true;
+        const step = Traffic.advance(u, (u.drv ??= {}), u.path, u.prog, 1, 2.5, dt, 1.1);
+        u.prog += step;
+        this.followPath(u, u.path, Math.min(u.prog, u.path.length - 1), Traffic.lanePx(u.drv));
+        if (Traffic.there(u.drv, u.path.length - 1 - u.prog, step, dt)) u.done = true;
       }
     }
     this.fireTrucks = this.fireTrucks.filter((u: any) => !u.done);
@@ -1084,7 +1088,7 @@ export const Life: any = {
       const st = World.buildings.find((s: Building) => s.type === 'fire' && s.connected && !s.construction);
       if (st) {
         const path = World.roadPath(st.door.x, st.door.y, b.door.x, b.door.y);
-        if (path) this.fireTrucks.push({ path, prog: 0, x: st.door.x * T + 8, y: st.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', target: b, douse: 8 });
+        if (path) this.fireTrucks.push({ path: kerbside(path), prog: 0, x: st.door.x * T + 8, y: st.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', target: b, douse: 8 });
       }
     }
   },
@@ -1378,7 +1382,7 @@ export const Life: any = {
       if (path && (!bp || path.length < bp.length)) { best = s; bp = path; }
     }
     if (!best) return null;
-    const u = { path: bp, prog: 0, x: best.door.x * T + 8, y: best.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', station: best, patrol: true, scene: scene || null, wait: wait || 10 };
+    const u = { path: kerbside(bp), prog: 0, x: best.door.x * T + 8, y: best.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', station: best, patrol: true, scene: scene || null, wait: wait || 10 };
     this.police.push(u);
     Snd.siren(midPx(best));
     return u;
@@ -1727,12 +1731,15 @@ export const Life: any = {
       if (u.pursuit || u.block) continue; // V2: chasing the Founder, or manning a roadblock (src/player/wanted.ts)
       if (u.phase === 'scene') { // parked at the incident, lights flashing
         u.wait -= gm;
-        if (u.wait <= 0) { u.phase = 'return'; u.path = this.backPath(u.path); u.prog = 0; }
+        if (u.wait <= 0) { u.phase = 'return'; u.path = this.backPath(u.path, u.prog); u.prog = 0; u.drv = {}; }
         continue;
       }
-      u.prog += 2.4 * dtSim * Traffic.pedBrake(u, u.path, u.prog); // V2: squad cars ~70 km/h through town (Milestone 8: not through people)
-      this.followPath(u, u.path, u.prog, LANE_PX);
-      if (u.prog >= u.path.length - 1) {
+      // V2: squad cars ~70 km/h through town, on blue lights to a call, in the traffic (sim/traffic.ts; they used to
+      // drive through it), and at town pace back to the station
+      const step = Traffic.advance(u, (u.drv ??= {}), u.path, u.prog, 1, 2.4, dtSim, undefined, u.phase === 'go');
+      u.prog += step;
+      this.followPath(u, u.path, Math.min(u.prog, u.path.length - 1), Traffic.lanePx(u.drv));
+      if (Traffic.there(u.drv, u.path.length - 1 - u.prog, step, dtSim)) {
         if (u.phase === 'go') {
           // arrived at the scene
           const cc = u.patrol ? null : this.crime;
@@ -1749,7 +1756,7 @@ export const Life: any = {
             continue;
           }
           u.phase = 'return';
-          u.path = this.backPath(u.path); u.prog = 0;
+          u.path = this.backPath(u.path, u.prog); u.prog = 0; u.drv = {};
         } else u.done = true;
       }
     }
@@ -1805,7 +1812,7 @@ export const Life: any = {
       if (p && (!bp || p.length < bp.length)) { best = s; bp = p; }
     }
     if (!best) { this.say('😰 No police in town — nobody answers the alarm…'); return; }
-    this.police.push({ path: bp, prog: 0, x: best.door.x * T + 8, y: best.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', station: best });
+    this.police.push({ path: kerbside(bp), prog: 0, x: best.door.x * T + 8, y: best.door.y * T + 8, dirx: 1, diry: 0, phase: 'go', station: best });
     this.say('🚔 Police dispatched!');
     Snd.siren(midPx(best));
   },

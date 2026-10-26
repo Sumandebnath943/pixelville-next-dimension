@@ -17,7 +17,7 @@ import { MIN_PER_SEC, Snd, T, midPx } from './core';
 import { World } from './world';
 import { Sim } from './agents';
 import { Life } from './life';
-import { LANE_PX, Traffic } from './traffic';
+import { Traffic } from './traffic';
 import { Mind } from './mind';
 import { Weather } from './weather';
 import { Tasks } from './tasks';
@@ -250,9 +250,13 @@ export const Health = {
         if (p.state !== 'hurt' || !Sim.people.includes(p)) { this.turnBack(a); continue; }
         // it pulls up just short of the casualty, not on top of them
         const stop = Math.max(0, a.path.length - 1 - STOP_SHORT);
-        a.prog = Math.min(stop, a.prog + AMB_SPEED * dt * Traffic.pedBrake(a, a.path, a.prog));
-        Life.followPath(a, a.path, a.prog, LANE_PX);
-        if (a.prog >= stop) { a.phase = 'treat'; a.t = 8; }
+        // V2: on blue lights in the traffic (sim/traffic.ts): through red lights and first across junctions, past a
+        // queue when the other lane is clear, never through a car (it used to drive through them)
+        const step = Traffic.advance(a, (a.drv ??= {}), a.path, a.prog, 1, AMB_SPEED, dt, 0.75, true);
+        a.prog = Math.min(stop, a.prog + step);
+        Life.followPath(a, a.path, a.prog, Traffic.lanePx(a.drv));
+        // (V2: or held up just short of the spot: the crew walk the last few metres)
+        if (Traffic.there(a.drv, stop - a.prog, step, dt)) { a.phase = 'treat'; a.t = 8; }
       } else if (a.phase === 'treat') {
         a.t -= gm;
         if (p.state !== 'hurt') { this.turnBack(a); continue; }
@@ -262,9 +266,10 @@ export const Health = {
         }
       } else {
         const fast = p.state === 'amb';
-        a.prog = Math.min(a.path.length - 1, a.prog + (fast ? AMB_SPEED : 1.6) * dt * Traffic.pedBrake(a, a.path, a.prog));
-        Life.followPath(a, a.path, a.prog, LANE_PX);
-        if (a.prog >= a.path.length - 1) {
+        const step = Traffic.advance(a, (a.drv ??= {}), a.path, a.prog, 1, fast ? AMB_SPEED : 1.6, dt, 0.75, fast);
+        a.prog = Math.min(a.path.length - 1, a.prog + step);
+        Life.followPath(a, a.path, a.prog, Traffic.lanePx(a.drv));
+        if (Traffic.there(a.drv, a.path.length - 1 - a.prog, step, dt)) {
           a.done = true;
           if (fast) this.deliver(p, a.from);
         }
@@ -306,6 +311,7 @@ export const Health = {
     // from the same spot, its own way back (V2 (Milestone 8): keeping right, not the way out backwards)
     a.path = Life.backPath(a.path, a.prog);
     a.prog = 0;
+    a.drv = {};
   },
 
   /** the ambulance reached the hospital with its patient */
