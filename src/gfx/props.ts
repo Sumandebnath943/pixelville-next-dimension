@@ -44,8 +44,8 @@ export function lampPost(kit: Kit, x: number, z: number): THREE.Vector3 {
   return v3(x, 4.45, z);
 }
 
-export function bench(kit: Kit, x: number, z: number, rot: number): void {
-  kit.base = new THREE.Matrix4().makeRotationY(rot).setPosition(x, 0, z);
+export function bench(kit: Kit, x: number, z: number, rot: number, y = 0): void {
+  kit.base = new THREE.Matrix4().makeRotationY(rot).setPosition(x, y, z);
   for (const sx of [-0.8, 0.8]) {
     kit.box('metal', sx - 0.03, 0, -0.25, sx + 0.03, 0.44, 0.22, IRON);
     kit.box('metal', sx - 0.03, 0.44, -0.27, sx + 0.03, 0.9, -0.21, IRON);

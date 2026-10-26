@@ -362,8 +362,8 @@ export class Vegetation {
   private broadleaf: THREE.MeshStandardMaterial;
   private smallLeaf: THREE.MeshStandardMaterial;
   private needles: THREE.MeshStandardMaterial;
-  private bushMat: THREE.MeshStandardMaterial;
-  private coreMat: THREE.MeshStandardMaterial;
+  readonly bushMat: THREE.MeshStandardMaterial;
+  readonly coreMat: THREE.MeshStandardMaterial;
   deciduousLeaves: THREE.Mesh[] = [];
 
   constructor(scene: THREE.Scene) {
@@ -445,6 +445,8 @@ export class Vegetation {
 
 /* ---------- a forest at map scale: detailed trees near, light crowns far ---------- */
 export interface TreeInstance { x: number; z: number; y: number; species: Species; scale: number; sx?: number; rot: number; tint?: THREE.Color }
+/** V2: a bush on a river bank (a radius of about `scale` metres) */
+export interface BushInstance { x: number; z: number; y: number; scale: number; sy: number; rot: number; tint: THREE.Color }
 
 /* V2 (Milestone 8): distant canopies are solid: the same material (and so the same shader) as the woods on the
    hills beyond the map, coloured per tree by species and season */
@@ -521,6 +523,10 @@ export class TreeLayer {
   private dirty = true;
   private farTint = new Map<Species, THREE.Color>();
   private lastFall = -1;
+  /** V2: bushes (along the river banks): leaf cards near, a solid crown further off, none in the far distance */
+  private bushNear: { leaves: THREE.InstancedMesh; core: THREE.InstancedMesh }[] = [];
+  private bushFar: THREE.InstancedMesh;
+  private bushes: BushInstance[] = [];
 
   constructor(scene: THREE.Scene, private nearRange = 150, cap = 32000, private midRange = 420, private farRange = 1500) {
     scene.add(this.group);
@@ -564,6 +570,34 @@ export class TreeLayer {
       dset.leaves.layers.set(LAYER_NO_REFLECT);
       this.distant.set(s, dset);
     }
+    for (let v = 0; v < 3; v++) {
+      const b = buildBush(1, 0.72, 1, 31 + v * 17);
+      const set = { leaves: new THREE.InstancedMesh(b.leaves, this.veg.bushMat, 400), core: new THREE.InstancedMesh(b.core, this.veg.coreMat, 400) };
+      for (const m of [set.leaves, set.core]) {
+        m.count = 0;
+        m.castShadow = m.receiveShadow = true;
+        m.frustumCulled = false;
+        m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.group.add(m);
+      }
+      set.leaves.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(400 * 3).fill(1), 3);
+      this.bushNear.push(set);
+    }
+    const fb = new THREE.IcosahedronGeometry(1, 1);
+    fb.scale(1, 0.68, 1).translate(0, 0.66, 0);
+    this.bushFar = new THREE.InstancedMesh(fb, FAR_CROWN(), 3000);
+    this.bushFar.count = 0;
+    this.bushFar.castShadow = false;
+    this.bushFar.receiveShadow = true;
+    this.bushFar.frustumCulled = false;
+    this.bushFar.layers.set(LAYER_NO_REFLECT);
+    this.bushFar.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(3000 * 3).fill(1), 3);
+    this.group.add(this.bushFar);
+  }
+  /** V2: replace the bushes along the banks */
+  setBushes(list: BushInstance[]): void {
+    this.bushes = list;
+    this.dirty = true;
   }
   private prep(s: LodSet): void {
     for (const m of [s.wood, s.leaves]) {
@@ -630,6 +664,43 @@ export class TreeLayer {
       if (s.leaves.instanceColor) s.leaves.instanceColor.needsUpdate = true;
       s.leaves.visible = s.leaves.count > 0 && (!s.deciduous || leafFall.value < 0.99);
     }
+    // the bushes: near ones leaf by leaf, the rest as solid crowns out to the middle distance
+    for (const b of this.bushNear) b.leaves.count = b.core.count = 0;
+    this.bushFar.count = 0;
+    for (let i = 0; i < this.bushes.length; i++) {
+      const b = this.bushes[i];
+      const d2 = (b.x - cam.x) ** 2 + (b.z - cam.z) ** 2;
+      if (d2 > m2) continue;
+      q.setFromAxisAngle(up, b.rot);
+      sc.set(b.scale, b.scale * b.sy, b.scale);
+      pos.set(b.x, b.y, b.z);
+      m4.compose(pos, q, sc);
+      if (d2 < r2) {
+        const set = this.bushNear[i % 3];
+        if (set.leaves.count >= set.leaves.instanceMatrix.count) continue;
+        const k = set.leaves.count;
+        set.leaves.setMatrixAt(k, m4);
+        set.core.setMatrixAt(k, m4);
+        set.leaves.setColorAt(k, b.tint);
+        set.leaves.count = set.core.count = k + 1;
+      } else if (this.bushFar.count < this.bushFar.instanceMatrix.count) {
+        const k = this.bushFar.count++;
+        this.bushFar.setMatrixAt(k, m4);
+        tc.copy(FAR_TINT.oak).multiply(b.tint);
+        if (fall > 0.12) tc.lerp(AUTUMN, Math.min(1, (fall - 0.12) * 1.6));
+        this.bushFar.setColorAt(k, tc);
+      }
+    }
+    for (const b of this.bushNear) {
+      b.leaves.instanceMatrix.needsUpdate = b.core.instanceMatrix.needsUpdate = true;
+      if (b.leaves.instanceColor) b.leaves.instanceColor.needsUpdate = true;
+      // (bare through the winter: the twigs don't show at this size)
+      b.leaves.visible = b.leaves.count > 0 && fall < 0.99;
+      b.core.visible = b.core.count > 0 && fall < 0.99;
+    }
+    this.bushFar.instanceMatrix.needsUpdate = true;
+    if (this.bushFar.instanceColor) this.bushFar.instanceColor.needsUpdate = true;
+    this.bushFar.visible = this.bushFar.count > 0 && fall < 0.99;
   }
 }
 

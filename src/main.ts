@@ -61,6 +61,7 @@ import { Shifts, JOB, JOBS, JobId } from './player/shifts';
 import { trailhead } from './sim/peak';
 import { Gov } from './sim/gov';
 import { ShiftPanel } from './ui/shiftpanel';
+import { Approach } from './sim/approach';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -84,6 +85,18 @@ stage.onResize = (w, h) => terrain.water.reflection.setSize(w, h);
 stage.resize();
 const buildings = new BuildingLayer(stage.scene);
 const actors = new Actors(stage.scene, buildings);
+// V2: what the player can see (in front of the camera, within the range the actors are drawn in): traffic from out of
+// town, the buses and the campaign cars set out and go home out of it (sim/approach.ts)
+const seenFr = new THREE.Frustum(), seenM = new THREE.Matrix4(), seenS = new THREE.Sphere();
+Approach.seen = (px, py) => {
+  const x = px * 0.5, z = py * 0.5;
+  if (indoors?.active || !actors.inRange(x, z, 40)) return false;
+  const cam = stage.camera;
+  seenFr.setFromProjectionMatrix(seenM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  seenS.center.set(x, 2, z);
+  seenS.radius = 16;
+  return seenFr.intersectsSphere(seenS);
+};
 // V2 (Milestone 4): street lamps in a blacked-out district stay dark
 stage.lampLit = (x, z) => !Power.tileDark(Math.floor(x / TM), Math.floor(z / TM));
 $('alert-pill').addEventListener('click', () => panels.showMayor());
@@ -1138,7 +1151,11 @@ function landingFrame(now: number, dt: number): void {
    behind the loading screen, light it and compile every shader off-frame (a cold
    compile on frame one can stall an integrated GPU long enough to lose the context) */
 async function boot(): Promise<void> {
-  const text = $('loading-text'), bar = $('loading-bar');
+  const text = $('loading-text'), pct = $('loading-pct'), track = $('loading-track'), tipEl = $('loading-tip');
+  // (V2: the build's five stages, as fractions of the whole: the village records, the land, the buildings, the
+  // textures and the lighting, each a part of the bar)
+  const stages = Array.from(track.children) as HTMLElement[];
+  const SPANS = [[0, 0.12], [0.12, 0.15], [0.15, 0.75], [0.75, 0.85], [0.85, 1]];
   // Milestone 8: the key art, if there is one (public/art/keyart.jpg), behind the loading screen
   const art = new Image();
   art.onload = () => { $('loading').style.setProperty('--keyart', `url(${art.src})`); $('loading').classList.add('has-art'); };
@@ -1155,12 +1172,24 @@ async function boot(): Promise<void> {
     'Mind the traffic on foot: a car that hits you hurts, and a bus hurts more.',
   ];
   let tip = Math.floor(Math.random() * TIPS.length);
-  $('loading-tip').textContent = TIPS[tip];
-  const tipTimer = setInterval(() => { tip = (tip + 1) % TIPS.length; $('loading-tip').textContent = TIPS[tip]; }, 4200);
+  tipEl.textContent = TIPS[tip];
+  // (V2: each tip fades out and the next one in)
+  const tipTimer = setInterval(() => {
+    tipEl.classList.add('out');
+    setTimeout(() => { tip = (tip + 1) % TIPS.length; tipEl.textContent = TIPS[tip]; tipEl.classList.remove('out'); }, 400);
+  }, 5200);
   const step = (msg: string, k: number): void => {
     if (text.textContent !== msg && !msg.startsWith('Raising')) performance.mark(`boot:${msg}`);
     text.textContent = msg;
-    bar.style.width = `${Math.round(k * 100)}%`;
+    const p = Math.round(k * 100);
+    pct.textContent = String(p);
+    track.setAttribute('aria-valuenow', String(p));
+    SPANS.forEach(([a, b], i) => {
+      const f = Math.max(0, Math.min(1, (k - a) / (b - a)));
+      stages[i].style.setProperty('--f', f.toFixed(3));
+      stages[i].classList.toggle('done', f >= 1);
+      stages[i].classList.toggle('on', f < 1 && k >= a);
+    });
   };
   step('Opening the village records…', 0.05);
   let resumed = false;
@@ -1168,6 +1197,7 @@ async function boot(): Promise<void> {
     const data = await get(AUTO);
     if (data) resumed = Game.performLoad(data).ok;
   } catch { /* a fresh village */ }
+  $('loading-village').textContent = resumed ? `Welcome back to ${World.name || 'your village'}` : 'Founding a new village';
   step('Laying out the land…', 0.12);
   await yieldFrame();
   terrain.update(true);

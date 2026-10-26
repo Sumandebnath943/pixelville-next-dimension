@@ -28,6 +28,7 @@ import { Gov } from './gov';
 import { Mind } from './mind';
 import { Edu } from './education';
 import { Traffic, kerbside } from './traffic';
+import { Approach } from './approach';
 
 /** tiles per side of a grid district */
 export const DIST = 32;
@@ -314,15 +315,17 @@ export const Power = {
     this.storms(gm);
     // repair vans
     for (const c of Life.crews) {
+      if (Approach.away(c)) continue; // (V2: out on the road beyond the map's edge)
       if (c.phase === 'wait') {
         c.t -= gm;
-        if (c.t <= 0) c.phase = 'go';
+        // (V2: the county's van drives in along the road from beyond the map's edge: sim/approach.ts)
+        if (c.t <= 0) { c.phase = 'go'; if (c.county) Approach.arrive(c, c.path, 0.7); }
       } else if (c.phase === 'go' || c.phase === 'back') {
         const step = Traffic.advance(c, c, c.path, c.prog, 1, CREW_SPEED, dt, 0.7);
         c.prog += step;
         Life.followPath(c, c.path, Math.min(c.prog, c.path.length - 1), Traffic.lanePx(c));
         if (nearlyThere(c, c.path, step, dt)) {
-          if (c.phase === 'back') c.done = true;
+          if (c.phase === 'back') { if (!(c.county && Approach.depart(c, c.path, 0.7))) c.done = true; }
           else if (!this.faults.has(c.d)) { c.phase = 'back'; c.path = Life.backPath(c.path, c.prog); c.prog = 0; }
           else { c.phase = 'fix'; c.t = 40 + Math.random() * 35; }
         }

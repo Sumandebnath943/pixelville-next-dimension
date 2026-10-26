@@ -546,27 +546,69 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
 .help-grid p { margin: 0; color: var(--ink-2); line-height: 1.7; }
 #stats-canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: rgba(0, 0, 0, 0.18); margin-top: 6px; }
 
-/* ---------- loading (Milestone 8: the key art or a dusk sky over a pixel skyline, the logo, a tip) ---------- */
+/* ---------- loading (Milestone 8: the key art or a dusk sky over a pixel skyline, the logo, a tip. V2: the art drifts
+   slowly under a cinematic shade with motes of light in the air; the logo sits in the corner, and a panel along the
+   foot carries the village, the step being done, a big percentage, the build's five stages and a tip card) ---------- */
 #loading {
-  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, #120f2a 0%, #2a1d4a 38%, #6b3a5a 64%, #d9875a 86%, #f0c27a 100%); transition: opacity 0.7s ease; overflow: hidden;
+  position: fixed; inset: 0; z-index: 50; overflow: hidden; color: #f4ead8;
+  background: linear-gradient(180deg, #120f2a 0%, #2a1d4a 38%, #6b3a5a 64%, #d9875a 86%, #f0c27a 100%); transition: opacity 0.8s ease;
 }
-#loading .ld-art { position: absolute; inset: 0; background: var(--keyart, none) center / cover no-repeat; opacity: 0; transition: opacity 1.2s ease; }
+#loading .ld-art { position: absolute; inset: -3%; background: var(--keyart, none) 50% 45% / cover no-repeat; opacity: 0; transition: opacity 1.4s ease; animation: ldDrift 34s ease-in-out infinite alternate; will-change: transform; }
 #loading.has-art .ld-art { opacity: 1; }
+@keyframes ldDrift { from { transform: scale(1.02) translate3d(-1.2%, 0.5%, 0); } to { transform: scale(1.1) translate3d(1.2%, -0.8%, 0); } }
 #loading.has-art .ld-skyline, #loading.has-art .ld-glow { display: none; }
-#loading::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(8, 8, 18, 0.15) 0%, rgba(8, 8, 18, 0.72) 78%); pointer-events: none; }
 .ld-skyline { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 34vh; fill: #0b0a18; stroke: none; }
 .ld-glow { position: absolute; left: 50%; bottom: 16vh; width: 70vmin; height: 70vmin; margin-left: -35vmin; border-radius: 50%; background: radial-gradient(circle, rgba(255, 214, 150, 0.55), rgba(255, 170, 110, 0) 65%); animation: ldSun 6s ease-in-out infinite alternate; }
 @keyframes ldSun { to { transform: translateY(-2vh) scale(1.04); opacity: 0.85; } }
-.ld-main { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 16px; margin-top: -6vh; }
-.ld-logo { width: min(640px, 82vw); filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.55)); animation: ldIn 0.9s ease-out both; }
+.ld-shade {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(7, 9, 16, 0.6) 0%, rgba(7, 9, 16, 0) 24%),
+    linear-gradient(0deg, rgba(7, 9, 16, 0.95) 0%, rgba(7, 9, 16, 0.74) 28%, rgba(7, 9, 16, 0) 58%),
+    radial-gradient(ellipse at 50% 42%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.38) 100%);
+}
+.ld-motes i { position: absolute; bottom: -12px; width: 5px; height: 5px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 228, 176, 0.95), rgba(255, 196, 120, 0) 70%); opacity: 0; animation: ldMote linear infinite; }
+@keyframes ldMote { 0% { transform: translate3d(0, 0, 0); opacity: 0; } 12% { opacity: 0.85; } 80% { opacity: 0.5; } 100% { transform: translate3d(var(--dx), -72vh, 0); opacity: 0; } }
+.ld-top { position: absolute; left: clamp(16px, 4vw, 56px); top: clamp(14px, 4.5vh, 48px); }
+.ld-logo { display: block; width: clamp(220px, 30vw, 430px); filter: drop-shadow(0 8px 26px rgba(0, 0, 0, 0.6)); animation: ldIn 0.9s ease-out both; }
 @keyframes ldIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
-#loading p { color: #f4ead8; margin: 0; min-height: 1.4em; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
-#loading-text { font-weight: 600; letter-spacing: 0.02em; }
-#loading-track { width: min(360px, 70vw); height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); }
-#loading-bar { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #f6d6a0, #f0c27a 60%, #ffe6b8); box-shadow: 0 0 12px rgba(240, 194, 122, 0.8); transition: width 0.3s ease; }
-#loading-tip { max-width: min(520px, 86vw); text-align: center; font-size: 13px; color: rgba(244, 234, 216, 0.78) !important; transition: opacity 0.4s; }
-.ld-foot { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; z-index: 1; font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(244, 234, 216, 0.5) !important; }
+.ld-panel {
+  position: absolute; left: clamp(16px, 4vw, 56px); right: clamp(16px, 4vw, 56px); bottom: clamp(38px, 7.5vh, 70px); max-width: 1120px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'status pct' 'bar bar' 'tip tip'; gap: 14px 28px;
+  animation: ldUp 0.8s 0.15s ease-out both;
+}
+@keyframes ldUp { from { opacity: 0; transform: translateY(14px); } }
+.ld-status { grid-area: status; align-self: end; min-width: 0; }
+.ld-kicker { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+#loading-text { margin: 0; font-size: clamp(15px, 1.7vw, 21px); font-weight: 600; color: #f8f1e4; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ld-pct { grid-area: pct; align-self: end; font: 300 clamp(36px, 5vw, 60px) / 0.85 var(--font); color: #fff8ea; font-variant-numeric: tabular-nums; text-shadow: 0 2px 16px rgba(0, 0, 0, 0.5); }
+.ld-pct small { margin-left: 3px; font-size: 0.4em; font-weight: 500; color: var(--accent); }
+.ld-stages { grid-area: bar; display: grid; grid-template-columns: 1.1fr 0.8fr 3fr 1.1fr 1.3fr; gap: 6px; }
+.ld-stages span { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ld-stages i { position: relative; display: block; height: 5px; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, 0.14); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2); transition: box-shadow 0.4s; }
+.ld-stages i::after { content: ''; position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--f, 0)); background: linear-gradient(90deg, #e3a256, #f6d6a0); transition: transform 0.35s ease; }
+.ld-stages span.on i { box-shadow: 0 0 14px rgba(240, 194, 122, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.2); }
+.ld-stages span.on i::before { content: ''; position: absolute; inset: 0; z-index: 1; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent); transform: translateX(-100%); animation: ldShine 1.5s ease-in-out infinite; }
+@keyframes ldShine { to { transform: translateX(100%); } }
+.ld-stages em { font-style: normal; font-size: 11px; letter-spacing: 0.08em; color: rgba(244, 234, 216, 0.42); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.3s; }
+.ld-stages span.done em { color: rgba(240, 194, 122, 0.85); }
+.ld-stages span.on em { color: #fff3dc; }
+.ld-tip {
+  grid-area: tip; display: flex; gap: 12px; align-items: flex-start; max-width: 660px; padding: 12px 16px; border-radius: 14px;
+  background: rgba(14, 16, 24, 0.5); backdrop-filter: blur(12px) saturate(130%); -webkit-backdrop-filter: blur(12px) saturate(130%); border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ld-tip svg { width: 20px; height: 20px; margin-top: 1px; color: var(--accent); }
+.ld-tip b { display: block; margin-bottom: 2px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(244, 234, 216, 0.58); }
+#loading-tip { margin: 0; min-height: 2.9em; font-size: 13.5px; line-height: 1.45; color: #f1e8d8; transition: opacity 0.4s ease, transform 0.4s ease; }
+#loading-tip.out { opacity: 0; transform: translateY(4px); }
+.ld-foot { position: absolute; bottom: 12px; left: 0; right: 0; margin: 0; text-align: center; font-size: 10.5px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(244, 234, 216, 0.4); }
+@media (max-width: 640px) {
+  .ld-panel { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'pct' 'status' 'bar' 'tip'; gap: 10px; }
+  .ld-pct { font-size: 40px; }
+  .ld-stages em { display: none; }
+}
+@media (max-height: 520px) { .ld-tip { display: none; } .ld-logo { width: clamp(180px, 24vw, 300px); } }
+@media (prefers-reduced-motion: reduce) { #loading .ld-art, .ld-motes i, .ld-stages span.on i::before, .ld-glow { animation: none !important; } .ld-motes { display: none; } }
 
 /* ---------- landing (Milestone 8): the menu over a slow flight across the village ---------- */
 #landing { position: fixed; inset: 0; z-index: 40; display: none; pointer-events: none;

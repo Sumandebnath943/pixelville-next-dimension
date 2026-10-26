@@ -183,14 +183,15 @@ export class Travel {
       t.craft = pl;
       this.transit.follow(() => (!pl.done && Life.planes.includes(pl) ? { x: pl.x * PX, y: pl.alt * 0.5 + 2, z: pl.y * PX } : null), 38, () => this.beginJourney());
     } else if (t.mode === 'sea') {
-      const lane = this.seaLane(t.gate);
-      if (!lane) { this.beginJourney(); return; }
+      const tiles = this.seaLane(t.gate);
+      if (!tiles) { this.beginJourney(); return; }
+      const lane = Life.waterCourse(tiles); // (V2: a smooth course out, not tile by tile)
       const boat = { route: lane, prog: 0, x: lane[0][0] * T + 8, y: lane[0][1] * T + 8, dirx: 0, diry: 1, t: 0, ph: 0 };
       t.craft = boat;
       this.transit.follow((dt) => {
         boat.t += dt;
         boat.prog = Math.min(lane.length - 1, boat.prog + 9.6 * dt);
-        Life.followPath(boat, lane, boat.prog, 0);
+        Life.followWater(boat, lane, boat.prog);
         return boat.t < 9 && boat.prog < lane.length - 1 ? { x: boat.x * PX, y: 2.6, z: boat.y * PX } : null;
       }, 24, () => this.beginJourney());
     } else if (t.mode === 'heli') {
@@ -345,12 +346,12 @@ export class Travel {
     if (t.mode === 'sea' && g) {
       const lane = this.seaLane(g);
       if (lane) {
-        const path = [...lane].reverse();
+        const path = Life.waterCourse([...lane].reverse());
         const boat = { route: path, prog: Math.max(0, path.length - 1 - 90), x: 0, y: 0, dirx: 0, diry: -1, ph: 0 };
         t.craft = boat;
         this.transit.follow((dt) => {
           boat.prog = Math.min(path.length - 1, boat.prog + 9.6 * dt);
-          Life.followPath(boat, path, boat.prog, 0);
+          Life.followWater(boat, path, boat.prog);
           return boat.prog < path.length - 1 ? { x: boat.x * PX, y: 2.6, z: boat.y * PX } : null;
         }, 24, () => { t.craft = null; this.founder.stepOutOf(g); done(); });
         return;

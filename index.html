@@ -378,19 +378,50 @@
     </div>
     <div id="travel"><div id="tv-card" class="glass"></div></div>
     <!-- Milestone 8: the loading screen: the key art (public/art/keyart.jpg, if there is one) or a dusk sky over a
-         pixel skyline, the logo, what's being done, and a tip while it's done -->
+         pixel skyline. V2: the art drifting slowly under a cinematic shade, the logo in the corner (the art is the
+         picture), and a panel along the foot: the village, what's being done, how far along, the five stages of the
+         build, and a tip while it's done -->
     <div id="loading">
       <div class="ld-art"></div>
       <svg class="ld-skyline" viewBox="0 0 1200 220" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
         <path d="M0 220V150h40v-30h30v30h24V96h44v54h30v-24h36v24h28V70h22V40h10v30h22v80h34v-36h40v36h26v-60h46v60h30v-30h30v30h44V110h20V84h28v26h20v40h40v-50h50v50h22v-28h40v28h30V60h16V30h12v30h16v90h36v-40h44v40h28v-26h34v26h40v-70h48v70h26v-34h40v34H1200V220z" />
       </svg>
       <i class="ld-glow"></i>
-      <div class="ld-main">
-        <img class="ld-logo" src="/logo.svg" alt="PixelVille — Next Dimension" />
-        <p id="loading-text">Raising the village…</p>
-        <span id="loading-track"><i id="loading-bar"></i></span>
-        <p id="loading-tip"></p>
+      <div class="ld-motes" aria-hidden="true">
+        <i style="left: 6%; --dx: 4vw; animation-duration: 15s; animation-delay: -2s"></i>
+        <i style="left: 13%; --dx: -3vw; animation-duration: 19s; animation-delay: -9s"></i>
+        <i style="left: 21%; --dx: 6vw; animation-duration: 13s; animation-delay: -5s"></i>
+        <i style="left: 29%; --dx: -2vw; animation-duration: 17s; animation-delay: -12s"></i>
+        <i style="left: 37%; --dx: 3vw; animation-duration: 21s; animation-delay: -3s"></i>
+        <i style="left: 44%; --dx: -5vw; animation-duration: 16s; animation-delay: -14s"></i>
+        <i style="left: 52%; --dx: 2vw; animation-duration: 14s; animation-delay: -7s"></i>
+        <i style="left: 60%; --dx: -4vw; animation-duration: 18s; animation-delay: -1s"></i>
+        <i style="left: 67%; --dx: 5vw; animation-duration: 20s; animation-delay: -10s"></i>
+        <i style="left: 74%; --dx: -3vw; animation-duration: 15s; animation-delay: -6s"></i>
+        <i style="left: 81%; --dx: 2vw; animation-duration: 17s; animation-delay: -13s"></i>
+        <i style="left: 88%; --dx: -6vw; animation-duration: 13s; animation-delay: -4s"></i>
+        <i style="left: 94%; --dx: 3vw; animation-duration: 19s; animation-delay: -11s"></i>
       </div>
+      <div class="ld-shade"></div>
+      <header class="ld-top"><img class="ld-logo" src="/logo.svg" alt="PixelVille — Next Dimension" /></header>
+      <section class="ld-panel">
+        <div class="ld-status">
+          <span class="ld-kicker" id="loading-village">Waking the village</span>
+          <p id="loading-text" aria-live="polite">Raising the village…</p>
+        </div>
+        <b class="ld-pct"><span id="loading-pct">0</span><small>%</small></b>
+        <div class="ld-stages" id="loading-track" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span><i></i><em>Records</em></span>
+          <span><i></i><em>The land</em></span>
+          <span><i></i><em>Buildings</em></span>
+          <span><i></i><em>Textures</em></span>
+          <span><i></i><em>Lighting</em></span>
+        </div>
+        <aside class="ld-tip">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.2 1.1 2V16h5v-.2c0-.8.4-1.5 1.1-2A6 6 0 0 0 12 3z" /></svg>
+          <div><b>Did you know?</b><p id="loading-tip"></p></div>
+        </aside>
+      </section>
       <p class="ld-foot">A living village, now in three dimensions</p>
     </div>
     <!-- Milestone 8: the landing screen, over a slow flight across the village itself -->

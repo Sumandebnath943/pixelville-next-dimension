@@ -42,6 +42,13 @@ vec3 pvInterior() {
   float seed = vRoom.z;
   float kind = floor(vRoom.w / 2.0 + 0.01);
   float lit = mod(vRoom.w, 2.0);
+  // V2: how much glass one pixel covers (m). Books, curtain folds, shelves and floorboards a few centimetres apart
+  // sparkle once they're smaller than a pixel, and the room seen through the glass shifts with every step the
+  // camera takes: the fine detail fades to its average first, and a far window shows the room's average colour,
+  // the same from any angle (the window no longer twinkles as the Founder walks past a street of them)
+  float pvFp = length(fwidth(vWPos));
+  float dk = 1.0 - smoothstep(0.02, 0.06, pvFp);
+  float far = smoothstep(0.05, 0.16, pvFp);
   // a blacked-out district: every lamp in every room goes out
   float pw = pvPower(vWPos);
   float uLightsOnK = uLightsOn * pw;
@@ -52,7 +59,8 @@ vec3 pvInterior() {
     float lead = step(0.88, max(fq.x, fq.y)) + step(max(fq.x, fq.y), 0.12);
     vec3 gl = vec3(pvHash12(cid * 1.7), pvHash12(cid * 3.1 + 2.0), pvHash12(cid * 5.3 + 7.0));
     gl = mix(vec3(0.7, 0.15, 0.12), mix(vec3(0.15, 0.25, 0.7), vec3(0.85, 0.65, 0.15), gl.y), gl.x);
-    vec3 g2 = gl * (1.0 - min(1.0, lead));
+    vec3 g2 = mix(gl * 0.76, gl * (1.0 - min(1.0, lead)), dk);
+    g2 = mix(g2, vec3(0.42, 0.3, 0.32), far);
     return g2 * (uInteriorDay * 0.35 + uLightsOnK * 0.5);
   }
   float W = 3.4 + fract(seed * 7.13) * 1.8;
@@ -67,6 +75,11 @@ vec3 pvInterior() {
   float lampOn = (kind > 2.5 ? max(uLightsOnK * lit, 0.6 * (1.0 - uLightsOn) + 0.2) : kind > 0.5 ? max(uLightsOnK, 0.85) : lit * uLightsOnK) * pw;
   if (kind > 0.5) lampC = mix(lampC, vec3(1.0, 0.92, 0.8), 0.6);
   float day = uInteriorDay;
+  vec3 wall = pvPalette(seed);
+  if (kind > 0.5) wall = kind > 2.5 ? vec3(0.82, 0.82, 0.8) : kind > 1.5 ? vec3(0.36, 0.22, 0.14) : vec3(0.78, 0.74, 0.66);
+  float lampK = (kind > 2.5 ? 1.4 : kind > 0.5 ? 2.6 * (0.5 + 0.5 * uLightsOnK) + 0.6 : 0.34) * (0.7 + 0.6 * fract(seed * 23.0));
+  // (the room as a far window shows it: its walls in the daylight and its lamps, from no angle in particular)
+  vec3 flatC = wall * 0.8 * (vec3(day) * 0.62 * vec3(0.95, 0.97, 1.0) + lampC * lampOn * lampK * 0.42);
 
   // curtains, hung just behind the glass
   if (kind < 0.5) {
@@ -76,8 +89,8 @@ vec3 pvInterior() {
     if (abs(pc.x) > vWin.x - cw && abs(pc.x) < vWin.x + 0.4 && pc.y > vWin.y - 0.1 && pc.y < vWin.z + 0.15) {
       vec3 cc = mix(vec3(0.55, 0.18, 0.15), vec3(0.75, 0.68, 0.5), fract(seed * 29.0));
       if (fract(seed * 31.0) > 0.6) cc = vec3(0.32, 0.38, 0.5);
-      float fold = 0.72 + 0.28 * sin(pc.x * 42.0 + seed * 10.0);
-      return cc * fold * (day * 0.55 + lampOn * lampC * 0.32);
+      float fold = 0.72 + 0.28 * sin(pc.x * 42.0 + seed * 10.0) * dk;
+      return mix(cc * fold * (day * 0.55 + lampOn * lampC * 0.32), flatC, far);
     }
   }
 
@@ -87,9 +100,7 @@ vec3 pvInterior() {
   vec3 tf = max(t0, t1);
   float t = min(min(tf.x, tf.y), tf.z);
   vec3 h = ro + rd * t;
-  vec3 wall = pvPalette(seed);
   vec3 col;
-  if (kind > 0.5) wall = kind > 2.5 ? vec3(0.82, 0.82, 0.8) : kind > 1.5 ? vec3(0.36, 0.22, 0.14) : vec3(0.78, 0.74, 0.66);
   if (t == tf.z) {
     col = wall;
     float f = fract(seed * 13.1);
@@ -99,8 +110,8 @@ vec3 pvInterior() {
       if (h.y > 0.78 && h.y < 1.05 && fract(h.x * 0.9 + seed * 3.0) < 0.2) col = vec3(0.15, 0.2, 0.28) + uLightsOnK * vec3(0.2, 0.3, 0.45);
     } else if (kind > 0.5) {
       // shop: shelves of goods; pub: a bar back with bottles
-      float shelf = step(0.82, fract(h.y * 2.2));
-      float goods = step(0.35, fract(h.x * 3.1 + floor(h.y * 2.2) * 0.37));
+      float shelf = mix(0.18, step(0.82, fract(h.y * 2.2)), dk);
+      float goods = mix(0.65, step(0.35, fract(h.x * 3.1 + floor(h.y * 2.2) * 0.37)), dk);
       vec3 g = mix(vec3(0.75, 0.55, 0.3), vec3(0.6, 0.35, 0.25), fract(floor(h.x * 3.1) * 0.61));
       if (kind > 1.5) g = mix(vec3(0.25, 0.4, 0.2), vec3(0.6, 0.45, 0.2), fract(floor(h.x * 8.0) * 0.61)) * 1.4;
       if (h.y > 0.9 && h.y < 2.6) col = mix(mix(col, g, goods), vec3(0.3, 0.2, 0.12), shelf);
@@ -109,22 +120,22 @@ vec3 pvInterior() {
       if (f < 0.4 && abs(h.x) < 0.45 && h.y > 1.3 && h.y < 1.9) {
         col = (abs(h.x) > 0.4 || h.y < 1.35 || h.y > 1.85) ? vec3(0.2, 0.14, 0.08) : mix(vec3(0.3, 0.45, 0.6), vec3(0.7, 0.55, 0.3), h.y - 1.3);
       } else if (f >= 0.4 && f < 0.75 && h.x > 0.2 && h.x < 1.4 && h.y < 2.0) {
-        float book = step(0.12, fract(h.x * 14.0)) * step(0.1, fract(h.y * 3.0));
+        float book = mix(0.79, step(0.12, fract(h.x * 14.0)) * step(0.1, fract(h.y * 3.0)), dk);
         col = mix(vec3(0.28, 0.18, 0.1), mix(vec3(0.5, 0.2, 0.15), vec3(0.2, 0.3, 0.45), fract(floor(h.x * 14.0) * 0.37)), book);
       }
       if (abs(h.x + 0.3) < 0.9 && h.y < 0.75 && f > 0.25) col = mix(vec3(0.3, 0.32, 0.36), vec3(0.45, 0.3, 0.22), fract(seed * 41.0));
     }
   } else if (t == tf.y) {
     if (rd.y < 0.0) {
-      col = mix(vec3(0.36, 0.24, 0.14), vec3(0.3, 0.2, 0.12), step(0.5, fract(h.x * 3.0))) * (0.85 + 0.15 * fract(floor(h.z * 0.8 + floor(h.x * 3.0) * 0.5) * 0.71));
+      col = mix(vec3(0.33, 0.22, 0.13), mix(vec3(0.36, 0.24, 0.14), vec3(0.3, 0.2, 0.12), step(0.5, fract(h.x * 3.0))) * (0.85 + 0.15 * fract(floor(h.z * 0.8 + floor(h.x * 3.0) * 0.5) * 0.71)), dk);
       if (abs(h.x) < 1.0 && h.z > 1.0 && h.z < D - 0.8 && kind < 0.5) col = mix(vec3(0.45, 0.2, 0.18), vec3(0.3, 0.32, 0.4), fract(seed * 3.3));
     } else {
       col = vec3(0.86, 0.84, 0.8);
       if (kind > 2.5) {
         // a grid of ceiling panels
         vec2 g = fract(h.xz * vec2(0.42, 0.5));
-        col += vec3(0.9, 0.95, 1.0) * lampOn * 2.0 * step(0.7, g.x) * step(0.6, g.y);
-      } else col += lampC * lampOn * 2.5 * smoothstep(0.3, 0.0, length(h.xz - vec2(0.0, D * 0.5)));
+        col += vec3(0.9, 0.95, 1.0) * lampOn * 2.0 * mix(0.12, step(0.7, g.x) * step(0.6, g.y), dk);
+      } else col += lampC * lampOn * 2.5 * smoothstep(0.3, 0.0, length(h.xz - vec2(0.0, D * 0.5))) * dk;
     }
   } else {
     col = wall * 0.92;
@@ -134,13 +145,13 @@ vec3 pvInterior() {
   vec3 light = vec3(day) * depthK * vec3(0.95, 0.97, 1.0);
   float ld = length(h - vec3(0.0, Hr - 0.3, D * 0.45));
   if (kind > 2.5) { lampC = vec3(0.92, 0.96, 1.0); ld = 1.5; }
-  light += lampC * lampOn * (kind > 2.5 ? 1.4 : kind > 0.5 ? 2.6 * (0.5 + 0.5 * uLightsOnK) + 0.6 : 0.34) * (0.7 + 0.6 * fract(seed * 23.0)) / (1.0 + ld * ld * 0.18);
+  light += lampC * lampOn * lampK / (1.0 + ld * ld * 0.18);
   // a TV flickering in some dark rooms
   if (lit < 0.5 && fract(seed * 43.0) > 0.7 && kind < 0.5) {
     float fl = 0.6 + 0.4 * sin(uTime * 7.0 + seed * 50.0) * sin(uTime * 2.3 + seed);
     light += vec3(0.35, 0.45, 0.8) * 0.05 * fl * uLightsOnK / (1.0 + h.z * 0.5);
   }
-  return col * light;
+  return mix(col * light, flatC, far);
 }
 `;
 
@@ -177,6 +188,18 @@ export class Palette {
     const ash = TX.ashlar('#9d9686', 22);
     add('ashlar', surface(texd(ash, { vertexColors: true }), { snow: 1, wet: 0.9, antiTile: 0.15 }, 'ashlar'), ash.metres);
     add('trim', surface(std({ vertexColors: true, roughness: 0.42 }), { snow: 1, wet: 0.3 }, 'trim'));
+    // V2: window frames ('sash') and glazing bars ('sashBar'): the trim's paint, but once one is thinner than about a
+    // pixel it fades into the dark of the glass it stands in. Left white, a 3 cm bar or a 6 cm frame at street
+    // distance was drawn on one frame and missed on the next, and every window in the street flickered whenever the
+    // camera moved (one program for both: only the fade's range differs)
+    const sash = (lo: number, hi: number): THREE.MeshStandardMaterial => surface(std({ vertexColors: true, roughness: 0.42 }), {
+      snow: 1, wet: 0.3,
+      fDecl: 'uniform float uSashLo;\nuniform float uSashHi;',
+      fColor: 'diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.rgb, vec3(0.05, 0.055, 0.06), 0.88), smoothstep(uSashLo, uSashHi, length(fwidth(vWPos))));',
+      uniforms: { uSashLo: { value: lo }, uSashHi: { value: hi } },
+    }, 'sash');
+    add('sash', sash(0.06, 0.16));
+    add('sashBar', sash(0.025, 0.07));
     add('paint', surface(std({ vertexColors: true, roughness: 0.28 }), { snow: 1, wet: 0.2 }, 'paint'));
     add('metal', surface(std({ vertexColors: true, roughness: 0.35, metalness: 0.65 }), { snow: 0.9, wet: 0.2 }, 'metal'));
     add('brass', surface(std({ color: 0xc8a050, roughness: 0.25, metalness: 1 }), { snow: 0.5 }, 'brass'));
@@ -196,6 +219,8 @@ export class Palette {
     add('rock', surface(texd(rk, { vertexColors: true }), { snow: 1.2, wet: 0.7, antiTile: 0.25 }, 'rock'), rk.metres);
     const gv = TX.gravel();
     add('gravel', surface(texd(gv, { vertexColors: true }), { snow: 1, wet: 0.9, puddles: true, wear: true }, 'gravel'), gv.metres);
+    // V2: the shingle along a river's or a lake's edge (the ballast's stones, washed and spread flat)
+    add('shingle', surface(texd(gv, { vertexColors: true }), { snow: 1, wet: 1, antiTile: 0.2 }, 'shingle'), gv.metres);
     const so = TX.soil();
     add('soil', surface(texd(so, { vertexColors: true }), { snow: 1, wet: 1 }, 'soil'), so.metres);
     const pl = TX.planks();
@@ -631,21 +656,21 @@ export const TRIM = new THREE.Color(0.92, 0.91, 0.87);
 export function sashWindow(kit: Kit, F: Frame, h: Hole, floorY: number, seed: number, lit: boolean, trim: THREE.Color, opts: { lintel: string; sill: string; bars: number; lintelColor?: THREE.Color }): void {
   const r = 0.14, ft = 0.065;
   const c0 = -r - 0.02, c1 = -r + 0.05;
-  // outer frame
-  obox(kit, 'trim', F, h.a0, h.b0, c0, h.a0 + ft, h.b1, c1, trim);
-  obox(kit, 'trim', F, h.a1 - ft, h.b0, c0, h.a1, h.b1, c1, trim);
-  obox(kit, 'trim', F, h.a0, h.b1 - ft, c0, h.a1, h.b1, c1, trim);
-  obox(kit, 'trim', F, h.a0, h.b0, c0, h.a1, h.b0 + ft * 1.4, c1, trim);
+  // outer frame (V2: in the window materials, which fade once they're thinner than a pixel)
+  obox(kit, 'sash', F, h.a0, h.b0, c0, h.a0 + ft, h.b1, c1, trim);
+  obox(kit, 'sash', F, h.a1 - ft, h.b0, c0, h.a1, h.b1, c1, trim);
+  obox(kit, 'sash', F, h.a0, h.b1 - ft, c0, h.a1, h.b1, c1, trim);
+  obox(kit, 'sash', F, h.a0, h.b0, c0, h.a1, h.b0 + ft * 1.4, c1, trim);
   // meeting rail and glazing bars (lower sash slightly proud of the upper)
   const mid = (h.b0 + h.b1) / 2 + 0.05;
-  obox(kit, 'trim', F, h.a0, mid - 0.035, c0 - 0.01, h.a1, mid + 0.035, c1 - 0.01, trim);
+  obox(kit, 'sash', F, h.a0, mid - 0.035, c0 - 0.01, h.a1, mid + 0.035, c1 - 0.01, trim);
   const iw = h.a1 - h.a0 - ft * 2;
   for (let k = 1; k < opts.bars; k++) {
     const a = h.a0 + ft + (iw * k) / opts.bars;
-    obox(kit, 'trim', F, a - 0.014, h.b0 + ft, c0 - 0.005, a + 0.014, h.b1 - ft, c0 + 0.035, trim);
+    obox(kit, 'sashBar', F, a - 0.014, h.b0 + ft, c0 - 0.005, a + 0.014, h.b1 - ft, c0 + 0.035, trim);
   }
   if (opts.bars > 1) for (const yy of [(h.b0 + mid) / 2, (mid + h.b1) / 2])
-    obox(kit, 'trim', F, h.a0 + ft, yy - 0.014, c0 - 0.005, h.a1 - ft, yy + 0.014, c0 + 0.035, trim);
+    obox(kit, 'sashBar', F, h.a0 + ft, yy - 0.014, c0 - 0.005, h.a1 - ft, yy + 0.014, c0 + 0.035, trim);
   glassPane(kit, F, { a0: h.a0 + ft, b0: h.b0 + ft, a1: h.a1 - ft, b1: h.b1 - ft }, c0 + 0.01, floorY, seed, lit);
   // stone sill and lintel
   obox(kit, opts.sill, F, h.a0 - 0.07, h.b0 - 0.08, -r + 0.02, h.a1 + 0.07, h.b0, 0.06);
@@ -657,10 +682,10 @@ export function frontDoor(kit: Kit, F: Frame, h: Hole, color: THREE.Color, trim:
   const r = 0.2;
   const leafTop = h.b1 - 0.48;
   obox(kit, 'stone', F, h.a0 - 0.12, 0, -r, h.a1 + 0.12, h.b0, 0.32);
-  obox(kit, 'trim', F, h.a0, h.b0, -r - 0.02, h.a0 + 0.07, h.b1, -r + 0.06, trim);
-  obox(kit, 'trim', F, h.a1 - 0.07, h.b0, -r - 0.02, h.a1, h.b1, -r + 0.06, trim);
-  obox(kit, 'trim', F, h.a0, leafTop, -r - 0.02, h.a1, leafTop + 0.08, -r + 0.06, trim);
-  obox(kit, 'trim', F, h.a0, h.b1 - 0.07, -r - 0.02, h.a1, h.b1, -r + 0.06, trim);
+  obox(kit, 'sash', F, h.a0, h.b0, -r - 0.02, h.a0 + 0.07, h.b1, -r + 0.06, trim);
+  obox(kit, 'sash', F, h.a1 - 0.07, h.b0, -r - 0.02, h.a1, h.b1, -r + 0.06, trim);
+  obox(kit, 'sash', F, h.a0, leafTop, -r - 0.02, h.a1, leafTop + 0.08, -r + 0.06, trim);
+  obox(kit, 'sash', F, h.a0, h.b1 - 0.07, -r - 0.02, h.a1, h.b1, -r + 0.06, trim);
   const la = h.a0 + 0.07, lb = h.a1 - 0.07;
   obox(kit, 'paint', F, la, h.b0, -r - 0.05, lb, leafTop, -r, color);
   // four raised panels

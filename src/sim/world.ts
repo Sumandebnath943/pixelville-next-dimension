@@ -3,6 +3,7 @@ import type { Building, Car, XY } from './types';
 import { mulberry32 } from './core';
 import { CAT } from './catalog';
 import { PEAK_R, peakHeight, peakTrail } from './peak';
+import { Approach } from './approach';
 import { Tasks } from './tasks';
 import { Life } from './life';
 /* ============================================================
@@ -626,9 +627,10 @@ export const World: any = {
     }
     return laid;
   },
-  /* boats & ferries steam along connected water */
-  waterPath(ax: number, ay: number, bx: number, by: number) {
-    const wet = (x: number, y: number) => this.inB(x, y) && this.ground[this.idx(x, y)] === G_WATER;
+  /* boats & ferries steam along connected water (V2: not under a bridge, whose deck stands too low for any boat to
+     pass: a road's or the railway's; `underBridges` says whether there would be a way if there were none) */
+  waterPath(ax: number, ay: number, bx: number, by: number, underBridges = false) {
+    const wet = (x: number, y: number) => this.inB(x, y) && this.ground[this.idx(x, y)] === G_WATER && (underBridges || (!this.roadMap[this.idx(x, y)] && !this.railMap[this.idx(x, y)]));
     if (!wet(ax, ay) || !wet(bx, by)) return null;
     return this._bfs(ax, ay, bx, by, wet);
   },
@@ -1112,9 +1114,9 @@ export const World: any = {
     }
     Life.waterTiles = water;
     Life.sandTiles = sand;
-    Life.edgeRoads = [];
-    for (let x = 0; x < GW; x++) for (const y of [0, 1, GH - 2, GH - 1]) if (this.isRoad(x, y)) Life.edgeRoads.push([x, y]);
-    for (let y = 0; y < GH; y++) for (const x of [0, 1, GW - 2, GW - 1]) if (this.isRoad(x, y)) Life.edgeRoads.push([x, y]);
+    // V2: only the roads that run off the map (V1 took any road near the edge, so traffic from out of town could start
+    // in the middle of a street that only ran along it): it comes in along them from beyond the edge (sim/approach.ts)
+    Life.edgeRoads = Approach.gates(true).map((g) => [g.x, g.y]);
     Life.fireflySpots = [];
     for (let i = 0; i < trees.length && Life.fireflySpots.length < 120; i += Math.max(1, (trees.length / 120) | 0))
       Life.fireflySpots.push({ x: trees[i][0], y: trees[i][1], ph: (i * 0.7) % 6.28 });

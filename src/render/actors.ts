@@ -265,6 +265,10 @@ export class Actors {
   private near(x: number, z: number, extra = 0): boolean {
     return Math.abs(x - this.camX) < this.range + extra && Math.abs(z - this.camZ) < this.range + extra;
   }
+  /** V2: is (x, z) metres within the range things are drawn in round the view? */
+  inRange(x: number, z: number, extra = 0): boolean {
+    return this.near(x, z, extra);
+  }
 
   /* ---------- drawing primitives ---------- */
   person(p: PersonDraw): void {

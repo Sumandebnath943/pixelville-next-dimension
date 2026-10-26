@@ -27,6 +27,7 @@ import { Gov } from './gov';
 import { Mind } from './mind';
 import { Power, nearlyThere } from './power';
 import { Traffic, kerbside } from './traffic';
+import { Approach } from './approach';
 
 export type Good = 'food' | 'mats' | 'tex' | 'prod';
 export const GOODS: Record<Good, { name: string; emoji: string; color: string; unit: number }> = {
@@ -237,7 +238,10 @@ export const Supply = {
     if (path.length < 2) path = [path[0], path[0]];
     path = kerbside(path); // (V2: it unloads on the near row of an avenue, in line with the traffic)
     const [sx, sy] = path[0];
-    Life.trucks.push({ path, prog: 0, x: sx * T + 8, y: sy * T + 8, dirx: 1, diry: 0, phase: 'go', kind, g, n, to, from, t: 0, seed: (Math.random() * 1e6) | 0 });
+    const truck = { path, prog: 0, x: sx * T + 8, y: sy * T + 8, dirx: 1, diry: 0, phase: 'go', kind, g, n, to, from, t: 0, seed: (Math.random() * 1e6) | 0 };
+    // (V2: an import drives in along the road from beyond the map's edge, behind any before it: sim/approach.ts)
+    if (kind === 'import') Approach.arrive(truck, path, 0.9);
+    Life.trucks.push(truck);
   },
   maxTrucks(): number {
     let k = 3;
@@ -391,12 +395,16 @@ export const Supply = {
   tick(dt: number): void {
     const gm = dt * MIN_PER_SEC;
     for (const t of Life.trucks) {
+      if (Approach.away(t)) continue; // (V2: out on the road beyond the map's edge)
       if (t.phase === 'go' || t.phase === 'back') {
         const step = Traffic.advance(t, t, t.path, t.prog, 1, TRUCK_SPEED, dt, 0.9);
         t.prog += step;
         Life.followPath(t, t.path, Math.min(t.prog, t.path.length - 1), Traffic.lanePx(t));
         if (nearlyThere(t, t.path, step, dt)) {
-          if (t.phase === 'back') t.done = true;
+          // (V2: back to the edge, it drives on away down the road; an export is sold beyond the edge, so it doesn't
+          // stop there to unload: it was parked on the last tile of the road, then vanished)
+          if (t.phase === 'back') { if (!Approach.depart(t, t.path, 0.9)) t.done = true; }
+          else if (t.kind === 'export' && Approach.depart(t, t.path, 0.9)) { t.unloaded = true; this.unload(t); }
           else { t.phase = 'drop'; t.t = 5; }
         }
       } else if (t.phase === 'drop') {

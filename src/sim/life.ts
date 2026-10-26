@@ -18,6 +18,7 @@ import { Health } from './health';
 import { Supply } from './supply';
 import { Gateways } from './gateways';
 import { Hustings } from './hustings';
+import { Approach } from './approach';
 /* ============================================================
    PixelVille — ambient life & the crime and justice system.
    Hikers trek up mountains (torches at night), birds cross the
@@ -70,6 +71,7 @@ export const Life: any = {
     Hustings.reset();
     this.trials = []; this.graveCases = 0; this.graveCd = 2400; this.graveCrime = null;
     this.reporters = []; this.beachfolk = []; this.sandTiles = [];
+    Approach.reset();
     Tasks.reset();
   },
   /* `at` (optional, world px {x,y}) makes the toast clickable — one click
@@ -82,6 +84,7 @@ export const Life: any = {
     this.tickDucks(dtSim);
     this.tickButterflies(dtReal);
     this.tickTourists(dtSim);
+    Approach.tick(dtSim); // V2: traffic on the roads beyond the map's edge
     this.tickFireworks(dtReal);
     this.tickCrime(dtSim);
     this.tickFires(dtSim);
@@ -379,7 +382,7 @@ export const Life: any = {
             const nBuses = Math.min(3, 1 + ((chain.length / 3) | 0));
             for (let k = 0; k < nBuses; k++)
               this.buses.push({
-                route, stopIdx, stops: chain, prog: (route.length - 1) * (k / nBuses), dir: 1,
+                route, stopIdx, stops: chain, prog: this.unseenProg(route, (route.length - 1) * (k / nBuses)), dir: 1,
                 pause: 0, x: route[0][0] * T + 8, y: route[0][1] * T + 8, dirx: 1, diry: 0,
                 lastStop: -1, pax: [], cap: 6,
               });
@@ -390,20 +393,25 @@ export const Life: any = {
     }
     // V2 (Milestone 8): the timetable. Every bus 05:30–21:00, one in the evening, none after the last bus at 23:30:
     // a bus whose service is over finishes its loop and goes back to the depot (out of sight) till morning
+    // (V2: and it comes out, and goes back, somewhere on the loop out of the player's sight: it used to appear at the
+    // first stop in the morning, and vanish there at night, in front of whoever was waiting)
     const running = !this.transitHours() ? 0 : Sim.clock >= 1260 ? 1 : this.buses.length;
     this.buses.forEach((bus: any, k: number) => {
-      if (k < running) { if (bus.hidden) { bus.hidden = false; bus.prog = 0; bus.lastStop = -1; bus.pause = 3; } bus.last = false; }
-      else if (!bus.hidden) bus.last = true;
+      if (k < running) {
+        if (bus.hidden) { bus.hidden = false; bus.prog = this.unseenProg(bus.route, 0); bus.lastStop = -1; bus.pause = 3; this.followPath(bus, bus.route, bus.prog, Traffic.lanePx(bus), bus.dir); }
+        bus.last = bus.home = false;
+      } else if (!bus.hidden) bus.last = true;
     });
     for (const bus of this.buses) {
       if (bus.hidden) continue;
+      if (bus.home && !Approach.seen(bus.x, bus.y)) { bus.hidden = true; bus.home = false; bus.prog = 0; continue; }
       if (bus.pause > 0) { bus.pause -= gm; bus.v = 0; continue; }
       // V2: in the traffic like everyone else — queues, junctions, crossings, gates (sim/traffic.ts)
       bus.prog += Traffic.advance(bus, bus, bus.route, bus.prog, bus.dir, 1.3, dt, 1.3) * bus.dir; // ~37 km/h
       // round the loop again (V2 (Milestone 8); an old save's back-and-forth bus turns round as before)
       if (bus.prog >= bus.route.length - 1) {
         const loop = bus.route.length > 2 && bus.route[0][0] === bus.route[bus.route.length - 1][0] && bus.route[0][1] === bus.route[bus.route.length - 1][1];
-        if (loop) { bus.prog -= bus.route.length - 1; bus.lastStop = -1; if (bus.last) { bus.hidden = true; bus.prog = 0; continue; } }
+        if (loop) { bus.prog -= bus.route.length - 1; bus.lastStop = -1; if (bus.last) bus.home = true; }
         else { bus.prog = bus.route.length - 1; bus.dir = -1; bus.pause = 5; }
       }
       if (bus.prog <= 0 && bus.dir < 0) { bus.prog = 0; bus.dir = 1; bus.pause = 5; }
@@ -416,6 +424,17 @@ export const Life: any = {
       }
       this.followPath(bus, bus.route, bus.prog, Traffic.lanePx(bus), bus.dir);
     }
+  },
+
+  /** V2: a point on a bus's loop out of the player's sight, at or before `want` (or `want`, if all of it is in view) */
+  unseenProg(route: number[][], want: number): number {
+    const n = route.length - 1;
+    if (n < 1) return want;
+    for (let d = 0; d < n; d++) {
+      const k = (((Math.floor(want) - d) % n) + n) % n;
+      if (!Approach.seen(route[k][0] * T + 8, route[k][1] * T + 8)) return k;
+    }
+    return want;
   },
 
   /* ---------------- taxi cabs cruising from the ranks ---------------- */
@@ -753,6 +772,7 @@ export const Life: any = {
       const d = docks[(Math.random() * docks.length) | 0];
       let best = null, bd = 1e9;
       for (const [tx, ty] of this.waterTiles) {
+        if (!this.openWater(tx, ty)) continue; // (V2: not under a bridge)
         const dd = Math.abs(tx - d.x) + Math.abs(ty - d.y);
         if (dd < bd) { bd = dd; best = [tx, ty]; }
       }
@@ -764,28 +784,34 @@ export const Life: any = {
       const dx = b.tx - b.x, dy = b.ty - b.y;
       const dist = Math.hypot(dx, dy);
       if (dist < 2) {
-        for (let tries = 0; tries < 8; tries++) {
+        // (V2: somewhere it can row to in a straight line over open water: a river's bends used to have boats rowing
+        // across the meadow from one reach to the next, and under the bridges' decks)
+        for (let tries = 0; tries < 12; tries++) {
           const [tx, ty] = this.waterTiles[(Math.random() * this.waterTiles.length) | 0];
-          if (Math.abs(tx * T + 8 - b.x) + Math.abs(ty * T + 8 - b.y) < 90) {
-            b.tx = tx * T + 6 + Math.random() * 4; b.ty = ty * T + 6 + Math.random() * 4;
+          const nx = tx * T + 6 + Math.random() * 4, ny = ty * T + 6 + Math.random() * 4;
+          if (Math.abs(nx - b.x) + Math.abs(ny - b.y) < 90 && this.waterClear(b.x, b.y, nx, ny)) {
+            b.tx = nx; b.ty = ny;
             break;
           }
         }
       } else {
         b.x += dx / dist * 7 * dt; b.y += dy / dist * 7 * dt;
+        b.dirx = dx / dist; b.diry = dy / dist;
         if (Math.abs(dx) > 0.5) b.flip = Math.sign(dx);
       }
     }
-    // a ferry shuttles between two docks joined by open water
+    // a ferry shuttles between two docks joined by open water (V2: under no bridge: a road or railway over the water
+    // stands too low for it; the bridges count towards the route's signature too)
     if (docks.length >= 2) {
-      const sig = docks.map((d: any) => d.id).join(',') + '|' + World.waterStamp;
+      const sig = docks.map((d: any) => d.id).join(',') + '|' + World.waterStamp + '|' + World.roadStamp + '|' + World.railStamp;
       if (sig !== this.ferrySig) {
         this.ferrySig = sig;
+        const had = this.ferry;
         this.ferry = null;
         const waterNear = (d: any) => {
           for (let j = -1; j <= d.h; j++) for (let i = -1; i <= d.w; i++) {
             if (i >= 0 && i < d.w && j >= 0 && j < d.h) continue;
-            if (World.inB(d.x + i, d.y + j) && World.ground[World.idx(d.x + i, d.y + j)] === G_WATER)
+            if (World.inB(d.x + i, d.y + j) && this.openWater(d.x + i, d.y + j))
               return { x: d.x + i, y: d.y + j };
           }
           return null;
@@ -794,9 +820,13 @@ export const Life: any = {
         if (a && b) {
           const path = World.waterPath(a.x, a.y, b.x, b.y);
           if (path && path.length > 8) {
-            this.ferry = { route: path, prog: 0, dir: 1, pause: 10, x: a.x * T + 8, y: a.y * T + 8, dirx: 1, diry: 0 };
-            this.say('⛴️ A ferry now sails between the docks!');
-          }
+            // (V2: steering a smooth course over the water, not tile by tile round every corner of the grid)
+            const route = this.waterCourse(path);
+            // (the same crossing as before, a road built somewhere else: it sails on where it was)
+            const same = had && had.route.length === route.length && had.route.every((p: number[], k: number) => p[0] === route[k][0] && p[1] === route[k][1]);
+            this.ferry = same ? had : { route, prog: 0, dir: 1, pause: 10, x: (route[0][0] + 0.5) * T, y: (route[0][1] + 0.5) * T, dirx: 1, diry: 0 };
+            if (!had) this.say('⛴️ A ferry now sails between the docks!');
+          } else if (!path && World.waterPath(a.x, a.y, b.x, b.y, true)) this.say('⛴️ No ferry between the docks: a bridge across the water stands too low for it to pass');
         }
       }
       if (this.ferry) {
@@ -809,10 +839,88 @@ export const Life: any = {
           this.ferry.prog += 1.0 * dt * this.ferry.dir; // V2: ferry pace
           if (this.ferry.prog >= this.ferry.route.length - 1) { this.ferry.prog = this.ferry.route.length - 1; this.ferry.dir = -1; this.ferry.pause = 14; this.ferry.at = docks[1]; Gateways.docked(docks[1]); }
           if (this.ferry.prog <= 0) { this.ferry.prog = 0; this.ferry.dir = 1; this.ferry.pause = 14; this.ferry.at = docks[0]; Gateways.docked(docks[0]); }
-          this.followPath(this.ferry, this.ferry.route, this.ferry.prog, 0, this.ferry.dir);
+          this.followWater(this.ferry, this.ferry.route, this.ferry.prog, this.ferry.dir);
         }
       }
     } else this.ferry = null;
+  },
+  /** V2: open water a boat can be on: water with no bridge over it (a road's deck or a railway's trestle) */
+  openWater(tx: number, ty: number): boolean {
+    if (!World.inB(tx, ty)) return false;
+    const i = World.idx(tx, ty);
+    return World.ground[i] === G_WATER && !World.roadMap[i] && !World.railMap[i];
+  },
+  /** V2: can a boat go straight from (ax, ay) to (bx, by) (px), a couple of metres clear of the banks all the way? */
+  waterClear(ax: number, ay: number, bx: number, by: number, margin = 5): boolean {
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 4));
+    for (let k = 0; k <= n; k++) {
+      const x = ax + ((bx - ax) * k) / n, y = ay + ((by - ay) * k) / n;
+      for (const [ox, oy] of [[-margin, -margin], [margin, -margin], [-margin, margin], [margin, margin]])
+        if (!this.openWater(Math.floor((x + ox) / T), Math.floor((y + oy) / T))) return false;
+    }
+    return true;
+  },
+  /** V2: a tile path over the water as a boat would steer it: the corners cut wherever there's open water to cut them,
+   *  rounded off, then marked out a tile apart (tile units, fractional) so a boat's pace along it stays the same */
+  waterCourse(path: number[][]): number[][] {
+    const px = (p: number[]): number[] => [(p[0] + 0.5) * T, (p[1] + 0.5) * T];
+    // the farthest point still in a straight line (up to 40 tiles on), again and again
+    const way: number[][] = [px(path[0])];
+    let i = 0;
+    while (i < path.length - 1) {
+      let j = Math.min(path.length - 1, i + 40);
+      const w = way[way.length - 1];
+      while (j > i + 1 && !this.waterClear(w[0], w[1], px(path[j])[0], px(path[j])[1], 4)) j--;
+      way.push(px(path[j]));
+      i = j;
+    }
+    // rounded at the turns: each corner cut (up to 2½ tiles back along either leg) where the cut stays on open water
+    let pts = way;
+    for (let r = 0; r < 2; r++) {
+      const out: number[][] = [pts[0]];
+      for (let k = 1; k < pts.length - 1; k++) {
+        const p = pts[k - 1], c = pts[k], q = pts[k + 1];
+        const l0 = Math.hypot(c[0] - p[0], c[1] - p[1]) || 1, l1 = Math.hypot(q[0] - c[0], q[1] - c[1]) || 1;
+        const c0 = Math.min(0.25 * l0, 40) / l0, c1 = Math.min(0.25 * l1, 40) / l1;
+        const a = [c[0] + (p[0] - c[0]) * c0, c[1] + (p[1] - c[1]) * c0], b = [c[0] + (q[0] - c[0]) * c1, c[1] + (q[1] - c[1]) * c1];
+        if (this.waterClear(a[0], a[1], b[0], b[1], 3)) out.push(a, b);
+        else out.push(a, c, b);
+      }
+      out.push(pts[pts.length - 1]);
+      pts = out;
+    }
+    // a point every tile along it
+    const res: number[][] = [[pts[0][0] / T - 0.5, pts[0][1] / T - 0.5]];
+    let carry = 0;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[k], b = pts[k + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      let d = T - carry;
+      while (d <= L) {
+        res.push([(a[0] + ((b[0] - a[0]) * d) / L) / T - 0.5, (a[1] + ((b[1] - a[1]) * d) / L) / T - 0.5]);
+        d += T;
+      }
+      carry = L - (d - T);
+    }
+    const last = path[path.length - 1];
+    if (carry > 1) res.push([last[0], last[1]]);
+    else res[res.length - 1] = [last[0], last[1]];
+    return res;
+  },
+  /** V2: a boat `prog` points along a water course (waterCourse's), heading eased round each point */
+  followWater(o: any, route: number[][], prog: number, dir = 1) {
+    const n = route.length;
+    if (n < 2) return;
+    const s = Math.max(0, Math.min(n - 1, prog)), i = Math.min(n - 2, Math.floor(s)), f = s - i;
+    const a = route[i], b = route[i + 1];
+    o.x = (a[0] + (b[0] - a[0]) * f + 0.5) * T;
+    o.y = (a[1] + (b[1] - a[1]) * f + 0.5) * T;
+    const leg = (p: number[], q: number[]): number[] => { const l = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1; return [(q[0] - p[0]) / l, (q[1] - p[1]) / l]; };
+    const d0 = leg(a, b), d1 = f < 0.5 ? (i > 0 ? leg(route[i - 1], a) : d0) : route[i + 2] ? leg(b, route[i + 2]) : d0;
+    const w = f < 0.5 ? 0.5 - f : f - 0.5;
+    let hx = d0[0] * (1 - w) + d1[0] * w, hy = d0[1] * (1 - w) + d1[1] * w;
+    const hl = Math.hypot(hx, hy) || 1;
+    hx = (hx / hl) * dir; hy = (hy / hl) * dir;
+    o.hx = o.dirx = hx; o.hy = o.diry = hy;
   },
 
   /* ---------------- helicopters between helipads ---------------- */
@@ -875,15 +983,25 @@ export const Life: any = {
   campaignCars: [], votingBooths: null,
   tickCampaignLife(dt: number) {
     const campaigning = Gov.campaign && !Gov.campaign.votingDay;
-    if (!campaigning) { this.campaignCars = []; return; }
+    const hours = Sim.clock >= 540 && Sim.clock < 1200;
+    // (V2: off the streets when the campaign is over, but each only once it's out of the player's sight: they all
+    // used to vanish at once, wherever they were)
+    if (!campaigning) {
+      this.campaignCars = this.campaignCars.filter((c: any) => Approach.seen(c.x, c.y));
+      if (!this.campaignCars.length) return;
+    }
+    const roads: number[][] = [];
+    const anyRoad = (): number[] => {
+      if (!roads.length) for (let i = 0; i < World.roadMap.length; i++) if (World.roadMap[i]) roads.push([i % GW, (i / GW) | 0]);
+      return roads[(Math.random() * roads.length) | 0];
+    };
     // a couple of cars with candidate banners cruise the streets with a megaphone (V2: in the daytime, not at 3 a.m.)
-    if (this.campaignCars.length < 2 && Sim.clock >= 540 && Sim.clock < 1200 && Math.random() < dt * 0.05) {
-      const roads = [];
-      for (let i = 0; i < World.roadMap.length; i++)
-        if (World.roadMap[i]) roads.push([i % GW, (i / GW) | 0]);
-      if (roads.length > 10) {
-        const a = roads[(Math.random() * roads.length) | 0];
-        const b = roads[(Math.random() * roads.length) | 0];
+    if (campaigning && this.campaignCars.length < 2 && hours && Math.random() < dt * 0.05) {
+      // (V2: setting out from somewhere out of the player's sight: it used to appear on any street, in plain view)
+      let a = anyRoad();
+      for (let k = 0; k < 12 && a && Approach.seen(a[0] * T + 8, a[1] * T + 8); k++) a = anyRoad();
+      if (roads.length > 10 && !Approach.seen(a[0] * T + 8, a[1] * T + 8)) {
+        const b = anyRoad();
         const path = World.roadPath(a[0], a[1], b[0], b[1]);
         if (path && path.length > 10) {
           const ci = (Math.random() * Gov.campaign.candidates.length) | 0;
@@ -894,7 +1012,14 @@ export const Life: any = {
     for (const c of this.campaignCars) {
       c.prog += Traffic.advance(c, c, c.path, c.prog, 1, 1.2, dt); // V2: campaign cars crawl with the megaphone, in the traffic
       this.followPath(c, c.path, c.prog, Traffic.lanePx(c));
-      if (c.prog >= c.path.length - 1) c.done = true;
+      if (c.prog >= c.path.length - 1) {
+        // (V2: done for the day only out of sight; otherwise on round another street)
+        const end = c.path[c.path.length - 1];
+        if ((!campaigning || !hours) && !Approach.seen(c.x, c.y)) { c.done = true; continue; }
+        const b = anyRoad(), next = b && World.roadPath(end[0], end[1], b[0], b[1]);
+        if (next && next.length > 2) { c.path = next; c.prog = 0; }
+        else if (!Approach.seen(c.x, c.y)) c.done = true;
+      }
     }
     this.campaignCars = this.campaignCars.filter((c: any) => !c.done);
   },
@@ -1544,20 +1669,25 @@ export const Life: any = {
         const e = this.edgeRoads[(Math.random() * this.edgeRoads.length) | 0];
         const path = World.roadPath(e[0], e[1], v.door.x, v.door.y);
         if (path && path.length > 6) {
-          this.tourists.push({
+          const t = {
             path, prog: 0, phase: 'in', venue: v, stay: 20 + Math.random() * 25,
             seed: (Math.random() * 8) | 0, x: e[0] * T + 8, y: e[1] * T + 8, dirx: 1, diry: 0,
-          });
+          };
+          // (V2: driving in along the road from beyond the map's edge)
+          Approach.arrive(t, path);
+          this.tourists.push(t);
         }
       }
     }
     for (const t of this.tourists) {
+      if (Approach.away(t)) continue; // (V2: still out on the road beyond the edge)
       if (t.phase === 'visit') { t.stay -= dt * MIN_PER_SEC; if (t.stay <= 0) { t.phase = 'out'; t.path = this.backPath(t.path); t.prog = 0; t.v = 0; } continue; }
       t.prog += Traffic.advance(t, t, t.path, t.prog, 1, 1.6, dt); // V2: tourist cars at town speed, in the traffic
       this.followPath(t, t.path, t.prog, Traffic.lanePx(t));
       if (t.prog >= t.path.length - 1) {
         if (t.phase === 'in') { t.phase = 'visit'; t.venue.visitors++; }
-        else t.done = true;
+        // (V2: and away down the road beyond the edge, out of sight before it's gone)
+        else if (!Approach.depart(t, t.path)) t.done = true;
       }
     }
     this.tourists = this.tourists.filter((t: any) => !t.done);

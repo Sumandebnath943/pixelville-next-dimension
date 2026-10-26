@@ -425,7 +425,8 @@ export const Traffic = {
     }
     // (V2: the emergency services keep their driving state apart, on `drv`)
     const dv = (u: any): Drive => u.drv ?? u;
-    const car = (u: any, len: number, still: boolean): void => put(u, u.x, u.y, u.dirx, u.diry, true, len, still, 0, dv(u).v ?? -1, !!dv(u).over);
+    // (V2: not those still out on the road beyond the map's edge: sim/approach.ts)
+    const car = (u: any, len: number, still: boolean): void => { if (u.off === undefined) put(u, u.x, u.y, u.dirx, u.diry, true, len, still, 0, dv(u).v ?? -1, !!dv(u).over); };
     for (const b of life.buses || []) if (!b.hidden) car(b, 1.3, b.pause > 0);
     for (const c of life.taxis || []) car(c, CAR_LEN, c.pause > 0);
     for (const t of life.tourists || []) if (t.phase !== 'visit') car(t, CAR_LEN, false);
