@@ -242,7 +242,10 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         `#include <roughnessmap_fragment>
         roughnessFactor = mix(roughnessFactor, min(roughnessFactor, 0.32), pvWet);
         roughnessFactor = mix(roughnessFactor, 0.025, pvPud);
-        roughnessFactor = mix(roughnessFactor, 0.6, pvSnow);`,
+        roughnessFactor = mix(roughnessFactor, 0.6, pvSnow);
+        #ifdef PV_SOFTBEAM
+        roughnessFactor = mix(roughnessFactor, 1.0, uNight); // (and no glints after dark)
+        #endif`,
       )
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor *= 1.0 - pvSnow;')
       .replace(
@@ -251,6 +254,12 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         ${o.keepNormals ? '#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif' : ''}
         {
           vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+          #ifdef PV_SOFTBEAM
+          // (V2: leaf cards and blades, each turned its own way and swaying, were lit one by one by the moon and the
+          // street lamps and glittered cyan and yellow through the night: after dark they take the light as a whole,
+          // as the crown or the meadow does, towards the sky)
+          normal = normalize(mix(normal, upV, uNight * 0.85));
+          #endif
           normal = normalize(mix(normal, upV, max(pvSnow * 0.75, pvPud)));
           #ifdef PV_PUDDLES
           if (uRain > 0.01 && pvUp > 0.9) {

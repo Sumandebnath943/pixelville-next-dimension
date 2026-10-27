@@ -395,12 +395,13 @@ class Ctx implements Built {
       this.kit.box('stone', x0 - 0.08, y + parapet, z0, x0 + 0.36, y + parapet + 0.08, z1, cp);
       this.kit.box('stone', x1 - 0.36, y + parapet, z0, x1 + 0.08, y + parapet + 0.08, z1, cp);
     }
-    // rooftop plant: AC units with fans, a vent stack
+    // rooftop plant: AC units with fans, a vent stack (V2: placed with an unsigned shift: the hash is a full 32 bits,
+    // and for half the buildings `>>` made it negative, which put the units up to 17 m off the roof, in the air)
     const n = 1 + (this.hv % 3);
     const plant = new THREE.Color(0.72, 0.74, 0.76);
     for (let i = 0; i < n && x1 - x0 > 5; i++) {
-      const ax = x0 + 1.5 + (((this.hv >> (i * 3)) % 7) / 7) * (x1 - x0 - 4);
-      const az = z0 + 1.5 + (((this.hv >> (i * 5)) % 5) / 5) * (z1 - z0 - 4);
+      const ax = x0 + 1.5 + (((this.hv >>> (i * 3)) % 7) / 7) * (x1 - x0 - 4);
+      const az = z0 + 1.5 + (((this.hv >>> (i * 5)) % 5) / 5) * (z1 - z0 - 4);
       this.kit.box('metal', ax, y + 0.12, az, ax + 1.6, y + 1.0, az + 1.2, plant);
       this.kit.cyl('metal', 0.38, 0.06, 16, new THREE.Matrix4().makeTranslation(ax + 0.8, y + 1.03, az + 0.6), new THREE.Color(0.15, 0.15, 0.16));
     }

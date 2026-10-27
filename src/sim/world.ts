@@ -1116,7 +1116,8 @@ export const World: any = {
     Life.sandTiles = sand;
     // V2: only the roads that run off the map (V1 took any road near the edge, so traffic from out of town could start
     // in the middle of a street that only ran along it): it comes in along them from beyond the edge (sim/approach.ts)
-    Life.edgeRoads = Approach.gates(true).map((g) => [g.x, g.y]);
+    // (V2: and the row of each that traffic comes in by: a two-row road is a dual carriageway)
+    Life.edgeRoads = Approach.gates(true).filter((g) => Approach.inbound(g)).map((g) => [g.x, g.y]);
     Life.fireflySpots = [];
     for (let i = 0; i < trees.length && Life.fireflySpots.length < 120; i += Math.max(1, (trees.length / 120) | 0))
       Life.fireflySpots.push({ x: trees[i][0], y: trees[i][1], ph: (i * 0.7) % 6.28 });

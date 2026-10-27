@@ -87,7 +87,7 @@ function detail(pk: Peak, x: number, z: number, base: number): number {
 interface Trail { pts: number[][]; hts: number[]; cells: Map<number, number[]> }
 const TRAILS = new Map<string, Trail>();
 /** how far either side of the trail's middle its bench is level, and where it has eased back into the slope (m) */
-const BENCH_IN = 1.8, BENCH_OUT = 5.5, CELL = 4;
+const BENCH_IN = 2.6, BENCH_OUT = 6.5, CELL = 4;
 const cellKey = (i: number, j: number): number => (i + 4096) * 8192 + (j + 4096);
 
 function trail(pk: Peak): Trail {
@@ -151,6 +151,12 @@ function trail(pk: Peak): Trail {
   // (from the level at the trailhead: the first few metres run up a low embankment onto the mountain, as steep as the
   // rest and no steeper, where its foot rises sharply)
   hts = hts.map((h, i) => h * smooth(Math.min(1, i / 6)));
+  // (and nowhere steeper than about one in three and a half: where a rounded hairpin still climbs harder than that, the
+  // way up to it is raised a little to take some of the climb, as a built-up path would)
+  for (let i = hts.length - 2; i >= 0; i--) {
+    const run = Math.hypot(even[i + 1][0] - even[i][0], even[i + 1][1] - even[i][1]);
+    hts[i] = Math.max(hts[i], hts[i + 1] - 0.28 * run);
+  }
   // which stretches of it are near each patch of ground (for the bench)
   const cells = new Map<number, number[]>();
   for (let i = 0; i < even.length - 1; i++) {
@@ -176,21 +182,24 @@ export function peakHeight(pk: Peak, x: number, z: number): number {
   const raw = base > 0 ? Math.max(0, base + detail(pk, x, z, base)) : 0;
   const tr = trail(pk), list = tr.cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL)));
   if (!list) return raw;
-  // the bench: level across the trail, easing back into the slope either side; where two legs of a switchback run
-  // close, the ground between them is shared between their levels
-  let sw = 0, sh = 0, top = 0;
+  // the bench: level across the trail (and a hand's breadth under its surface), easing back into the slope either
+  // side; on the bench itself only its own leg counts, and where two legs of a switchback run close the ground between
+  // them is shared between their levels
+  let sw = 0, sh = 0, top = 0, dn = Infinity, hn = 0;
   for (const i of list) {
     const [ax, az] = tr.pts[i], [bx, bz] = tr.pts[i + 1];
     const ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez || 1;
     const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2));
     const d = Math.hypot(x - ax - ex * t, z - az - ez * t);
     if (d >= BENCH_OUT) continue;
+    const h = tr.hts[i] + (tr.hts[i + 1] - tr.hts[i]) * t - 0.04;
+    if (d < dn) { dn = d; hn = h; }
     const k = d <= BENCH_IN ? 1 : 1 - smooth((d - BENCH_IN) / (BENCH_OUT - BENCH_IN));
-    // (the leg it's on counts far more than another passing near: weighted by the 4th power, and by nearness)
-    const wk = k * k * k * k / (0.25 + d);
-    sw += wk; sh += wk * (tr.hts[i] + (tr.hts[i + 1] - tr.hts[i]) * t);
+    const wk = (k * k * k * k) / (0.02 + Math.max(0, d - BENCH_IN));
+    sw += wk; sh += wk * h;
     if (k > top) top = k;
   }
+  if (dn <= BENCH_IN) return hn;
   return sw > 0 ? raw + (sh / sw - raw) * top : raw;
 }
 const smooth = (t: number): number => t * t * (3 - 2 * t);

@@ -549,14 +549,17 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
 /* ---------- loading (Milestone 8: the key art or a dusk sky over a pixel skyline, the logo, a tip. V2: the art drifts
    slowly under a cinematic shade with motes of light in the air; the logo sits in the corner, and a panel along the
    foot carries the village, the step being done, a big percentage, the build's five stages and a tip card) ---------- */
+/* (V2: a plain dark screen until the art has loaded, then the art fades in; the dusk sky and skyline are only for when
+   there's no art: they used to show first, and the art arrived over them) */
 #loading {
   position: fixed; inset: 0; z-index: 50; overflow: hidden; color: #f4ead8;
-  background: linear-gradient(180deg, #120f2a 0%, #2a1d4a 38%, #6b3a5a 64%, #d9875a 86%, #f0c27a 100%); transition: opacity 0.8s ease;
+  background: radial-gradient(ellipse at 50% 35%, #141a2a 0%, #080a12 70%); transition: opacity 0.8s ease;
 }
-#loading .ld-art { position: absolute; inset: -3%; background: var(--keyart, none) 50% 45% / cover no-repeat; opacity: 0; transition: opacity 1.4s ease; animation: ldDrift 34s ease-in-out infinite alternate; will-change: transform; }
+#loading.no-art { background: linear-gradient(180deg, #120f2a 0%, #2a1d4a 38%, #6b3a5a 64%, #d9875a 86%, #f0c27a 100%); }
+#loading .ld-art { position: absolute; left: -3%; top: -3%; width: 106%; height: 106%; object-fit: cover; object-position: 50% 45%; opacity: 0; transition: opacity 1.1s ease; animation: ldDrift 34s ease-in-out infinite alternate; will-change: transform; }
 #loading.has-art .ld-art { opacity: 1; }
 @keyframes ldDrift { from { transform: scale(1.02) translate3d(-1.2%, 0.5%, 0); } to { transform: scale(1.1) translate3d(1.2%, -0.8%, 0); } }
-#loading.has-art .ld-skyline, #loading.has-art .ld-glow { display: none; }
+#loading:not(.no-art) .ld-skyline, #loading:not(.no-art) .ld-glow, #loading.no-art .ld-art { display: none; }
 .ld-skyline { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 34vh; fill: #0b0a18; stroke: none; }
 .ld-glow { position: absolute; left: 50%; bottom: 16vh; width: 70vmin; height: 70vmin; margin-left: -35vmin; border-radius: 50%; background: radial-gradient(circle, rgba(255, 214, 150, 0.55), rgba(255, 170, 110, 0) 65%); animation: ldSun 6s ease-in-out infinite alternate; }
 @keyframes ldSun { to { transform: translateY(-2vh) scale(1.04); opacity: 0.85; } }
@@ -610,26 +613,93 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
 @media (max-height: 520px) { .ld-tip { display: none; } .ld-logo { width: clamp(180px, 24vw, 300px); } }
 @media (prefers-reduced-motion: reduce) { #loading .ld-art, .ld-motes i, .ld-stages span.on i::before, .ld-glow { animation: none !important; } .ld-motes { display: none; } }
 
-/* ---------- landing (Milestone 8): the menu over a slow flight across the village ---------- */
-#landing { position: fixed; inset: 0; z-index: 40; display: none; pointer-events: none;
-  background: linear-gradient(90deg, rgba(6, 8, 14, 0.78) 0%, rgba(6, 8, 14, 0.35) 38%, rgba(6, 8, 14, 0) 62%), linear-gradient(0deg, rgba(6, 8, 14, 0.55), rgba(6, 8, 14, 0) 30%); }
+/* ---------- landing (Milestone 8): the menu over a slow flight across the village. V2: a column on the left over a
+   cinematic shade: the logo, the village as a card (name, day and season, hour, people, weather), one big button to
+   play and the rest as a quiet list that lights up under the pointer; a "live" mark for the flight behind ---------- */
+#landing { position: fixed; inset: 0; z-index: 40; display: none; pointer-events: none; }
 body.landing #landing { display: block; }
 body.landing #hud, body.landing #touch, body.landing #prompt, body.landing #tour, body.landing #toasts { display: none !important; }
-.la-panel { position: absolute; left: clamp(16px, 6vw, 96px); top: 50%; transform: translateY(-50%); width: min(440px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 22px; pointer-events: auto; animation: laIn 0.8s ease-out both; }
+.la-shade {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(90deg, rgba(5, 7, 12, 0.9) 0%, rgba(5, 7, 12, 0.72) 26%, rgba(5, 7, 12, 0.18) 52%, rgba(5, 7, 12, 0) 66%),
+    linear-gradient(0deg, rgba(5, 7, 12, 0.7) 0%, rgba(5, 7, 12, 0) 26%),
+    linear-gradient(180deg, rgba(5, 7, 12, 0.45) 0%, rgba(5, 7, 12, 0) 18%);
+}
+.la-panel {
+  position: absolute; left: clamp(16px, 6vw, 96px); top: 50%; transform: translateY(-50%); width: min(430px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 22px; pointer-events: auto; animation: laIn 0.8s ease-out both;
+}
 @keyframes laIn { from { opacity: 0; transform: translate(-14px, -50%); } }
 .la-logo { width: 100%; filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6)); }
-.la-village { display: flex; flex-direction: column; gap: 2px; padding-left: 4px; }
-.la-village b { font-size: 22px; font-weight: 650; }
-.la-village span { color: var(--ink-2); }
-.la-buttons { display: flex; flex-direction: column; gap: 8px; }
-.la-buttons button { justify-content: flex-start; gap: 12px; padding: 11px 16px; font-size: 14px; border-radius: 12px; background: rgba(16, 20, 27, 0.62); backdrop-filter: var(--blur); border: 1px solid var(--line); }
-.la-buttons button:hover { background: rgba(30, 36, 48, 0.8); border-color: rgba(240, 194, 122, 0.45); }
-.la-buttons button svg { width: 18px; height: 18px; }
-.la-buttons button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 650; font-size: 15px; padding: 14px 16px; }
-.la-buttons button.primary:hover { background: #f6d39a; }
-.la-buttons button kbd { margin-left: auto; background: rgba(0, 0, 0, 0.16); border-color: rgba(0, 0, 0, 0.2); color: inherit; }
+.la-village { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; }
+.la-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); }
+.la-village b { font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -0.01em; color: #fbf6ec; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
+.la-village #la-meta { color: var(--ink-2); }
+.la-village #la-meta:empty { display: none; }
+.la-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.la-stats:empty { display: none; }
+.la-stats span {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px; border-radius: 999px; font-size: 12px; color: var(--ink);
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.09); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.la-stats svg { width: 14px; height: 14px; color: var(--accent); }
+.la-buttons { display: flex; flex-direction: column; gap: 14px; }
+.la-buttons button { pointer-events: auto; }
+.la-go {
+  position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 18px; border-radius: 14px; border: 0;
+  background: linear-gradient(180deg, #f7d9a4, #ecb867); color: var(--accent-ink); font: 650 16px var(--font); text-align: left;
+  box-shadow: 0 10px 30px rgba(236, 184, 103, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.5); transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s;
+}
+.la-go:hover, .la-go:focus-visible { transform: translateY(-1px); box-shadow: 0 14px 36px rgba(236, 184, 103, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.55); filter: brightness(1.04); }
+.la-go:focus-visible { outline: 2px solid #fff3dc; outline-offset: 3px; }
+.la-go svg { width: 20px; height: 20px; }
+.la-go span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.la-go kbd { background: rgba(0, 0, 0, 0.14); border-color: rgba(0, 0, 0, 0.18); color: inherit; }
+.la-go .la-arrow { width: 18px; height: 18px; transform: rotate(180deg); transition: transform 0.2s ease; }
+.la-go:hover .la-arrow, .la-go:focus-visible .la-arrow { transform: rotate(180deg) translateX(-3px); }
+.la-list {
+  display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 16px;
+  background: rgba(12, 15, 22, 0.42); border: 1px solid rgba(255, 255, 255, 0.07); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.la-list button {
+  position: relative; display: flex; align-items: center; gap: 14px; width: 100%; padding: 10px 12px; border: 0; border-radius: 11px;
+  background: transparent; color: var(--ink); font: 600 14px var(--font); text-align: left; transition: background 0.15s ease, transform 0.15s ease;
+}
+.la-list button::before { content: ''; position: absolute; left: 0; top: 22%; bottom: 22%; width: 3px; border-radius: 3px; background: var(--accent); opacity: 0; transform: scaleY(0.4); transition: opacity 0.15s, transform 0.15s; }
+.la-list button:hover, .la-list button:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; transform: translateX(3px); }
+.la-list button:hover::before, .la-list button:focus-visible::before { opacity: 1; transform: none; }
+.la-list button > svg { width: 32px; height: 32px; padding: 7px; border-radius: 9px; background: rgba(255, 255, 255, 0.06); color: var(--accent); }
+.la-list span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.la-list small { font-size: 12px; font-weight: 400; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.la-buttons > *, .la-list > button { animation: laRow 0.6s ease-out both; }
+.la-list > button:nth-child(1) { animation-delay: 0.08s; }
+.la-list > button:nth-child(2) { animation-delay: 0.14s; }
+.la-list > button:nth-child(3) { animation-delay: 0.2s; }
+.la-list > button:nth-child(4) { animation-delay: 0.26s; }
+@keyframes laRow { from { opacity: 0; transform: translateX(-8px); } }
+.la-live {
+  position: absolute; right: 22px; top: 18px; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2);
+  background: rgba(10, 12, 18, 0.45); border: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+}
+.la-live i { width: 8px; height: 8px; border-radius: 50%; background: #ff5a4a; box-shadow: 0 0 0 0 rgba(255, 90, 74, 0.6); animation: laLive 2s ease-out infinite; }
+@keyframes laLive { 70% { box-shadow: 0 0 0 8px rgba(255, 90, 74, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 90, 74, 0); } }
 .la-foot { position: absolute; right: 22px; bottom: 16px; margin: 0; color: var(--ink-3); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
-@media (max-height: 560px) { .la-panel { gap: 12px; } .la-buttons button { padding: 8px 14px; } .la-logo { width: 78%; } }
+@media (max-height: 600px) {
+  .la-panel { gap: 12px; }
+  .la-logo { width: 74%; }
+  .la-list button { padding: 7px 10px; }
+  .la-list small { display: none; }
+  .la-list button > svg { width: 26px; height: 26px; padding: 5px; }
+  .la-go { padding: 12px 16px; }
+}
+@media (max-width: 640px) {
+  .la-shade { background: linear-gradient(0deg, rgba(5, 7, 12, 0.92) 0%, rgba(5, 7, 12, 0.6) 60%, rgba(5, 7, 12, 0.3) 100%); }
+  .la-live { left: 16px; right: auto; }
+  .la-foot { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .la-panel, .la-buttons > *, .la-list > button, .la-live i { animation: none !important; } }
 
 /* ---------- the controls sheet (Milestone 8) ---------- */
 .help-logo { height: 40px; width: auto; display: block; }

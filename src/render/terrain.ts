@@ -1076,7 +1076,7 @@ export class Terrain {
       // grassy foothills, bare rock on the steeps, a permanent cap of snow and ice up top
       this.heightMesh(kit, x0, z0, step, N, (x, z) => mtnHeight(m, x, z), (h, ny, x, z) => {
         const f = h / p.H, nz = fbm(x / MAP_W, z / MAP_H, 220, 2, 3) - 0.5;
-        return [Math.max(ss(f + nz * 0.1, 0.12, 0.24), 1 - ss(ny + nz * 0.1, 0.66, 0.8)), ss(f + nz * 0.08, 0.7, 0.78) * (0.4 + ny * 0.8)];
+        return [Math.max(ss(f + nz * 0.1, 0.12, 0.24), 1 - ss(ny + nz * 0.1, 0.7, 0.84)), ss(f + nz * 0.08, 0.7, 0.78) * (0.4 + ny * 0.8)];
       }, cols);
       this.crags(kit, x0, z0, size, (x, z) => mtnHeight(m, x, z), p.H, p.seed, 26, () => true);
     }
@@ -1092,19 +1092,40 @@ export class Terrain {
   private heightMesh(kit: Kit, x0: number, z0: number, step: number, n: number, H: (x: number, z: number) => number, cover: (h: number, ny: number, x: number, z: number) => [number, number], cols: { grass: THREE.Color; rock: THREE.Color; snow: THREE.Color }, keep?: (x: number, z: number) => boolean): void {
     const W = n + 1, hg = new Float32Array(W * W), nr = new Float32Array(W * W * 3);
     for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) hg[j * W + i] = H(x0 + i * step, z0 + j * step);
+    // the normals for shading, and (V2) how level the ground is over a few metres round each point, for the ground it
+    // gets: from the normals alone, ledges and cliffs narrower than the grid broke the rock's edge into teeth
+    const lv = new Float32Array(W * W), S = Math.max(1, Math.round(5 / step));
+    // (the heights blurred over the same few metres: the rock's edge follows the broad contours of the slope; on the
+    // raw heights it jumped across every small cliff and ran along the grid's diagonals in teeth)
+    const tmp = new Float32Array(W * W), hs = new Float32Array(W * W);
+    for (let j = 0; j <= n; j++)
+      for (let i = 0; i <= n; i++) {
+        let sum = 0, c = 0;
+        for (let k = Math.max(0, i - S); k <= Math.min(n, i + S); k++) { sum += hg[j * W + k]; c++; }
+        tmp[j * W + i] = sum / c;
+      }
+    for (let j = 0; j <= n; j++)
+      for (let i = 0; i <= n; i++) {
+        let sum = 0, c = 0;
+        for (let k = Math.max(0, j - S); k <= Math.min(n, j + S); k++) { sum += tmp[k * W + i]; c++; }
+        hs[j * W + i] = sum / c;
+      }
     for (let j = 0; j <= n; j++)
       for (let i = 0; i <= n; i++) {
         const l = hg[j * W + Math.max(0, i - 1)], r = hg[j * W + Math.min(n, i + 1)], u = hg[Math.max(0, j - 1) * W + i], d = hg[Math.min(n, j + 1) * W + i];
         const sx = (Math.min(n, i + 1) - Math.max(0, i - 1)) * step, sz = (Math.min(n, j + 1) - Math.max(0, j - 1)) * step;
         const nx = -(r - l) / sx, nz = -(d - u) / sz, k = 1 / Math.hypot(nx, 1, nz);
         nr.set([nx * k, k, nz * k], (j * W + i) * 3);
+        const i0 = Math.max(0, i - S), i1 = Math.min(n, i + S), j0 = Math.max(0, j - S), j1 = Math.min(n, j + S);
+        const gx = (hs[j * W + i1] - hs[j * W + i0]) / ((i1 - i0) * step || 1), gz = (hs[j1 * W + i] - hs[j0 * W + i]) / ((j1 - j0) * step || 1);
+        lv[j * W + i] = 1 / Math.hypot(gx, 1, gz);
       }
     // each point: where it is, its normal, and how much rock and snow cover it
     type Vx = number[]; // x, y, z, nx, ny, nz, rock, snow
     const vx: Vx[] = [];
     for (let id = 0; id < W * W; id++) {
       const x = x0 + (id % W) * step, z = z0 + ((id / W) | 0) * step, ny = nr[id * 3 + 1];
-      const [rock, snow] = cover(hg[id], ny, x, z);
+      const [rock, snow] = cover(hs[id], lv[id], x, z);
       vx.push([x, hg[id], z, nr[id * 3], ny, nr[id * 3 + 2], rock, snow]);
     }
     const clip = (poly: Vx[], a: number, above: boolean): Vx[] => {
@@ -1207,7 +1228,7 @@ export class Terrain {
     this.heightMesh(kit, x0, z0, step, n, (x, z) => peakHeight(pk, x, z), (h, ny, x, z) => {
       // meadow at the foot, rock where it's high or steep, a cap of snow (lower in winter, thinner on the cliffs)
       const f = h / H, nz = fbm(x / MAP_W, z / MAP_H, 220, 2, 3) - 0.5;
-      const rock = Math.max(ss(f + nz * 0.12, 0.36, 0.48), (1 - ss(ny + nz * 0.1, 0.66, 0.8)) * ss(f, 0.03, 0.08));
+      const rock = Math.max(ss(f + nz * 0.12, 0.36, 0.48), (1 - ss(ny + nz * 0.1, 0.7, 0.84)) * ss(f, 0.03, 0.08));
       const snow = (winter ? ss(f + nz * 0.1, 0.3, 0.4) : ss(f + nz * 0.08, 0.68, 0.78)) * (0.55 + ny * 0.6);
       return [rock, snow];
     }, cols, (x, z) => { const tx = Math.floor(x / TM), tz = Math.floor(z / TM); return World.inB(tx, tz) && World.ground[World.idx(tx, tz)] === G_ROCK && inPeak(tx, tz); }); // (its own tiles, which the map leaves to it, level or not)
@@ -1215,37 +1236,81 @@ export class Terrain {
     // crags and boulders, clear of the trail
     const near = (x: number, z: number, r: number): boolean => { for (let k = 0; k < trail.length; k += 2) if ((trail[k][0] - x) ** 2 + (trail[k][1] - z) ** 2 < r * r) return true; return false; };
     this.crags(kit, x0, z0, R * 2, (x, z) => peakHeight(pk, x, z), H, (pk.seed ?? 7) * 31 + 5, 150, (x, z) => !near(x, z, 7));
-    // the trail: one unbroken ribbon of packed gravel on its bench, its edges dropping a hand's breadth to the ground
-    const W = 1.25, gravel = new THREE.Color(0.86, 0.78, 0.66), edge = new THREE.Color(0.7, 0.62, 0.52);
-    const L: THREE.Vector3[] = [], Rr: THREE.Vector3[] = [], side: number[][] = [];
-    for (let k = 0; k < trail.length; k++) {
-      const a = trail[Math.max(0, k - 1)], b = trail[Math.min(trail.length - 1, k + 1)];
-      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, sx = -dz / l, sz = dx / l;
-      const [x, z] = trail[k], y = hts[k] + 0.09;
-      L.push(v3(x - sx * W, y, z - sz * W));
-      Rr.push(v3(x + sx * W, y, z + sz * W));
-      side.push([sx, sz]);
+    // V2: the trail: one smooth ribbon of packed gravel lying on its bench, shaded smooth along its curves, its inside
+    // edge kept from folding back over itself on the hairpins; a verge of trodden earth either side easing it into the
+    // bench; and where the slope falls away steeply beside it, a log edging along the drop. (Its edges were dark strips
+    // hanging under it, and the slope showed through it in patches.)
+    const n2 = trail.length, W = 1.2, V = 0.6, lift = 0.07;
+    const side: number[][] = [], tang: number[][] = [];
+    for (let k = 0; k < n2; k++) {
+      const a = trail[Math.max(0, k - 1)], b = trail[Math.min(n2 - 1, k + 1)];
+      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
+      tang.push([dx / l, dz / l]);
+      side.push([-dz / l, dx / l]);
     }
-    const nrm = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
-    for (let k = 0; k < trail.length - 1; k++) {
-      nrm.crossVectors(e1.subVectors(L[k + 1], L[k]), e2.subVectors(Rr[k], L[k])).normalize();
-      if (nrm.y < 0) nrm.negate();
-      kit.quad('gravel', L[k], Rr[k], Rr[k + 1], L[k + 1], nrm, gravel);
-      for (const [P0, P1, sg] of [[L[k], L[k + 1], -1], [Rr[k], Rr[k + 1], 1]] as [THREE.Vector3, THREE.Vector3, number][]) {
-        const [s0x, s0z] = side[k], [s1x, s1z] = side[k + 1];
-        const Q0 = v3(P0.x + s0x * sg * 0.18, P0.y - 0.4, P0.z + s0z * sg * 0.18), Q1 = v3(P1.x + s1x * sg * 0.18, P1.y - 0.4, P1.z + s1z * sg * 0.18);
-        kit.quad('soil', P0, P1, Q1, Q0, v3(s0x * sg, 0.4, s0z * sg).normalize(), edge);
+    /** a line beside the trail, `off` m to its right (negative: left), each point kept from stepping back against the way */
+    const line = (off: number, y: (k: number, x: number, z: number) => number): THREE.Vector3[] => {
+      const out: THREE.Vector3[] = [];
+      for (let k = 0; k < n2; k++) {
+        let x = trail[k][0] + side[k][0] * off, z = trail[k][1] + side[k][1] * off;
+        if (k > 0) {
+          const p = out[k - 1], [tx, tz] = tang[k], ahead = (x - p.x) * tx + (z - p.z) * tz;
+          if (ahead < 0.05) { x += tx * (0.05 - ahead); z += tz * (0.05 - ahead); }
+        }
+        out.push(v3(x, y(k, x, z), z));
+      }
+      return out;
+    };
+    /** a strip between two lines as one smooth-shaded mesh */
+    const strip = (key: string, A: THREE.Vector3[], B: THREE.Vector3[], col: THREE.Color): void => {
+      const pos: number[] = [], nor: number[] = [], idx: number[] = [];
+      const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nn = new THREE.Vector3();
+      for (let k = 0; k < n2; k++) {
+        e1.subVectors(A[Math.min(n2 - 1, k + 1)], A[Math.max(0, k - 1)]);
+        e2.subVectors(B[k], A[k]);
+        nn.crossVectors(e2, e1).normalize();
+        if (nn.y < 0) nn.negate();
+        pos.push(A[k].x, A[k].y, A[k].z, B[k].x, B[k].y, B[k].z);
+        nor.push(nn.x, nn.y, nn.z, nn.x, nn.y, nn.z);
+        if (k < n2 - 1) { const i = k * 2; idx.push(i, i + 1, i + 3, i, i + 3, i + 2); }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      g.setIndex(idx);
+      kit.base = new THREE.Matrix4();
+      kit.add(key, g, col);
+      g.dispose();
+    };
+    const tread = (k: number): number => hts[k] + lift;
+    const ground = (_k: number, x: number, z: number): number => peakHeight(pk, x, z) + 0.02;
+    const Lin = line(-W, tread), Rin = line(W, tread);
+    strip('trail', Lin, Rin, new THREE.Color(0.9, 0.82, 0.7));
+    strip('soil', line(-W - V, ground), Lin, new THREE.Color(0.66, 0.58, 0.48));
+    strip('soil', Rin, line(W + V, ground), new THREE.Color(0.66, 0.58, 0.48));
+    // the log edging, on whichever side the slope drops away by more than half a metre
+    const logC = new THREE.Color(0.5, 0.38, 0.27);
+    for (let k = 0; k < n2 - 1; k++) {
+      for (const sg of [-1, 1]) {
+        const o = sg * (W + V + 0.05);
+        const dropAt = (i: number): number => hts[i] - peakHeight(pk, trail[i][0] + side[i][0] * sg * (W + V + 1.4), trail[i][1] + side[i][1] * sg * (W + V + 1.4));
+        if (dropAt(k) < 0.5 || dropAt(k + 1) < 0.5) continue;
+        const a = v3(trail[k][0] + side[k][0] * o, hts[k] + 0.13, trail[k][1] + side[k][1] * o);
+        const b = v3(trail[k + 1][0] + side[k + 1][0] * o, hts[k + 1] + 0.13, trail[k + 1][1] + side[k + 1][1] * o);
+        kit.base = new THREE.Matrix4();
+        kit.rod('timber', a, b, 0.11, logC, 6);
       }
     }
-    // stones set along its outer (downhill) edge
+    // now and then a stone fallen from the cut bank, just off the verge on the uphill side
     const shapes = rockShapes(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
-    for (let k = 3; k < trail.length - 3; k += 3) {
+    for (let k = 4; k < n2 - 4; k += 4) {
       const r = hash(k, pk.seed ?? 7, 61);
-      if (r < 0.35) continue;
+      if (r < 0.7) continue;
       const [sx, sz] = side[k], [x, z] = trail[k];
-      const lo = peakHeight(pk, x - sx * 3, z - sz * 3) < peakHeight(pk, x + sx * 3, z + sz * 3) ? -1 : 1;
-      const px = x + sx * lo * (W + 0.25), pz = z + sz * lo * (W + 0.25), s = 0.22 + r * 0.3;
-      m4.compose(v3(px, hts[k] - s * 0.15, pz), q.setFromAxisAngle(UP, r * 9), sc.set(s * 1.3, s, s));
+      const up = peakHeight(pk, x - sx * 3.5, z - sz * 3.5) > peakHeight(pk, x + sx * 3.5, z + sz * 3.5) ? -1 : 1;
+      const px = x + sx * up * (W + V + 0.5), pz = z + sz * up * (W + V + 0.5), s = 0.3 + r * 0.3;
+      m4.compose(v3(px, peakHeight(pk, px, pz) - s * 0.2, pz), q.setFromAxisAngle(UP, r * 9), sc.set(s * 1.3, s, s));
+      kit.base = new THREE.Matrix4();
       kit.addIn('rock', shapes[k % 4], m4, new THREE.Color(0.78, 0.76, 0.72));
     }
     // the summit: a cairn of stones, a flag, a bench to take in the view
@@ -1259,7 +1324,7 @@ export class Terrain {
     kit.box('paint', cx + 0.04, sy + 4.3, cz - 0.02, cx + 1.1, sy + 4.95, cz + 0.02, new THREE.Color(0.85, 0.15, 0.12));
     // (V2: on the bench's level beside the path near the top: it stood at sea level, buried in the mountain)
     const bi = Math.max(0, trail.length - 12), bench = trail[bi], [bsx, bsz] = side[bi];
-    const bx = bench[0] + bsx * (W + 0.9), bz = bench[1] + bsz * (W + 0.9);
+    const bx = bench[0] + bsx * (W + V + 0.5), bz = bench[1] + bsz * (W + V + 0.5);
     P.bench(kit, bx, bz, Math.atan2(cx - bx, cz - bz) + Math.PI, peakHeight(pk, bx, bz));
     kit.base = new THREE.Matrix4();
     // the trailhead: a signboard on two posts, and a rack of mountain bikes for hire

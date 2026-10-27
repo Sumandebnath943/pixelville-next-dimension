@@ -67,6 +67,16 @@ export const Approach = {
     for (const g of this.gates()) if (g.x === x && g.y === y) return g;
     return null;
   },
+  /* (a two-row road is a dual carriageway, traffic keeping right: what comes in takes the row on the right of the way
+     in, what leaves the row on the right of the way out; a single row carries both) */
+  /** can traffic come in along this road's row? (nothing alongside it on the right of the way in) */
+  inbound(g: Gate): boolean {
+    return !this.gateAt(g.x - g.dy, g.y + g.dx);
+  },
+  /** the row of the same road that traffic leaves by */
+  outGate(g: Gate): Gate {
+    return this.gateAt(g.x + g.dy, g.y - g.dx) ?? g;
+  },
 
   /** a vehicle setting off along `path` from a road's edge tile comes in from beyond the edge (false, and it sets off
    *  where it is, when the path doesn't start on one). `len` in tiles */
@@ -85,8 +95,9 @@ export const Approach = {
   /** a vehicle at the end of `path` on a road's edge tile drives on off the map (false when it isn't on one) */
   depart(v: any, path: number[][], len = 0.56): boolean {
     const end = path[path.length - 1];
-    const g = end ? this.gateAt(end[0], end[1]) : null;
-    if (!g) return false;
+    const g0 = end ? this.gateAt(end[0], end[1]) : null;
+    if (!g0) return false;
+    const g = this.outGate(g0); // (on its own side of the road: routes out end on that row)
     v.off = 0;
     movers.push({ v, g, len, out: true, speed: Math.max(TOWN * 0.4, (v.v || 0) * T), joining: false, path, age: 0 });
     place(v, g, 0, true);

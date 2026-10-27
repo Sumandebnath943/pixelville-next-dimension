@@ -2022,7 +2022,10 @@ export const Life: any = {
      afresh so it keeps right (the route out driven backwards is on the wrong side of every avenue) */
   backPath(path: number[][], at = path.length - 1): number[][] {
     const i = Math.max(0, Math.min(path.length - 1, Math.round(at)));
-    const a = path[i], b = path[0];
+    const a = path[i];
+    // (V2: back out of the map along the other row of a dual carriageway than the one it came in by)
+    const g = Approach.gateAt(path[0][0], path[0][1]), out = g && Approach.outGate(g);
+    const b = out ? [out.x, out.y] : path[0];
     const p = World.roadPath(a[0], a[1], b[0], b[1]);
     return p && p.length > 1 ? p : path.slice(0, i + 1).reverse();
   },

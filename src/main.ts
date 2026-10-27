@@ -1096,9 +1096,21 @@ function showLanding(resumed: boolean): void {
   flyCentre.set(c.x, 0, c.z);
   flyT = Math.random() * 6;
   $('la-name').textContent = World.name;
-  $('la-meta').textContent = resumed || built.length
-    ? `Day ${Sim.day} · ${Sim.timeStr()} · ${Sim.people.length} villager${Sim.people.length === 1 ? '' : 's'}`
-    : 'A new valley, waiting for its first family';
+  // (V2: the village as a card: the day and season, the hour, its people and its weather; a new valley says so)
+  const lived = resumed || built.length > 0;
+  $('la-eyebrow').textContent = lived ? 'Your village' : 'A new valley';
+  $('la-meta').textContent = lived ? '' : 'Waiting for its first family';
+  const chip = (icon: string, text: string): string => `<span><svg><use href="#i-${icon}" /></svg>${text}</span>`;
+  const wx = Weather.kind as string, n = Sim.people.length;
+  $('la-stats').innerHTML = lived
+    ? [
+      chip('leaf', `Day ${Sim.day} · ${['Spring', 'Summer', 'Autumn', 'Winter'][Weather.season] || ''}`),
+      chip('clock', Sim.timeStr()),
+      chip('people', `${n} villager${n === 1 ? '' : 's'}`),
+      chip(wx === 'rain' ? 'rain' : wx === 'heavy' ? 'storm' : wx === 'snow' ? 'snow' : wx === 'clouds' ? 'cloud' : 'sun', { clear: 'Clear', clouds: 'Cloudy', rain: 'Rain', heavy: 'Storm', snow: 'Snow' }[wx] || 'Clear'),
+    ].join('')
+    : '';
+  $('la-live').textContent = `Live · ${World.name} right now`;
   ($('la-continue').querySelector('span') as HTMLElement).textContent = resumed || built.length ? `Continue ${World.name}` : 'Begin';
   setTimeout(() => ($('la-continue') as HTMLButtonElement).focus(), 60);
   afterLandingResumed = resumed;
@@ -1157,9 +1169,12 @@ async function boot(): Promise<void> {
   const stages = Array.from(track.children) as HTMLElement[];
   const SPANS = [[0, 0.12], [0.12, 0.15], [0.15, 0.75], [0.75, 0.85], [0.85, 1]];
   // Milestone 8: the key art, if there is one (public/art/keyart.jpg), behind the loading screen
-  const art = new Image();
-  art.onload = () => { $('loading').style.setProperty('--keyart', `url(${art.src})`); $('loading').classList.add('has-art'); };
-  art.src = '/art/keyart.jpg';
+  // (V2: an image in the page itself, fetched from the first moment, faded in over a dark screen once it's there; the
+  // dusk sky only if there's none to be had)
+  const art = $('loading').querySelector('img.ld-art') as HTMLImageElement;
+  const shown = (): void => { $('loading').classList.add(art.naturalWidth ? 'has-art' : 'no-art'); };
+  if (art.complete) shown();
+  else { art.addEventListener('load', shown); art.addEventListener('error', shown); }
   // …and a tip while you wait
   const TIPS = [
     'Villagers remember what you do, and tell each other about it.',

@@ -221,6 +221,9 @@ export class Palette {
     add('gravel', surface(texd(gv, { vertexColors: true }), { snow: 1, wet: 0.9, puddles: true, wear: true }, 'gravel'), gv.metres);
     // V2: the shingle along a river's or a lake's edge (the ballast's stones, washed and spread flat)
     add('shingle', surface(texd(gv, { vertexColors: true }), { snow: 1, wet: 1, antiTile: 0.2 }, 'shingle'), gv.metres);
+    // V2: a mountain trail's packed gravel: drawn just in front of the ground it lies on, so the slope never shows
+    // through it in patches
+    add('trail', surface(texd(gv, { vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), { snow: 1, wet: 0.8, antiTile: 0.3 }, 'trail'), gv.metres * 0.7);
     const so = TX.soil();
     add('soil', surface(texd(so, { vertexColors: true }), { snow: 1, wet: 1 }, 'soil'), so.metres);
     const pl = TX.planks();

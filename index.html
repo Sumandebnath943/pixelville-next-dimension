@@ -13,6 +13,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="stylesheet" href="/src/style.css" />
+    <!-- V2: the key art for the loading screen, fetched first thing (a 200 KB copy of public/art/keyart.jpg) -->
+    <link rel="preload" as="image" href="/art/keyart.webp" type="image/webp" fetchpriority="high" />
   </head>
   <body>
     <!-- the V2 icon set: 24-unit line icons, drawn in currentColor -->
@@ -380,9 +382,10 @@
     <!-- Milestone 8: the loading screen: the key art (public/art/keyart.jpg, if there is one) or a dusk sky over a
          pixel skyline. V2: the art drifting slowly under a cinematic shade, the logo in the corner (the art is the
          picture), and a panel along the foot: the village, what's being done, how far along, the five stages of the
-         build, and a tip while it's done -->
+         build, and a tip while it's done. The art (keyart.webp, a small copy) starts loading with the page and fades in
+         over a plain dark screen; the dusk sky is only for when there's no art at all -->
     <div id="loading">
-      <div class="ld-art"></div>
+      <img class="ld-art" src="/art/keyart.webp" alt="" decoding="async" fetchpriority="high" />
       <svg class="ld-skyline" viewBox="0 0 1200 220" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
         <path d="M0 220V150h40v-30h30v30h24V96h44v54h30v-24h36v24h28V70h22V40h10v30h22v80h34v-36h40v36h26v-60h46v60h30v-30h30v30h44V110h20V84h28v26h20v40h40v-50h50v50h22v-28h40v28h30V60h16V30h12v30h16v90h36v-40h44v40h28v-26h34v26h40v-70h48v70h26v-34h40v34H1200V220z" />
       </svg>
@@ -425,21 +428,30 @@
       <p class="ld-foot">A living village, now in three dimensions</p>
     </div>
     <!-- Milestone 8: the landing screen, over a slow flight across the village itself -->
+    <!-- V2: the landing screen redesigned: the menu in a column on the left over a cinematic shade, the village as a card
+         (its name, the day and season, the hour, its people and its weather), one big button to play and the rest as a
+         quiet list, and a "live" mark saying the flight behind is the village as it is right now -->
     <div id="landing">
+      <div class="la-shade"></div>
       <div class="la-panel">
         <img class="la-logo" src="/logo.svg" alt="PixelVille — Next Dimension" />
-        <div class="la-village">
+        <section class="la-village">
+          <span class="la-eyebrow" id="la-eyebrow">Your village</span>
           <b id="la-name">PixelVille</b>
           <span id="la-meta"></span>
-        </div>
-        <div class="la-buttons">
-          <button class="primary la-go" id="la-continue"><svg><use href="#i-home" /></svg><span>Continue</span><kbd>Enter</kbd></button>
-          <button id="la-new"><svg><use href="#i-map" /></svg><span>Found a new village</span></button>
-          <button id="la-load"><svg><use href="#i-book" /></svg><span>Load a village</span></button>
-          <button id="la-controls"><svg><use href="#i-star" /></svg><span>Controls</span></button>
-          <button id="la-settings"><svg><use href="#i-chart" /></svg><span>Settings</span></button>
-        </div>
+          <div class="la-stats" id="la-stats"></div>
+        </section>
+        <nav class="la-buttons" aria-label="Main menu">
+          <button class="primary la-go" id="la-continue"><svg><use href="#i-home" /></svg><span>Continue</span><kbd>Enter</kbd><svg class="la-arrow"><use href="#i-back" /></svg></button>
+          <div class="la-list">
+            <button id="la-new"><svg><use href="#i-map" /></svg><span>Found a new village<small>Start again in an empty valley</small></span></button>
+            <button id="la-load"><svg><use href="#i-folder" /></svg><span>Load a village<small>Open a village you saved</small></span></button>
+            <button id="la-controls"><svg><use href="#i-help" /></svg><span>Controls<small>Keyboard, mouse, gamepad and touch</small></span></button>
+            <button id="la-settings"><svg><use href="#i-gear" /></svg><span>Settings<small>Graphics, sound and accessibility</small></span></button>
+          </div>
+        </nav>
       </div>
+      <div class="la-live"><i></i><span id="la-live">Live · the village right now</span></div>
       <p class="la-foot">Milestone 8 · the village keeps living while you're away</p>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -228,7 +228,9 @@ export const Supply = {
   edgePath(to: any, outward = false): number[][] | null {
     const edges = (Life.edgeRoads || []).slice().sort((a: number[], b: number[]) => (Math.abs(a[0] - to.door.x) + Math.abs(a[1] - to.door.y)) - (Math.abs(b[0] - to.door.x) + Math.abs(b[1] - to.door.y)));
     for (const [ex, ey] of edges.slice(0, 5)) {
-      const r = outward ? World.roadPath(to.door.x, to.door.y, ex, ey) : World.roadPath(ex, ey, to.door.x, to.door.y);
+      // (V2: out of the map by the outbound row of a dual carriageway)
+      const g = outward ? Approach.gateAt(ex, ey) : null, o = g ? Approach.outGate(g) : { x: ex, y: ey };
+      const r = outward ? World.roadPath(to.door.x, to.door.y, o.x, o.y) : World.roadPath(ex, ey, to.door.x, to.door.y);
       if (r && r.length >= 2) return r;
     }
     return null;
