@@ -10,6 +10,7 @@
    front wall with the door (+D/2), y up from the floor.
    ============================================================ */
 import { mulberry32 } from '../sim/core';
+import { ROOMS, ROOM_THEMES, ROOM_HEIGHT, MORE_WARES } from './rooms';
 
 export type Template = 'home' | 'shop' | 'food' | 'office' | 'workshop' | 'classroom' | 'hospital' | 'police' | 'fire' | 'terminal' | 'venue' | 'civic';
 
@@ -19,6 +20,8 @@ export const INTERIOR: Record<string, Template> = {
   shop: 'shop', market: 'shop', mall: 'shop', deptstore: 'shop', barber: 'shop', florist: 'shop', bookshop: 'shop', butcher: 'shop', tailor: 'shop',
   electronics: 'shop', toyshop: 'shop', jeweler: 'shop', petshop: 'shop', hardware: 'shop', furniture: 'shop', carshowroom: 'shop', motoshowroom: 'shop',
   fishmarket: 'shop', gas: 'shop',
+  // V2: the farm's barn (with its shop) and the cab office at a taxi rank
+  farm: 'workshop', taxistand: 'office',
   restaurant: 'food', cafe: 'food', bakery: 'food', icecream: 'food', pizzeria: 'food', burgerpalace: 'food', goldenarches: 'food', crispycluck: 'food',
   tacobelle: 'food', pizzapalace: 'food', teastall: 'food',
   office: 'office', skyscraper: 'office', bank: 'office', exchange: 'office', postoffice: 'office', tvstation: 'office', hotel: 'office',
@@ -42,7 +45,11 @@ export interface Spot { kind: SpotKind; x: number; z: number; yaw: number; label
 export interface Place { x: number; z: number; face: number; pose: 'idle' | 'sit' }
 export interface Light { x: number; y: number; z: number; i: number; c: string }
 export interface Rect { x0: number; z0: number; x1: number; z1: number }
-export interface Theme { wall: string; floor: 'wood' | 'tile' | 'stone' | 'carpet' | 'concrete'; floorTint: string; accent: string; trim: string }
+export interface Theme {
+  wall: string; floor: 'wood' | 'tile' | 'stone' | 'carpet' | 'concrete'; floorTint: string; accent: string; trim: string;
+  /** V2: a lower wall of panelling or tiles (its colour and height) with a rail along its top, and the ceiling's colour */
+  wainscot?: string; wainscotH?: number; wainscotMat?: Mat; ceiling?: string;
+}
 export interface Sign { text: string; x: number; y: number; z: number; w: number; h: number; ry: number; bg: string; fg: string }
 export interface Layout {
   template: Template;
@@ -145,6 +152,8 @@ export const WARES: Record<string, Ware[]> = {
   dock: [W('Tea', 1, true), W('Fish and chips', 7, true)],
   heliport: [W('Coffee', 3, true)],
 };
+// V2: every place that trades has something to sell (or a service): the rest of the village's businesses
+for (const [type, list] of Object.entries(MORE_WARES)) WARES[type] = list.map(([n, price, food]) => W(n, price, !!food));
 /** tickets from the machines at a terminal (kept in the bag for the journey) */
 export const TICKETS: Record<string, Ware[]> = {
   trainstation: [W('Single to the next town', 6), W('Day return, anywhere on the line', 11), W('Week rover', 35)],
@@ -154,7 +163,7 @@ export const TICKETS: Record<string, Ware[]> = {
 };
 
 /* ---------- building blocks ---------- */
-class Plan {
+export class Plan {
   boxes: Box[] = [];
   solids: Rect[] = [];
   spots: Spot[] = [];
@@ -207,24 +216,154 @@ class Plan {
     this.posts.push({ x: x - len / 4, z: z - 0.75, face: Math.PI, pose: 'idle' });
     this.spots.push({ kind: 'counter', x: x - len / 4, z: z + 0.95, yaw: 0, label, post: this.posts.length - 1 });
   }
-  shelf(x: number, z: number, len: number, along: 'x' | 'z', wares: string[], h = 1.8): void {
-    const [w, d] = along === 'x' ? [len, 0.5] : [0.5, len];
-    this.solid(x, z, w, d, 0.06, 'wood', '#e8e4dc');
-    this.box(x, z, w, d, h, 'paint', '#f4f2ee', 0, false);
-    // goods on each level, in their colours
-    for (let lv = 0; lv < 4; lv++) {
-      const y = 0.25 + lv * ((h - 0.35) / 4);
-      this.box(x, z, w - 0.04, d - 0.04, 0.03, 'wood', '#d8d2c6', y);
-      const n = Math.max(2, Math.round(len / 0.35));
-      for (let k = 0; k < n; k++) {
-        if (this.rnd() < 0.15) continue;
-        const t = (k + 0.5) / n - 0.5;
-        const c = wares[Math.floor(this.rnd() * wares.length)];
-        const gh = 0.14 + this.rnd() * 0.16;
-        if (along === 'x') this.box(x + t * len, z, len / n - 0.05, 0.3, gh, 'plastic', c, y + 0.03);
-        else this.box(x, z + t * len, 0.3, len / n - 0.05, gh, 'plastic', c, y + 0.03);
+  /** open shelving: uprights, a back panel (down the middle of a gondola with goods both sides, or against the wall:
+   *  `back` −1/+1 says which side of it the panel is, across the unit), shelves and the goods on them. (V2: it used to
+   *  be a solid painted block the height of the unit, with the goods shut inside it) */
+  shelf(x: number, z: number, len: number, along: 'x' | 'z', wares: string[], h = 1.8, back = 0, frame = '#e9e6df'): void {
+    const deep = back ? 0.45 : 0.9;
+    const [w, d] = along === 'x' ? [len, deep] : [deep, len];
+    this.solid(x, z, w, d, 0.1, 'metal', '#3a3c40');
+    const off = back * (deep / 2 - 0.02);
+    if (along === 'x') this.box(x, z + off, len, 0.03, h, 'paint', frame);
+    else this.box(x + off, z, 0.03, len, h, 'paint', frame);
+    for (const e of [-1, 1]) {
+      if (along === 'x') this.box(x + e * (len / 2 - 0.02), z, 0.04, deep, h, 'paint', frame);
+      else this.box(x, z + e * (len / 2 - 0.02), deep, 0.04, h, 'paint', frame);
+    }
+    const sides = back ? [-back] : [-1, 1];
+    for (let lv = 0; lv < 5; lv++) {
+      const y = 0.12 + lv * ((h - 0.3) / 4.4);
+      this.box(x, z, w - 0.06, d - 0.04, 0.025, 'metal', '#d8d6d0', y);
+      for (const sd of sides) {
+        const n = Math.max(2, Math.round(len / 0.24));
+        for (let k = 0; k < n; k++) {
+          if (this.rnd() < 0.12) continue;
+          const t = (k + 0.5) / n - 0.5;
+          const c = wares[Math.floor(this.rnd() * wares.length)];
+          const gh = 0.12 + this.rnd() * (lv === 4 ? 0.1 : 0.2), gw = len / n - 0.03, gd = 0.18 + this.rnd() * 0.12;
+          const across = back ? -back * 0.02 : sd * (deep / 2 - gd / 2 - 0.06);
+          if (along === 'x') this.box(x + t * len, z + across, gw, gd, gh, 'plastic', c, y + 0.025);
+          else this.box(x + across, z + t * len, gd, gw, gh, 'plastic', c, y + 0.025);
+        }
       }
     }
+  }
+  /** a glass-fronted fridge or freezer against a wall, its doors facing (sin face, cos face) (0: towards the front
+   *  of the room, −π/2 to the left…), lit inside, with what's in it on four shelves */
+  fridge(x: number, z: number, len: number, along: 'x' | 'z', face: number, contents: string[], h = 2.0): void {
+    const [w, d] = along === 'x' ? [len, 0.7] : [0.7, len];
+    // (the cabinet: a plinth, a top, the ends and the back; the front is the glass)
+    this.solid(x, z, w, d, 0.1, 'metal', '#3a3c40');
+    this.box(x, z, w, d, 0.18, 'metal', '#dcdcd8', h - 0.18);
+    for (const e of [-1, 1]) {
+      if (along === 'x') this.box(x + e * (len / 2 - 0.03), z, 0.06, d, h - 0.1, 'metal', '#dcdcd8', 0.1);
+      else this.box(x, z + e * (len / 2 - 0.03), d, 0.06, h - 0.1, 'metal', '#dcdcd8', 0.1);
+    }
+    const fx = Math.sin(face) * 0.36, fz = Math.cos(face) * 0.36;
+    for (let lv = 0; lv < 4; lv++) {
+      if (along === 'x') this.box(x, z + fz * 0.2, len - 0.1, 0.5, 0.02, 'metal', '#c8ccd0', 0.22 + lv * 0.42);
+      else this.box(x + fx * 0.2, z, 0.5, len - 0.1, 0.02, 'metal', '#c8ccd0', 0.22 + lv * 0.42);
+    }
+    // the lit inside, seen through the doors, and the goods
+    if (along === 'x') this.box(x, z - fz * 0.95, len - 0.12, 0.02, h - 0.35, 'glow', '#e8f2ff', 0.15);
+    else this.box(x - fx * 0.95, z, 0.02, len - 0.12, h - 0.35, 'glow', '#e8f2ff', 0.15);
+    for (let lv = 0; lv < 4; lv++) {
+      const y = 0.25 + lv * 0.42, n = Math.max(2, Math.round(len / 0.16));
+      for (let k = 0; k < n; k++) {
+        if (this.rnd() < 0.15) continue;
+        const t = (k + 0.5) / n - 0.5, c = contents[Math.floor(this.rnd() * contents.length)], gh = 0.16 + this.rnd() * 0.12;
+        if (along === 'x') this.box(x + t * len, z + fz * 0.6, len / n - 0.03, 0.14, gh, 'plastic', c, y);
+        else this.box(x + fx * 0.6, z + t * len, 0.14, len / n - 0.03, gh, 'plastic', c, y);
+      }
+    }
+    if (along === 'x') this.box(x, z + fz * 1.02, len - 0.06, 0.02, h - 0.2, 'glass', '#d8e8f2', 0.1);
+    else this.box(x + fx * 1.02, z, 0.02, len - 0.06, h - 0.2, 'glass', '#d8e8f2', 0.1);
+  }
+  /** a waist-high glass display case with what's on show inside it, lit from within */
+  glassCase(x: number, z: number, w: number, d: number, items: string[], base = '#3a2a20', itemH = 0.06, m: Mat = 'chrome'): void {
+    this.solid(x, z, w, d, 0.82, 'darkwood', base);
+    this.box(x, z, w - 0.06, d - 0.06, 0.02, 'glow', '#fff4e0', 0.82);
+    const n = Math.max(2, Math.round(w / 0.2)), k = Math.max(1, Math.round(d / 0.25));
+    for (let i = 0; i < n; i++) for (let j = 0; j < k; j++) {
+      if (this.rnd() < 0.25) continue;
+      this.box(x + ((i + 0.5) / n - 0.5) * (w - 0.15), z + ((j + 0.5) / k - 0.5) * (d - 0.15), 0.09, 0.09, itemH * (1 + this.rnd()), m, items[Math.floor(this.rnd() * items.length)], 0.84);
+    }
+    this.box(x, z, w, d, 0.32, 'glass', '#e8f0f4', 0.84);
+  }
+  /** a mirror on the wall the plane `along` runs beside (its centre at x, z) */
+  mirror(x: number, z: number, w: number, h: number, y: number, along: 'x' | 'z'): void {
+    if (along === 'x') { this.box(x, z, w + 0.08, 0.03, h + 0.08, 'darkwood', '#2a2420', y - 0.04); this.box(x, z, w, 0.045, h, 'chrome', '#dfe6ea', y); }
+    else { this.box(x, z, 0.03, w + 0.08, h + 0.08, 'darkwood', '#2a2420', y - 0.04); this.box(x, z, 0.045, w, h, 'chrome', '#dfe6ea', y); }
+  }
+  /** a framed picture or poster on a wall */
+  picture(x: number, z: number, w: number, h: number, y: number, along: 'x' | 'z', c: string, frame = '#3a2a1e'): void {
+    if (along === 'x') { this.box(x, z, w + 0.08, 0.03, h + 0.08, 'darkwood', frame, y - 0.04); this.box(x, z, w, 0.045, h, 'paint', c, y); }
+    else { this.box(x, z, 0.03, w + 0.08, h + 0.08, 'darkwood', frame, y - 0.04); this.box(x, z, 0.045, w, h, 'paint', c, y); }
+  }
+  /** a pendant lamp over (x, z): the flex, the shade glowing underneath, and its light */
+  pendant(x: number, z: number, y: number, c = '#2a2a2a', glow = '#ffe2b0', i = 0.6): void {
+    this.box(x, z, 0.015, 0.015, this.h - y, 'metal', '#1a1a1a', y);
+    this.box(x, z, 0.36, 0.36, 0.2, 'metal', c, y - 0.2);
+    this.box(x, z, 0.3, 0.3, 0.01, 'glow', glow, y - 0.21);
+    this.light(x, z, i, glow, y - 0.3);
+  }
+  /** a floor lamp: a pole, a lit shade */
+  floorLamp(x: number, z: number, glow = '#ffd8a0'): void {
+    this.solid(x, z, 0.3, 0.3, 0.03, 'metal', '#2a2a2a');
+    this.box(x, z, 0.04, 0.04, 1.45, 'metal', '#2a2a2a');
+    this.box(x, z, 0.42, 0.42, 0.3, 'glow', glow, 1.42);
+  }
+  /** an upholstered armchair facing `face` (a seat for a customer) */
+  armchair(x: number, z: number, face: number, c: string, seat = true): void {
+    this.solid(x, z, 0.8, 0.8, 0.42, 'fabric', c);
+    const across = Math.abs(Math.cos(face)) > 0.5;
+    this.box(x + Math.sin(face) * 0.32, z + Math.cos(face) * 0.32, across ? 0.8 : 0.16, across ? 0.16 : 0.8, 0.5, 'fabric', c, 0.42);
+    for (const s of [-1, 1]) this.box(x + (across ? s * 0.34 : 0), z + (across ? 0 : s * 0.34), across ? 0.12 : 0.8, across ? 0.8 : 0.12, 0.22, 'fabric', c, 0.42);
+    if (seat) this.places.push({ x: x - Math.sin(face) * 0.05, z: z - Math.cos(face) * 0.05, face, pose: 'sit' });
+  }
+  /** a stool at a bar or a counter */
+  stool(x: number, z: number, seat = '#7a2a2a', face = 0): void {
+    this.box(x, z, 0.06, 0.06, 0.72, 'chrome', '#c8ccd0');
+    this.box(x, z, 0.38, 0.38, 0.06, 'leather', seat, 0.72);
+    this.places.push({ x, z, face, pose: 'sit' });
+  }
+  /** a clothes rail with garments hanging from it */
+  rail(x: number, z: number, len: number, along: 'x' | 'z', colours: string[]): void {
+    const [w, d] = along === 'x' ? [len, 0.5] : [0.5, len];
+    this.solid(x, z, w, d, 0.04, 'chrome', '#c8ccd0');
+    for (const e of [-1, 1]) {
+      if (along === 'x') this.box(x + e * (len / 2 - 0.03), z, 0.04, 0.04, 1.55, 'chrome', '#c8ccd0');
+      else this.box(x, z + e * (len / 2 - 0.03), 0.04, 0.04, 1.55, 'chrome', '#c8ccd0');
+    }
+    if (along === 'x') this.box(x, z, len, 0.03, 0.03, 'chrome', '#c8ccd0', 1.5);
+    else this.box(x, z, 0.03, len, 0.03, 'chrome', '#c8ccd0', 1.5);
+    const n = Math.max(3, Math.floor(len / 0.11));
+    for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n - 0.5, c = colours[Math.floor(this.rnd() * colours.length)], gh = 0.7 + this.rnd() * 0.45;
+      if (along === 'x') this.box(x + t * (len - 0.1), z, 0.06, 0.46, gh, 'fabric', c, 1.47 - gh);
+      else this.box(x, z + t * (len - 0.1), 0.46, 0.06, gh, 'fabric', c, 1.47 - gh);
+    }
+  }
+  /** a dressed mannequin on its stand */
+  mannequin(x: number, z: number, c: string, skirt = false): void {
+    this.solid(x, z, 0.42, 0.42, 0.03, 'metal', '#2a2a2a');
+    this.box(x, z, 0.04, 0.04, 0.9, 'chrome', '#c8ccd0');
+    this.box(x, z, 0.4, 0.24, 0.62, 'fabric', c, 0.9);
+    if (skirt) this.box(x, z, 0.44, 0.3, 0.45, 'fabric', c, 0.5);
+    this.box(x, z, 0.1, 0.1, 0.12, 'plastic', '#e8dcd0', 1.52);
+    this.box(x, z, 0.2, 0.22, 0.24, 'plastic', '#e8dcd0', 1.64);
+  }
+  /** a crate of produce on a stand, heaped with `c` */
+  crate(x: number, z: number, w: number, d: number, c: string, h = 0.75): void {
+    this.solid(x, z, w, d, h - 0.2, 'wood', '#8a6a44');
+    this.box(x, z, w - 0.06, d - 0.06, 0.18, 'fabric', c, h - 0.2);
+    for (let k = 0; k < 5; k++) this.box(x + (this.rnd() - 0.5) * (w - 0.2), z + (this.rnd() - 0.5) * (d - 0.2), 0.12, 0.12, 0.1, 'fabric', c, h - 0.04);
+  }
+  /** a big potted plant in a corner */
+  bigPlant(x: number, z: number): void {
+    this.solid(x, z, 0.5, 0.5, 0.5, 'ceramic', '#e0d8cc');
+    this.box(x, z, 0.85, 0.85, 1.3, 'fabric', '#3a6a30', 0.5);
+    this.box(x, z, 0.6, 0.6, 0.5, 'fabric', '#4a7a3a', 1.7);
   }
   plant(x: number, z: number, big = false): void {
     this.solid(x, z, 0.4, 0.4, 0.4, 'ceramic', '#c8b8a0');
@@ -245,7 +384,8 @@ class Plan {
       this.places.push({ x: across ? x + t * len : x - Math.sin(face) * 0.05, z: across ? z - Math.cos(face) * 0.05 : z + t * len, face, pose: 'sit' });
     }
   }
-  bookcase(x: number, z: number, len: number, along: 'x' | 'z'): void {
+  /** books floor to ceiling against a wall; `dir` −1 turns the spines the other way (a case on the right-hand wall) */
+  bookcase(x: number, z: number, len: number, along: 'x' | 'z', dir = 1): void {
     const spines = ['#7a2a2a', '#2a4a6a', '#3a5a2a', '#8a6a2a', '#4a2a4a', '#2a2a2a', '#a07a4a'];
     const [w, d] = along === 'x' ? [len, 0.35] : [0.35, len];
     this.solid(x, z, w, d, 2.1, 'darkwood', '#5a3a24');
@@ -259,8 +399,8 @@ class Plan {
         const t0 = k / n - 0.5, t1 = Math.min(n, k + run) / n - 0.5;
         const mid = (t0 + t1) / 2 * len, span = (t1 - t0) * len - 0.01;
         const bh = 0.24 + this.rnd() * 0.08;
-        if (along === 'x') this.box(x + mid, z + 0.19, span, 0.04, bh, 'fabric', c, y);
-        else this.box(x + 0.19, z + mid, 0.04, span, bh, 'fabric', c, y);
+        if (along === 'x') this.box(x + mid, z + 0.19 * dir, span, 0.04, bh, 'fabric', c, y);
+        else this.box(x + 0.19 * dir, z + mid, 0.04, span, bh, 'fabric', c, y);
         k += run + (this.rnd() < 0.2 ? 1 : 0);
       }
     }
@@ -313,16 +453,17 @@ export function layoutFor(b: { id: number; type: string; w: number; h: number })
   const big = template === 'terminal' || template === 'civic' || template === 'workshop' || template === 'fire' || template === 'venue';
   const W = clamp(Math.round(b.w * 8 * (big ? 0.85 : 0.7)), template === 'home' ? 9 : 10, big ? 24 : 18);
   const D = clamp(Math.round(b.h * 8 * (big ? 0.85 : 0.7)), template === 'home' ? 8 : 9, big ? 20 : 15);
-  const H = template === 'terminal' || template === 'civic' ? 6.5 : template === 'workshop' || template === 'fire' ? 5.5 : template === 'venue' ? 5 : template === 'home' ? 2.8 : 3.2;
+  const H = ROOM_HEIGHT[b.type] ?? (template === 'terminal' || template === 'civic' ? 6.5 : template === 'workshop' || template === 'fire' ? 5.5 : template === 'venue' ? 5 : template === 'home' ? 2.8 : 3.2);
   const p = new Plan(W, D, H, rnd);
-  BUILD[template](p, b.type);
+  // V2: a room of its own where the business has one (rooms.ts), else the template's
+  (ROOMS[b.type] ?? BUILD[template])(p, b.type);
   // the way out: just inside the door
   p.spots.push({ kind: 'exit', x: 0, z: D / 2 - 0.7, yaw: Math.PI, label: 'Go outside' });
   // keep the doorway clear
   p.solids = p.solids.filter((r) => !(r.x0 < 1.1 && r.x1 > -1.1 && r.z1 > D / 2 - 1.6));
   return {
     template, w: W, d: D, h: H,
-    theme: { ...THEMES[template], ...(TINTS[b.type] || {}) },
+    theme: { ...THEMES[template], ...(TINTS[b.type] || {}), ...(ROOM_THEMES[b.type] || {}) },
     boxes: p.boxes, solids: p.solids, spots: p.spots, posts: p.posts, places: p.places, lights: p.lights, signs: p.signs,
     // (a church has stained glass of its own)
     sideWindows: template !== 'workshop' && template !== 'fire' && template !== 'venue' && template !== 'police' && b.type !== 'church',

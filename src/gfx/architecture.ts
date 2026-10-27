@@ -33,6 +33,115 @@ vec3 pvPalette(float s) {
   if (k < 0.8) return vec3(0.66, 0.62, 0.56);
   return vec3(0.58, 0.44, 0.42);
 }
+/* V2: a shop seen through its window, as the kind of shop it is (style 0…15: see SHOP_STYLE). The room is a box
+   (x across the window, y up from the floor, z into the shop); inside it stand a counter towards the back and one
+   fitting of the shop's own nearer the glass, each a box the view ray can hit, so the shop has depth as you walk
+   past instead of being a picture on the back wall. Returns the colour lit by daylight from the window and the
+   shop's lamps (the caller's light model), and the depth reached (for the light's fall-off). */
+float pvHitBox(vec3 ro, vec3 rd, vec3 b0, vec3 b1, inout vec3 nrm, float tBest) {
+  vec3 inv = 1.0 / rd;
+  vec3 t0 = (b0 - ro) * inv, t1 = (b1 - ro) * inv;
+  vec3 tn = min(t0, t1), tx = max(t0, t1);
+  float a = max(max(tn.x, tn.y), tn.z), b = min(min(tx.x, tx.y), tx.z);
+  if (a > b || a < 0.0 || a >= tBest) return tBest;
+  nrm = a == tn.x ? vec3(-sign(rd.x), 0.0, 0.0) : a == tn.y ? vec3(0.0, -sign(rd.y), 0.0) : vec3(0.0, 0.0, -1.0);
+  return a;
+}
+vec3 pvShelfFace(vec2 q, vec3 a, vec3 b, float dk) {
+  float shelf = mix(0.16, step(0.86, fract(q.y * 2.4)), dk);
+  float gap = mix(0.75, step(0.28, fract(q.x * 3.3 + floor(q.y * 2.4) * 0.37)), dk);
+  vec3 g = mix(a, b, fract(floor(q.x * 3.3) * 0.61 + floor(q.y * 2.4) * 0.29));
+  return mix(mix(vec3(0.82), g, gap), vec3(0.32, 0.3, 0.28), shelf);
+}
+vec3 pvShopSeen(vec3 ro, vec3 rd, float st, float seed, float dk, out float depth, out float glow) {
+  float W = 10.0, Hr = 3.3, D = 7.0;
+  glow = 0.0;
+  // the style's colours: walls, floor, goods (two tones), the fitting
+  vec3 wall = vec3(0.86, 0.85, 0.82), flo = vec3(0.62, 0.6, 0.56), ga = vec3(0.75, 0.3, 0.2), gb = vec3(0.2, 0.4, 0.7), fit = vec3(0.85, 0.84, 0.8);
+  if (st < 0.5) { ga = vec3(0.8, 0.25, 0.15); gb = vec3(0.95, 0.75, 0.15); }
+  else if (st < 1.5) { wall = vec3(0.9, 0.94, 0.92); flo = vec3(0.82, 0.84, 0.82); ga = vec3(0.95); gb = vec3(0.16, 0.55, 0.3); fit = vec3(0.16, 0.55, 0.3); }
+  else if (st < 2.5) { wall = vec3(0.24, 0.3, 0.33); flo = vec3(0.7, 0.68, 0.64); ga = vec3(0.85, 0.88, 0.9); gb = vec3(0.6); fit = vec3(0.5, 0.08, 0.08); }
+  else if (st < 3.5) { wall = vec3(0.82, 0.88, 0.78); flo = vec3(0.55, 0.5, 0.44); ga = vec3(0.9, 0.25, 0.4); gb = vec3(0.95, 0.85, 0.2); fit = vec3(0.45, 0.33, 0.22); }
+  else if (st < 4.5) { wall = vec3(0.72, 0.62, 0.48); flo = vec3(0.42, 0.28, 0.18); ga = vec3(0.5, 0.18, 0.15); gb = vec3(0.18, 0.3, 0.45); fit = vec3(0.35, 0.22, 0.14); }
+  else if (st < 5.5) { wall = vec3(0.86, 0.83, 0.78); flo = vec3(0.55, 0.42, 0.3); ga = vec3(0.16, 0.22, 0.36); gb = vec3(0.62, 0.18, 0.2); fit = vec3(0.75, 0.76, 0.78); }
+  else if (st < 6.5) { wall = vec3(0.13, 0.13, 0.15); flo = vec3(0.2, 0.17, 0.22); ga = vec3(0.95, 0.8, 0.4); gb = vec3(0.9); fit = vec3(0.1, 0.1, 0.12); }
+  else if (st < 7.5) { wall = vec3(0.86, 0.76, 0.6); flo = vec3(0.45, 0.3, 0.2); ga = vec3(0.85, 0.6, 0.3); gb = vec3(0.7, 0.45, 0.2); fit = vec3(0.42, 0.27, 0.17); }
+  else if (st < 8.5) { wall = vec3(0.95); flo = vec3(0.7, 0.7, 0.68); ga = vec3(0.7, 0.15, 0.15); gb = vec3(0.9, 0.6, 0.55); fit = vec3(0.85); }
+  else if (st < 9.5) { wall = vec3(0.86, 0.88, 0.9); flo = vec3(0.6, 0.62, 0.64); ga = vec3(0.12); gb = vec3(0.9); fit = vec3(0.92); }
+  else if (st < 10.5) { wall = vec3(0.95, 0.88, 0.62); flo = vec3(0.62, 0.45, 0.28); ga = vec3(0.85, 0.2, 0.2); gb = vec3(0.2, 0.45, 0.85); fit = vec3(0.2, 0.42, 0.22); }
+  else if (st < 11.5) { wall = vec3(0.88, 0.92, 0.95); flo = vec3(0.78, 0.8, 0.82); ga = vec3(0.92); gb = vec3(0.6); fit = vec3(0.9); }
+  else if (st < 12.5) { wall = vec3(0.84, 0.9, 0.8); flo = vec3(0.68, 0.72, 0.64); ga = vec3(0.75, 0.6, 0.3); gb = vec3(0.3, 0.55, 0.3); fit = vec3(0.45, 0.33, 0.22); }
+  else if (st < 13.5) { wall = vec3(0.9, 0.86, 0.8); flo = vec3(0.6, 0.46, 0.32); ga = vec3(0.4, 0.45, 0.52); gb = vec3(0.55, 0.38, 0.3); fit = vec3(0.38, 0.44, 0.52); }
+  else if (st < 14.5) { wall = vec3(0.08, 0.08, 0.16); flo = vec3(0.14, 0.14, 0.28); ga = vec3(0.5, 0.25, 1.0); gb = vec3(1.0, 0.25, 0.5); fit = vec3(0.1, 0.1, 0.16); }
+  else { wall = vec3(0.24, 0.25, 0.27); flo = vec3(0.45); ga = vec3(0.7, 0.1, 0.08); gb = vec3(0.2); fit = vec3(0.7, 0.1, 0.08); }
+
+  // the room, then whatever stands in it nearer
+  vec3 inv = 1.0 / rd;
+  vec3 r0 = (vec3(-W * 0.5, 0.0, 0.0) - ro) * inv, r1 = (vec3(W * 0.5, Hr, D) - ro) * inv;
+  vec3 rf = max(r0, r1);
+  float t = min(min(rf.x, rf.y), rf.z);
+  vec3 h = ro + rd * t;
+  vec3 col = wall;
+  if (t == rf.z) {
+    // the back wall: the shop's own wall of things
+    if (st < 1.5 || st > 9.5 && st < 10.5) { if (h.y > 0.15 && h.y < 2.3) col = pvShelfFace(h.xy, ga, gb, dk); }
+    else if (st < 2.5) { if (h.y > 1.0 && h.y < 2.2 && fract(h.x * 0.42 + 0.2) < 0.62) { col = mix(vec3(0.55, 0.62, 0.66), vec3(0.85, 0.88, 0.9), h.y - 1.0); glow = 0.25; } else if (h.y < 0.95) col = vec3(0.22, 0.16, 0.12); }
+    else if (st < 3.5) { if (h.y < 1.4) col = mix(wall * 0.8, mix(ga, gb, step(0.5, fract(h.x * 2.7))), step(0.5, fract(h.x * 5.0 + h.y * 1.3)) * dk * step(0.6, h.y)); }
+    else if (st < 4.5) { if (h.y < Hr - 0.3) col = mix(vec3(0.3, 0.2, 0.12), mix(ga, gb, fract(floor(h.x * 16.0) * 0.37)) * (0.7 + 0.5 * fract(floor(h.x * 16.0) * 0.71)), mix(0.75, step(0.12, fract(h.x * 16.0)) * step(0.1, fract(h.y * 2.6)), dk)); }
+    else if (st < 5.5) { if (h.y > 0.7 && h.y < 1.7) col = mix(fit * 0.5, mix(ga, gb, step(0.5, fract(floor(h.x * 9.0) * 0.43))), mix(0.8, step(0.15, fract(h.x * 9.0)), dk)); }
+    else if (st < 6.5) { if (h.y > 1.0 && h.y < 2.0) { col = vec3(0.9, 0.8, 0.6) * 0.5; glow = 0.6; } }
+    else if (st < 7.5) { if (h.y > 1.6 && h.y < 2.3 && abs(h.x) < 1.6) col = vec3(0.12, 0.1, 0.08); else if (h.y > 0.9 && h.y < 1.5) col = pvShelfFace(h.xy * vec2(1.0, 0.6), ga, gb, dk); }
+    else if (st < 8.5) { col = mix(vec3(0.95), vec3(0.75), mix(0.1, step(0.92, max(fract(h.x * 6.6), fract(h.y * 6.6))), dk)); if (h.y > 1.7 && h.y < 2.2 && abs(h.x) < 2.0) col = mix(ga, gb, step(0.5, fract(h.x * 2.5))); }
+    else if (st < 9.5) { vec2 c = fract(h.xy * vec2(0.75, 1.1)); if (h.y > 0.9 && h.y < 2.7 && c.x > 0.12 && c.y > 0.15) { col = mix(vec3(0.2, 0.45, 0.85), vec3(0.85, 0.5, 0.2), fract(floor(h.x * 0.75) * 0.37 + floor(h.y * 1.1) * 0.5)); glow = 0.8; } }
+    else if (st < 11.5) { vec2 c = vec2(fract(h.x * 0.8) - 0.5, h.y - 0.55); if (h.y < 1.0) col = vec3(0.94); if (length(c) < 0.27) col = vec3(0.4, 0.55, 0.65); }
+    else if (st < 12.5) { if (h.y > 0.8 && h.y < 1.7) { col = vec3(0.15, 0.45, 0.7); glow = 0.6; } else if (h.y < 0.8) col = vec3(0.2); }
+    else if (st < 13.5) { if (h.y > 1.2 && h.y < 2.0 && abs(h.x) < 1.2) col = vec3(0.5, 0.42, 0.3); }
+    else if (st < 14.5) { if (h.y < 1.9 && fract(h.x * 0.6) < 0.7) { col = vec3(0.08); if (h.y > 1.0 && h.y < 1.5) { col = mix(ga, gb, step(0.5, fract(floor(h.x * 0.6) * 0.5))); glow = 1.0; } } }
+  } else if (t == rf.y) {
+    col = rd.y < 0.0 ? flo * mix(1.0, 0.85 + 0.3 * step(0.5, fract((h.x + h.z) * 0.8)), dk) : wall * 1.02 + 0.08;
+  } else col = wall * 0.9;
+
+  // what stands in the shop: a counter at the back, and one fitting of its own nearer the glass
+  vec3 n = vec3(0.0);
+  float tc = pvHitBox(ro, rd, vec3(-2.6, 0.0, 4.6), vec3(1.4, 1.0, 5.2), n, t);
+  bool counter = tc < t;
+  float tf = 1e9;
+  vec3 b0 = vec3(-1.4, 0.0, 2.2), b1 = vec3(1.4, 1.5, 2.9);
+  if (st > 1.5 && st < 2.5) { b0 = vec3(-0.35, 0.3, 2.6); b1 = vec3(0.35, 1.3, 3.2); }
+  else if (st > 2.5 && st < 3.5) { b0 = vec3(-2.0, 0.0, 1.0); b1 = vec3(2.0, 0.7, 1.8); }
+  else if (st > 4.5 && st < 5.5) { b0 = vec3(-1.6, 0.75, 1.7); b1 = vec3(1.6, 1.6, 2.1); }
+  else if (st > 5.5 && st < 6.5 || st > 7.5 && st < 8.5) { b0 = vec3(-2.0, 0.0, 1.2); b1 = vec3(2.0, 0.95, 1.9); }
+  else if (st > 6.5 && st < 7.5) { b0 = vec3(-1.2, 0.7, 2.0); b1 = vec3(0.2, 0.76, 2.8); }
+  else if (st > 8.5 && st < 9.5 || st > 11.5 && st < 12.5) { b0 = vec3(-1.4, 0.0, 2.0); b1 = vec3(1.4, 0.9, 2.9); }
+  else if (st > 10.5 && st < 11.5) { b0 = vec3(-2.0, 0.0, 2.6); b1 = vec3(-0.6, 0.9, 3.2); }
+  else if (st > 12.5 && st < 13.5) { b0 = vec3(-1.4, 0.0, 2.4); b1 = vec3(1.0, 0.8, 3.3); }
+  else if (st > 13.5 && st < 14.5) { b0 = vec3(-1.0, 0.0, 2.2); b1 = vec3(1.0, 0.85, 3.2); }
+  else if (st > 14.5) { b0 = vec3(-1.0, 0.2, 2.2); b1 = vec3(1.0, 1.0, 2.6); }
+  vec3 nf = vec3(0.0);
+  tf = pvHitBox(ro, rd, b0, b1, nf, counter ? tc : t);
+  if (tf < 1e8 && tf < t) {
+    vec3 q = ro + rd * tf;
+    col = fit * (0.8 + 0.2 * nf.y);
+    // its face: goods on a gondola, garments on a rail, blooms on a stand, the glow of a case, screens…
+    if ((st < 1.5 || st > 9.5 && st < 10.5) && nf.y < 0.5) col = pvShelfFace(vec2(q.x, q.y + 0.1), ga, gb, dk);
+    else if (st > 2.5 && st < 3.5 && nf.y > 0.5) col = mix(ga, gb, step(0.5, fract(floor(q.x * 3.0) * 0.53))) * mix(0.85, 0.7 + 0.5 * step(0.4, fract(q.x * 6.0 + q.z * 4.0)), dk);
+    else if (st > 4.5 && st < 5.5) col = mix(fit * 0.6, mix(ga, gb, step(0.5, fract(floor(q.x * 8.0) * 0.43))), mix(0.8, step(0.12, fract(q.x * 8.0)), dk));
+    else if ((st > 5.5 && st < 6.5) && nf.y > 0.5) { col = mix(vec3(0.9, 0.8, 0.6), ga, mix(0.4, step(0.8, fract(q.x * 7.0 + q.z * 3.0)), dk)); glow = max(glow, 0.7); }
+    else if (st > 7.5 && st < 8.5 && nf.y > 0.5) col = mix(ga, gb, step(0.5, fract(q.x * 3.3)));
+    else if (st > 8.5 && st < 9.5 && nf.y > 0.5) { col = mix(vec3(0.15), vec3(0.6, 0.8, 1.0), mix(0.3, step(0.5, fract(q.x * 2.4)), dk)); glow = max(glow, 0.3); }
+    else if (st > 11.5 && st < 12.5 && nf.y < 0.5) { col = vec3(0.15, 0.45, 0.7); glow = max(glow, 0.6); }
+    else if (st > 13.5 && st < 14.5) { col = mix(ga, gb, 0.5) * 0.4; glow = max(glow, 0.5); }
+    t = tf; h = q;
+  } else if (counter) {
+    vec3 q = ro + rd * tc;
+    col = (st > 5.5 && st < 6.5) ? vec3(0.12) : (st < 1.5 && st > 0.5) ? fit : mix(fit, wall * 0.6, 0.3);
+    if (n.y > 0.5) col = st > 7.5 && st < 8.5 || st > 6.5 && st < 7.5 ? mix(ga, gb, step(0.5, fract(q.x * 3.0))) : vec3(0.75, 0.72, 0.68);
+    t = tc; h = q;
+  }
+  depth = h.z / D;
+  return col;
+}
+
 vec3 pvInterior() {
   vec3 T = normalize(vTan);
   vec3 N = normalize(vWNrm);
@@ -40,8 +149,11 @@ vec3 pvInterior() {
   vec3 rd = vec3(dot(vd, T), vd.y, -dot(vd, N));
   rd.z = max(rd.z, 1e-3);
   float seed = vRoom.z;
-  float kind = floor(vRoom.w / 2.0 + 0.01);
-  float lit = mod(vRoom.w, 2.0);
+  // (V2: the shop's style rides in the sixteens: kind × 2 + lit + style × 16)
+  float pvStyle = floor(vRoom.w / 16.0 + 0.001);
+  float pvRest = vRoom.w - pvStyle * 16.0;
+  float kind = floor(pvRest / 2.0 + 0.01);
+  float lit = mod(pvRest, 2.0);
   // V2: how much glass one pixel covers (m). Books, curtain folds, shelves and floorboards a few centimetres apart
   // sparkle once they're smaller than a pixel, and the room seen through the glass shifts with every step the
   // camera takes: the fine detail fades to its average first, and a far window shows the room's average colour,
@@ -94,6 +206,13 @@ vec3 pvInterior() {
     }
   }
 
+  // V2: a shop's window shows that shop (pvShopSeen), lit by the day and its own lamps, which shops keep on
+  if (kind > 0.5 && kind < 1.5) {
+    float sd, sg;
+    vec3 sc = pvShopSeen(vec3(vRoom.x, vRoom.y, 0.0), rd, pvStyle, seed, dk, sd, sg);
+    vec3 sl = vec3(day) * (1.0 - sd * 0.55) * vec3(0.95, 0.97, 1.0) * 0.8 + lampC * lampOn * lampK * 0.55 / (1.0 + sd * 0.6);
+    return mix(sc * sl + sc * sg * (0.6 + lampOn * 0.8), flatC, far);
+  }
   vec3 bmin = vec3(-W * 0.5, 0.0, 0.0), bmax = vec3(W * 0.5, Hr, D);
   vec3 inv = 1.0 / rd;
   vec3 t0 = (bmin - ro) * inv, t1 = (bmax - ro) * inv;

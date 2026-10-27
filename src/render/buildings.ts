@@ -223,6 +223,7 @@ class Ctx implements Built {
   kit: Kit;
   body: KBody;
   win: KWin[];
+  shopWin: KWin;
   glow: KGlow;
   height = 4;
   solids: Box2[] = [];
@@ -242,6 +243,8 @@ class Ctx implements Built {
     this.body = new KBody(this);
     // window interiors: 0 homes, 3 offices and halls, 1 shops, 4 stained glass
     this.win = [new KWin(this, 0), new KWin(this, 3), new KWin(this, 4)];
+    // V2: a shop's own window: the shop it is, seen through the glass (gfx/architecture.ts pvShopSeen)
+    this.shopWin = new KWin(this, 1 + 8 * (SHOP_STYLE[key] ?? 0));
     this.glow = new KGlow(this);
   }
   get hw(): number { return this.W / 2; }
@@ -299,7 +302,7 @@ class Ctx implements Built {
       { F: new Frame(V(x0, 0, z0), V(0, 0, 1), V(-1, 0, 0)), len: z1 - z0, front: false },
     ];
     const trim = glass ? new THREE.Color(0.12, 0.13, 0.14) : TRIM;
-    const kind = glass ? (this.winK === 1 && !['office', 'skyscraper', 'airport'].includes(this.key) ? 1 : 3) : this.winK === 0 ? 0 : 3;
+    const kind = glass ? (this.winK === 1 && !['office', 'skyscraper', 'airport'].includes(this.key) ? 1 + 8 * (SHOP_STYLE[this.key] ?? 0) : 3) : this.winK === 0 ? 0 : 3;
     faces.forEach(({ F, len, front }, fi) => {
       const holes: Hole[] = [];
       const wins: { h: Hole; floorY: number; k: number }[] = [];
@@ -557,6 +560,14 @@ class Ctx implements Built {
 }
 
 /* ---------- shop & venue looks ---------- */
+/** V2: what a shop window shows (gfx/architecture.ts pvShopSeen): 0 shelves of goods, 1 a pharmacy, 2 a barber's,
+ *  3 a florist's, 4 books, 5 clothes, 6 a jeweller's, 7 a café or bakery, 8 a butcher's or fishmonger's, 9 screens,
+ *  10 toys, 11 a laundrette, 12 a pet shop, 13 furniture, 14 an arcade, 15 a showroom */
+const SHOP_STYLE: Record<string, number> = {
+  shop: 0, market: 0, hardware: 0, postoffice: 0, gas: 0, autoshop: 15, pharmacy: 1, barber: 2, florist: 3, bookshop: 4,
+  tailor: 5, mall: 5, deptstore: 5, jeweler: 6, bakery: 7, cafe: 7, restaurant: 7, icecream: 7, pizzeria: 7, teastall: 7,
+  butcher: 8, fishmarket: 8, electronics: 9, toyshop: 10, laundry: 11, petshop: 12, furniture: 13, arcade: 14, motoshowroom: 15, carshowroom: 15,
+};
 const SHOP_LOOK: Record<string, [string, string, string, string?]> = {
   // wall, awning A, awning B, sign
   shop: ['#e8d8b8', '#4f7ed0', '#ffffff', '#4f7ed0'],
@@ -682,7 +693,8 @@ function buildShop(c: Ctx): void {
   if (floors === 2) c.gable(x0, z0, x1, z1, top, 2, '#8a5a4a', look[0], true);
   else c.flatRoof(x0, z0, x1, z1, top, '#9a968e', 0.4);
   // big shop window either side of the door
-  const wb = c.win[1];
+  // (V2: these were the offices' windows, desks and partitions behind a pharmacy's or a barber's glass)
+  const wb = c.shopWin;
   const g = hex('#ffffff');
   for (const sx of [-1, 1]) {
     const xa = sx > 0 ? 1.0 : x0 + 0.5, xb = sx > 0 ? x1 - 0.5 : -1.0;

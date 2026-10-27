@@ -26,9 +26,9 @@ import type { BuildingLayer } from './buildings';
 import { Person, Look, randomLook, Pose } from '../gfx/person';
 import { Car as CarModel } from '../gfx/car';
 import { drivewayCars, DrivewayCar, CAR_COLORS as PARKED_COLORS, styleForPaint } from './parked';
-import { baySpot, PARK_TIME } from '../sim/parking';
+import { baySpot, carDrawPose } from '../sim/parking';
 import { trailhead } from '../sim/peak';
-import { Traffic, lanePose, railPose } from '../sim/traffic';
+import { Traffic, lanePose, railPose, workZone, FOOT_PX, LANE_PX } from '../sim/traffic';
 import { ENV } from '../gfx/env';
 import { FireFX } from '../gfx/fire';
 import { XmasPlaza, TreeScene } from '../gfx/festive';
@@ -82,16 +82,6 @@ function smooth(o: object, x: number, z: number, yawHint: number | null): { yaw:
   s.x = x;
   s.z = z;
   return { yaw: s.yaw, phase: s.phase, moving: d > 0.004 };
-}
-
-/** where a parking spot's axis (out through its nose) meets a lane through (lx, lz) heading (hx, hz): the corner a
- *  car turns at, coming out of the spot or backing into it (metres) */
-function axisMeetsLane(s: { x: number; z: number; yaw: number }, lx: number, lz: number, hx: number, hz: number): { x: number; z: number } {
-  const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
-  const den = fx * -hz + fz * hx;
-  let t = Math.abs(den) < 0.2 ? 4 : ((lx - s.x) * -hz + (lz - s.z) * hx) / den;
-  t = Math.max(1.5, Math.min(12, t));
-  return { x: s.x + fx * t, z: s.z + fz * t };
 }
 
 /** V2 (Milestone 8): a vehicle's true heading (through the bends) as a yaw, with no lag behind the turn */
@@ -406,6 +396,17 @@ export class Actors {
       if (!this.near(x, z, 40)) continue;
       const t = p.trip;
       const hint = dirYaw(p.dirx || 0, p.diry || 0);
+      if ((t.car || t.taxi) && t.joined === false && !(t.from && this.spotFree(p.at, t.from))) {
+        // V2: waiting at the kerb for the cab to come (or for a gap, with no drive to wait in): the villager stands on
+        // the pavement by their door. (Each one was drawn as a car of its own standing in the lane, a family's worth
+        // stacked on one spot, with the traffic driving through them)
+        const nx = -(p.diry || 0), nz = p.dirx || 0;
+        const sx = (p.waitX ?? p.x + nx * (FOOT_PX - LANE_PX)) * PX, sz = (p.waitY ?? p.y + nz * (FOOT_PX - LANE_PX)) * PX;
+        const y = this.groundY(sx, sz, false);
+        this.person({ x: sx, y, z: sz, yaw: Math.atan2(-nx, -nz), kind: p.kind, seed: p.seed, mode: 'stand', phase: 0 });
+        this.pickables.push({ x: sx, y, z: sz, ref: p });
+        continue;
+      }
       if (t.car || t.taxi) {
         // V2 (Milestone 8): its true heading through the bends (no lag behind the turn), and out of its drive or
         // bay onto the road at the start, and reversing into its spot at the end
@@ -449,43 +450,9 @@ export class Actors {
      stood in (a curve from the spot, out along the drive and round into the lane), or at the end of the drive
      going past its spot and reversing in (so it ends up standing nose to the street, as the parked cars do) */
   private cpOut = { x: 0, z: 0, yaw: 0, off: false };
+  private spotFreeFn = (b: any, s: { x: number; z: number; yaw: number }): boolean => this.spotFree(b, s);
   private carPose(p: any, t: any): { x: number; z: number; yaw: number; off: boolean } {
-    const o = this.cpOut;
-    o.x = p.x * PX; o.z = p.y * PX; o.yaw = Math.atan2(p.hx ?? p.dirx ?? 0, p.hy ?? p.diry ?? 1); o.off = false;
-    const n = t.path.length;
-    const from = t.from && this.spotFree(p.at, t.from) ? t.from : null, to = t.to && this.spotFree(p.dest, t.to) ? t.to : null;
-    if (from && t.joined === false) { o.x = from.x; o.z = from.z; o.yaw = from.yaw; o.off = true; return o; }
-    if (from && t.prog < 1) {
-      // out of the spot: a curve from the spot, along its axis to the lane, then round into the lane
-      const l0 = lanePose(t.path, 0, Traffic.lanePx(t));
-      const c = axisMeetsLane(from, l0.x * PX, l0.y * PX, l0.hx, l0.hy);
-      const s = t.prog, a = 1 - s;
-      const px = a * a * from.x + 2 * a * s * c.x + s * s * o.x, pz = a * a * from.z + 2 * a * s * c.z + s * s * o.z;
-      const dx = 2 * a * (c.x - from.x) + 2 * s * (o.x - c.x), dz = 2 * a * (c.z - from.z) + 2 * s * (o.z - c.z);
-      o.x = px; o.z = pz; o.yaw = Math.atan2(dx, dz); o.off = s < 0.5;
-      return o;
-    }
-    if (to && (t.parkT || 0) > 0 && t.prog >= n - 1) {
-      // into the spot: on along the lane past it, then back in
-      const u = Math.min(1, t.parkT / PARK_TIME);
-      const hx = Math.sin(o.yaw), hz = Math.cos(o.yaw);
-      const c = axisMeetsLane(to, o.x, o.z, hx, hz);
-      const past = Math.max(0, (c.x - o.x) * hx + (c.z - o.z) * hz + 3);
-      const p0x = o.x + hx * past, p0z = o.z + hz * past;
-      if (u < 0.35) {
-        const k = THREE.MathUtils.smoothstep(u / 0.35, 0, 1);
-        o.x += hx * past * k; o.z += hz * past * k;
-        return o;
-      }
-      const s = THREE.MathUtils.smoothstep((u - 0.35) / 0.65, 0, 1), a = 1 - s;
-      const px = a * a * p0x + 2 * a * s * c.x + s * s * to.x, pz = a * a * p0z + 2 * a * s * c.z + s * s * to.z;
-      const dx = 2 * a * (c.x - p0x) + 2 * s * (to.x - c.x), dz = 2 * a * (c.z - p0z) + 2 * s * (to.z - c.z);
-      o.x = px; o.z = pz; o.off = s > 0.5;
-      // reversing: the nose points against the way it's moving
-      if (Math.hypot(dx, dz) > 1e-4) o.yaw = Math.atan2(-dx, -dz);
-      return o;
-    }
-    return o;
+    return carDrawPose(p, t, this.spotFreeFn, this.cpOut);
   }
   /** is a parking spot clear of the building's own walls (some plots are built right up to the street)? */
   private spotOk = new Map<string, boolean>();
@@ -582,11 +549,16 @@ export class Actors {
     const sides: [number, number, number, number, number, number][] = [
       [x0, z1 + 0.05, x1, z1 + 0.05, 0, -1], [x1 + 0.05, z0, x1 + 0.05, z1, -1, 0], [x0, z0 - 0.05, x1, z0 - 0.05, 0, 1], [x0 - 0.05, z0, x0 - 0.05, z1, 1, 0],
     ];
+    // (V2: while they work at ground level, the right-hand side is the labourer's way in from the pallets, and two
+    // on the same side keep to their own halves of it: they used to walk through each other)
+    const use = lift > 0 ? [0, 1, 2, 3] : [0, 2, 3];
+    const onSide = [0, 0, 0, 0];
     for (let k = 1; k < crew; k++) {
-      const [ax, az, bx2, bz2, fx, fz] = sides[(k + b.id) % 4];
+      const si = use[(k + b.id) % use.length], j = onSide[si]++;
+      const [ax, az, bx2, bz2, fx, fz] = sides[si];
       // a spot along the plank, moved on every half a minute or so (a few steps along to the next stretch)
       const seg = Math.floor(this.t / 28 + k * 0.37 + b.id), shift = this.t / 28 + k * 0.37 + b.id - seg;
-      const u0 = ((hash2(b.id * 31 + k, seg) % 1000) / 1000) * 0.8 + 0.1, u1 = ((hash2(b.id * 31 + k, seg + 1) % 1000) / 1000) * 0.8 + 0.1;
+      const u0 = ((hash2(b.id * 31 + k, seg) % 1000) / 1000) * 0.38 + 0.1 + (j % 2) * 0.42, u1 = ((hash2(b.id * 31 + k, seg + 1) % 1000) / 1000) * 0.38 + 0.1 + (j % 2) * 0.42;
       const walking = shift > 0.9;
       const u = walking ? u0 + (u1 - u0) * (shift - 0.9) * 10 : u0;
       const lx = ax + (bx2 - ax) * u, lz = az + (bz2 - az) * u;
@@ -597,7 +569,7 @@ export class Actors {
     }
     // the labourer: a load from the pallets at the front corner to the foot of the scaffold, and back for more
     const cyc = (this.t / 14 + b.id * 0.13) % 1;
-    const from = toWorld(W / 2 - 1.2, D / 2 - 1.1), to = toWorld(-W / 4, z1 + 0.6);
+    const from = toWorld(W / 2 - 1.2, D / 2 - 1.1), to = toWorld(x1 + 0.6, z1 - 2.2);
     const out = cyc < 0.42, back = cyc > 0.5 && cyc < 0.92;
     const k = out ? cyc / 0.42 : back ? 1 - (cyc - 0.5) / 0.42 : cyc <= 0.5 ? 1 : 0;
     const lx = from[0] + (to[0] - from[0]) * k, lz = from[1] + (to[1] - from[1]) * k;
@@ -660,12 +632,17 @@ export class Actors {
       this.prop('cone', x + 4, 0.03, z + 2.5);
     }
     for (const rw of Life.roadworks) {
-      const x = rw.x * TM + 4, z = rw.y * TM + 4;
+      // V2: one lane closed, where the traffic knows it is (sim/traffic.ts workZone): the barrier across it facing
+      // the traffic that comes along it, cones down its edge by the centre line, the crew inside (they used to
+      // stand across both lanes while the cars drove through them)
+      const zn = rw.zone ?? workZone(rw);
+      const x = zn.x * PX, z = zn.y * PX, hx = zn.hx, hz = zn.hy, L = zn.len * TM;
       if (!this.near(x, z)) continue;
-      this.prop('barrier', x, 0.03, z - 2.5);
-      this.prop('cone', x - 2.5, 0.03, z + 2);
-      this.prop('cone', x + 2.5, 0.03, z + 2);
-      this.person({ x: x + Math.sin(this.t) * 1.2, y: 0.03, z: z + 0.5, yaw: this.t, kind: 'man', seed: rw.x * 13 + rw.y, mode: 'stand', phase: 0, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+      const yaw = Math.atan2(hx, hz), side = { x: -hz, z: hx }; // (the closed lane's left: towards the centre line)
+      this.prop('barrier', x - hx * (L / 2), 0.03, z - hz * (L / 2), yaw, 0.82);
+      for (const k of [-0.25, 0.1, 0.45]) this.prop('cone', x + hx * L * k + side.x * 0.75, 0.03, z + hz * L * k + side.z * 0.75);
+      const w = Math.sin(this.t * 0.4 + rw.x) * 0.9;
+      this.person({ x: x + hx * w - side.x * 0.2, y: 0.03, z: z + hz * w - side.z * 0.2, yaw: yaw + Math.PI / 2 + Math.sin(this.t * 0.7) * 0.6, kind: 'man', seed: rw.x * 13 + rw.y, mode: 'work', phase: this.t * 4, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
     }
     for (const r of Life.reporters) this.lerpPerson(r, 'stand', { camera: true, shirt: hex('#3a5ad0') });
   }
@@ -748,7 +725,8 @@ export class Actors {
   /* someone hurrying from a doorway (sx,sy) to a scene (tx,ty) by fraction f */
   private lerpPerson(o: any, endMode: Mode, extra: { camera?: boolean; bucket?: boolean; shirt?: THREE.Color; placard?: THREE.Color; face?: { x: number; z: number } } = {}): void {
     const f = Math.max(0, Math.min(1, o.f));
-    const x = (o.sx + (o.tx - o.sx) * f) * PX, z = (o.sy + (o.ty - o.sy) * f) * PX;
+    // (V2: along the route the sim walks them, by the streets: sim/walking.ts Stroll)
+    const x = (o.route ? o.x : o.sx + (o.tx - o.sx) * f) * PX, z = (o.route ? o.y : o.sy + (o.ty - o.sy) * f) * PX;
     if (!this.near(x, z)) return;
     const moving = f > 0 && f < 1;
     const sm = smooth(o, x, z, null);
@@ -894,11 +872,9 @@ export class Actors {
       if (!b) continue;
       const x0 = b.door.x * TM + 4, z0 = b.door.y * TM + 4;
       if (!this.near(x0, z0)) continue;
-      const bx = (b.x + b.w / 2) * TM, bz = (b.y + b.h / 2) * TM;
-      const ux = Math.sign(bx - x0) * 0.9, uz = Math.sign(bz - z0) * 0.9;
       q.waiting.forEach((w: any, i: number) => {
-        const x = (x0 + bx) / 2 + (uz ? i * 0.8 : 0) - (uz ? 2 : 0), z = (z0 + bz) / 2 + (ux ? i * 0.8 : 0) - (ux ? 2 : 0);
-        this.person({ x, y: 0.15, z, yaw: Math.atan2(x0 - bx, z0 - bz), kind: w.kind, seed: w.seed, mode: 'stand', phase: 0 });
+        const s = Life.queueSpot(b, i);
+        this.person({ x: s.x * PX, y: 0.15, z: s.y * PX, yaw: s.yaw, kind: w.kind, seed: w.seed, mode: 'stand', phase: 0 });
       });
     }
     for (const a of Life.alighters) {

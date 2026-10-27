@@ -28,6 +28,7 @@
    squad cars on a call drive in the traffic too, on blue lights.
    ============================================================ */
 import { World } from './world';
+import { carDrawPose } from './parking';
 
 const T = 16;
 const LANE = 2.7 / T;      // lane centre, right of the road's centreline (V2 (Milestone 8): 1.35 m, was 1.75 m: cars hung over the kerb)
@@ -235,6 +236,15 @@ const joins = new Map<number, number>();
 /** V2 (Milestone 8): who has run into whom lately (so a hit counts once) */
 const struck = new Map<string, number>();
 let tick = 0;
+/** V2: cars drawn crossing the pavement (backing out of a drive or a bay, or into one): only people on foot look at
+ *  these, so they wait for the car instead of walking through it (the traffic sees the car in its lane) */
+const pave: Ob[] = [];
+let paveN = 0;
+const PAVE_POSE = { x: 0, z: 0, yaw: 0, off: false };
+const anySpot = (): boolean => true;
+/** V2: how many are already waiting at each kerbside spot this tick */
+const waitN = new Map<number, number>();
+const WAIT: Pose = { x: 0, y: 0, hx: 1, hy: 0, dx: 1, dy: 0 };
 let gateClosed: (tx: number, ty: number) => boolean = () => false;
 
 function put(o: any, x: number, y: number, dx: number, dy: number, car: boolean, len: number, still = false, wide = 0, v = -1, pass = false): void {
@@ -248,7 +258,8 @@ function put(o: any, x: number, y: number, dx: number, dy: number, car: boolean,
   const hl = Math.hypot(hx, hy);
   if (hl > 1e-6) { hx /= hl; hy /= hl; } else { hx = 1; hy = 0; }
   ob.hx = hx; ob.hy = hy;
-  ob.w = car ? halfW(len) : 0.04; ob.v = v; ob.pass = pass;
+  // (V2: someone lying in the road is as wide as they are long)
+  ob.w = car ? halfW(len) : still && len ? len / 2 : 0.04; ob.v = v; ob.pass = pass;
   let list = grid.get(key);
   if (!list) grid.set(key, (list = []));
   if (!list.length) filled.push(key);
@@ -397,9 +408,22 @@ const SEEN = new Set<Ob>();
 const PSEEN = new Set<Ob>();
 const JOIN: Pose = { x: 0, y: 0, hx: 1, hy: 0, dx: 1, dy: 0 };
 
+/** V2: where road works stand on their tile (V1 px): the lane they close (`rw.side`, +1 the one right of the way
+ *  east or north… see below), its centre, the way traffic in it runs, and how long the coned-off stretch is (tiles).
+ *  On a street running east-west the closed lane is the south one (eastbound) for side +1; north-south, the east
+ *  one (northbound). */
+export function workZone(rw: { x: number; y: number; side?: number }): { x: number; y: number; hx: number; hy: number; len: number; ew: boolean } {
+  const ew = World.isRoad(rw.x - 1, rw.y) || World.isRoad(rw.x + 1, rw.y);
+  const s = rw.side ?? ((rw.x * 7 + rw.y * 13) % 2 ? 1 : -1);
+  const cx = rw.x * T + 8, cy = rw.y * T + 8;
+  return ew ? { x: cx, y: cy + s * LANE * T, hx: s, hy: 0, len: 0.7, ew } : { x: cx + s * LANE * T, y: cy, hx: 0, hy: -s, len: 0.7, ew };
+}
+
 export const Traffic = {
   /** the Founder (and their parked car), as the client last reported them */
   guests: [] as Guest[],
+  /** V2: others to index each tick as people on foot (visitors, Santa): each calls `foot(o)` for its own */
+  sources: [] as ((foot: (o: any) => void) => void)[],
   /** a driver held up by the Founder sounds the horn (the client plays it) */
   onHonk: null as ((who: any) => void) | null,
 
@@ -412,16 +436,38 @@ export const Traffic = {
     for (const k of filled) grid.get(k)!.length = 0;
     filled.length = 0;
     used = 0;
+    paveN = 0;
     gateClosed = (tx, ty) => life.trainNearTile(tx, ty, 5);
     // "still" marks what is parked on the road for a while (a bus at its stop, a squad car at a
     // scene, a wreck): traffic queues behind it, then passes it
     // (V2: with how fast each is going, and whether it is out in the other lane overtaking)
+    waitN.clear();
     for (const p of people) {
+      // V2: waiting at the kerb for a cab (or a gap, with no drive to wait in): a person on the pavement by their
+      // door, a step from the others waiting there (render/actors.ts draws them where this puts them)
+      const tw = p.trip;
+      if (p.state === 'walk' && tw && (tw.car || tw.taxi) && tw.joined === false && !tw.from && tw.path?.length) {
+        const q = lanePose(tw.path, 0, LANE_PX, 1, WAIT);
+        const key = Math.round(q.x) * 4096 + Math.round(q.y), n = waitN.get(key) ?? 0;
+        waitN.set(key, n + 1);
+        const along = (n % 2 ? -1 : 1) * Math.ceil(n / 2) * 1.6, out = FOOT_PX - LANE_PX + (n >= 8 ? 1.2 : 0);
+        p.waitX = q.x - q.dy * out + q.dx * along; p.waitY = q.y + q.dx * out + q.dy * along;
+        put(p, p.waitX, p.waitY, q.dx, q.dy, false, 0, true);
+        continue;
+      }
+      // V2: someone hurt, lying where they fell until the ambulance comes: driven round, never over
+      if ((p.state === 'hurt' || (p.knocked && p.freezeT > 0 && p.state === 'walk' && !p.trip?.car)) && p.x !== undefined) { put(p, p.x, p.y, 1, 0, false, 0.22, true); continue; }
       if (p.state !== 'walk' || !p.trip) continue;
       const t = p.trip;
       if (t.joined === false) continue; // (still in the drive, waiting to pull out)
       if (t.car || t.taxi || t.moto) put(p, p.x, p.y, p.dirx, p.diry, true, t.moto ? 0.3 : CAR_LEN, (t.parkT || 0) > 0, 0, t.v ?? -1, !!t.over);
       else put(p, p.x, p.y, p.dirx, p.diry, false, 0);
+      if (t.car && ((t.from && t.prog < 1) || ((t.parkT || 0) > 0 && t.to))) {
+        const q = carDrawPose(p, t, anySpot, PAVE_POSE);
+        const ob = pave[paveN] || (pave[paveN] = { o: null, x: 0, y: 0, dx: 0, dy: 0, hx: 1, hy: 0, car: true, len: CAR_LEN, w: HALF_W, v: 1, still: false, wide: 0, pass: false });
+        paveN++;
+        ob.o = t; ob.x = (q.x * 2) / T; ob.y = (q.z * 2) / T; ob.hx = Math.sin(q.yaw); ob.hy = Math.cos(q.yaw); ob.dx = ob.hx; ob.dy = ob.hy;
+      }
     }
     // (V2: the emergency services keep their driving state apart, on `drv`)
     const dv = (u: any): Drive => u.drv ?? u;
@@ -437,7 +483,36 @@ export const Traffic = {
     for (const u of life.ambulances || []) car(u, 0.75, u.phase === 'treat');
     for (const u of life.trucks || []) car(u, 0.9, u.phase === 'drop');
     for (const u of life.crews || []) car(u, 0.7, u.phase === 'fix');
-    if (life.crash) put(life.crash, life.crash.x, life.crash.y, 1, 0, true, 1.2, true);
+    // V2: a wreck is the two cars as they stand, each its own length at its own angle (it was one long box lying
+    // east-west whichever way the street ran, so traffic drove through the cars themselves)
+    const k = life.crash;
+    if (k) {
+      k.parts ??= k.founder ? [{ x: k.x, y: k.y, hx: Math.sin(k.a1), hy: Math.cos(k.a1) }]
+        : [{ x: k.x - 3, y: k.y, hx: Math.sin(k.a1), hy: Math.cos(k.a1) }, { x: k.x + 3, y: k.y + 1.2, hx: Math.sin(k.a2), hy: Math.cos(k.a2) }];
+      for (const c of k.parts) put(c, c.x, c.y, c.hx, c.hy, true, CAR_LEN, true);
+    }
+    // V2: road works close one lane behind a barrier and cones (render/actors.ts draws them where this says)
+    for (const rw of life.roadworks || []) {
+      const z = (rw.zone ??= workZone(rw));
+      put(z, z.x, z.y, z.hx, z.hy, true, z.len, true);
+    }
+    // V2: everyone else on foot: onlookers, neighbours with buckets, reporters, passengers stepping off, the
+    // burglar, visitors and Santa (sim/walking.ts Stroll, Walk)
+    // (standing: someone who has got where they were going, or not set off yet)
+    const foot = (o: any): void => { if (o && o.x !== undefined) put(o, o.x, o.y, o.hx ?? o.dirx ?? 1, o.hy ?? o.diry ?? 0, false, 0, o.f !== undefined && (o.f >= 1 || o.f <= 0)); };
+    for (const g of life.gawkers || []) foot(g);
+    for (const r of life.reporters || []) foot(r);
+    for (const b of life.buckets || []) for (const h of b.helpers) foot(h);
+    if (life.disaster) for (const h of life.disaster.helpers) foot(h);
+    for (const a of life.alighters || []) foot(a);
+    if (life.crime?.burglar) foot(life.crime.burglar);
+    // (and the queues at the bus stops and cab ranks, standing on the pavement)
+    if (life.stopQueues?.size) for (const [id, q] of life.stopQueues as Map<number, any>) {
+      if (!q.waiting.length) continue;
+      const b = World.buildings.find((o: any) => o.id === id);
+      if (b) q.waiting.forEach((w: any, i: number) => { const s = life.queueSpot(b, i); put(w, s.x, s.y, 1, 0, false, 0, true); });
+    }
+    for (const src of this.sources) src(foot);
     // V2 (Milestone 8): the Christmas tree on its flatbed, crawling through town: traffic waits behind it
     if (life.convoy) put(life.convoy, life.convoy.x, life.convoy.y, life.convoy.dirx, life.convoy.diry, true, 2.4, false);
     // the Founder's car sits anywhere across the road (V2: at its true heading, so only a small margin on top)
@@ -516,6 +591,8 @@ export const Traffic = {
           const c = rx * nx + ry * ny; // across the road, + is our side
           const ha = ob.hx * dx + ob.hy * dy; // (its heading along ours)
           if (s <= 0.05) {
+            // (V2: someone lying under or right against us: we don't move until they've been seen to)
+            if (!ob.car && ob.still && ob.len && s > -half - ob.len / 2 && Math.abs(c - lat) < myW + ob.w) { hold(0, true); seen.add(ob); continue; }
             // beside or behind us; but two cars started in the very same spot (friends leaving
             // together) would drive on as one: the later one in the index lets the other go first
             // (V2: decided the same way from both sides, however slightly one is ahead)
@@ -534,6 +611,12 @@ export const Traffic = {
             // (someone overtaking towards us in our lane: stop well short, so they have room to pull back in)
             const f = s - half - ea - GAP - (ob.pass && ha < -0.5 ? 0.8 : 0);
             if (f < free) { free = f; byTraffic = true; byStill = ob.still; byFounder = isFounder(ob.o); blocker = ob; ahead = ob.v > 0 ? ob.v * ha : 0; }
+          } else if (ob.still && ob.len) {
+            // V2: someone lying in the road: stop well short, then go round them like anything else standing there
+            if (Math.abs(c - lat) > myW + ob.w + 0.12) continue;
+            seen.add(ob);
+            const f = s - half - ob.len / 2 - GAP;
+            if (f < free) { free = f; byTraffic = true; byStill = true; byFounder = false; blocker = ob; ahead = 0; }
           } else {
             if (Math.abs(c) > ON_ROAD) continue;
             seen.add(ob);
@@ -669,7 +752,8 @@ export const Traffic = {
     }
     // speed: as fast as still lets us stop in the room we have
     const target = Math.min(v0, bend, Math.sqrt(2 * DEC * room));
-    let nv = target < v ? Math.max(target, v - DEC_MAX * dt) : Math.min(target, v + ACC * dt);
+    // (V2: on blue lights the driver pulls away harder)
+    let nv = target < v ? Math.max(target, v - DEC_MAX * dt) : Math.min(target, v + (urgent ? ACC * 1.4 : ACC) * dt);
     let step = nv * dt;
     // V2 (Milestone 8): someone stepping out inside the stopping distance can't be stopped for in time: the driver
     // brakes as hard as the car will, and may still hit them (it used to stop dead, which no car can do)
@@ -726,7 +810,7 @@ export const Traffic = {
           const s = base + along, c = rx * nx + ry * ny;
           if (s <= 0) continue;
           seen.add(ob);
-          if (!ob.car) { if (Math.abs(c) < ON_ROAD) walker = Math.min(walker, s); continue; }
+          if (!ob.car && !(ob.still && ob.len)) { if (Math.abs(c) < ON_ROAD) walker = Math.min(walker, s); continue; }
           const ha = ob.hx * dx + ob.hy * dy, ca = Math.abs(ha), cn = Math.abs(ob.hx * nx + ob.hy * ny);
           const ea = (ca * ob.len) / 2 + cn * ob.w, ec = (cn * ob.len) / 2 + ca * ob.w;
           // (something across the road is in both lanes)
@@ -899,7 +983,7 @@ export const Traffic = {
     const now = tick;
     for (const key of filled) {
       for (const ob of grid.get(key)!) {
-        if (!ob.car || isFounder(ob.o)) continue;
+        if (!ob.car || ob.still || isFounder(ob.o)) continue;
         const o: any = ob.o;
         const vx = (o.x ?? ob.x * T) / T, vy = (o.y ?? ob.y * T) / T;
         const v = Math.hypot(vx - ob.x, vy - ob.y) / dt; // tiles a second
@@ -935,12 +1019,44 @@ export const Traffic = {
     return left <= 1e-3 || st.held > 3;
   },
 
-  /** road users within r pixels of (x, y), as indexed this tick (their `o` holds live positions) */
-  near(x: number, y: number, r: number, out: Ob[] = []): Ob[] {
+  /**
+   * V2: where along its path `me` (`len` tiles long, `lat` px right of the centreline) can stop clear of every
+   * vehicle already standing there: back from `prog` until its body touches none (a second ambulance at a crash
+   * pulls up behind the first instead of on top of it). Returns the progress to stop at.
+   */
+  settle(me: unknown, path: number[][], prog: number, lat: number, len: number): number {
+    const w = halfW(len), pose: Pose = { x: 0, y: 0, hx: 1, hy: 0, dx: 1, dy: 0 };
+    for (let k = 0; k < 40 && prog > 0; k++) {
+      lanePose(path, prog, lat, 1, pose);
+      const x = pose.x / T, y = pose.y / T, hl = Math.hypot(pose.hx, pose.hy) || 1, fx = pose.hx / hl, fy = pose.hy / hl;
+      let hit = false;
+      for (const ob of Traffic.near(pose.x, pose.y, 24)) {
+        if (ob.o === me || !ob.car) continue;
+        const axes = [[fx, fy], [-fy, fx], [ob.hx, ob.hy], [-ob.hy, ob.hx]];
+        let sep = false;
+        for (const [ax, ay] of axes) {
+          const ra = (Math.abs(fx * ax + fy * ay) * len) / 2 + Math.abs(-fy * ax + fx * ay) * w;
+          const rb = (Math.abs(ob.hx * ax + ob.hy * ay) * ob.len) / 2 + Math.abs(-ob.hy * ax + ob.hx * ay) * ob.w;
+          if (Math.abs((ob.x - x) * ax + (ob.y - y) * ay) > ra + rb + 0.04) { sep = true; break; }
+        }
+        if (!sep) { hit = true; break; }
+      }
+      if (!hit) return prog;
+      prog = Math.max(0, prog - 0.1);
+    }
+    return prog;
+  },
+
+  /** road users within r pixels of (x, y), as indexed this tick (their `o` holds live positions); V2: `founder`
+   *  includes the Founder and their car (for the people on foot, who walk round them too); `drives`: the cars drawn
+   *  crossing the pavement out of their drives too */
+  near(x: number, y: number, r: number, out: Ob[] = [], founder = false, drives = founder): Ob[] {
     out.length = 0;
     const t0x = Math.floor((x - r) / T), t1x = Math.floor((x + r) / T), t0y = Math.floor((y - r) / T), t1y = Math.floor((y + r) / T);
     for (let ty = t0y; ty <= t1y; ty++)
-      for (let tx = t0x; tx <= t1x; tx++) for (const ob of grid.get(World.idx(tx, ty)) || []) if (!isFounder(ob.o)) out.push(ob);
+      for (let tx = t0x; tx <= t1x; tx++) for (const ob of grid.get(World.idx(tx, ty)) || []) if (founder || !isFounder(ob.o)) out.push(ob);
+    // (people on foot also see the cars crossing the pavement out of their drives)
+    if (drives) for (let i = 0; i < paveN; i++) { const ob = pave[i]; if (Math.abs(ob.x * T - x) < r + 8 && Math.abs(ob.y * T - y) < r + 8) out.push(ob); }
     return out;
   },
 

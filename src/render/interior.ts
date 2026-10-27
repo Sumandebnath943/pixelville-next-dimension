@@ -61,7 +61,7 @@ function mat(m: Mat): THREE.Material {
     }[m]!();
     if (m === 'glow') (MATS[m] as THREE.MeshStandardMaterial).onBeforeCompile = (s) => {
       // glow in its own colour
-      s.fragmentShader = s.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance = diffuseColor.rgb * 2.5;');
+      s.fragmentShader = s.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance = diffuseColor.rgb * 1.8;');
     };
   }
   return MATS[m]!;
@@ -106,7 +106,7 @@ export class InteriorScene {
   constructor(public L: Layout, renderer: THREE.WebGLRenderer, shadows: boolean) {
     const T = textures(), th = L.theme, S = this.scene;
     S.environment = roomEnv(renderer);
-    S.environmentIntensity = 0.45;
+    S.environmentIntensity = 0.3;
     S.background = new THREE.Color('#0c0e12');
     const hw = L.w / 2, hd = L.d / 2;
 
@@ -123,7 +123,7 @@ export class InteriorScene {
     floor.receiveShadow = true;
     S.add(floor);
     // the ceiling
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(L.w, L.d), new THREE.MeshStandardMaterial({ color: '#f2f0ea', roughness: 0.95 }));
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(L.w, L.d), new THREE.MeshStandardMaterial({ color: th.ceiling ?? '#ebe7de', roughness: 0.95 }));
     ceil.rotation.x = Math.PI / 2;
     ceil.position.y = L.h;
     S.add(ceil);
@@ -170,6 +170,20 @@ export class InteriorScene {
     const trim: THREE.BufferGeometry[] = [];
     const tc = new THREE.Color(th.trim);
     trim.push(boxGeo(0, 0, -hd + 0.01, L.w, 0.12, 0.03, tc), boxGeo(-hw + 0.01, 0, 0, 0.03, 0.12, L.d, tc), boxGeo(hw - 0.01, 0, 0, 0.03, 0.12, L.d, tc));
+    // V2: a cornice where the walls meet the ceiling, and (by the room's style) a panelled or tiled lower wall with a
+    // rail along its top: rooms were bare plaster boxes
+    trim.push(boxGeo(0, L.h - 0.1, -hd + 0.04, L.w, 0.1, 0.08, tc), boxGeo(-hw + 0.04, L.h - 0.1, 0, 0.08, 0.1, L.d, tc), boxGeo(hw - 0.04, L.h - 0.1, 0, 0.08, 0.1, L.d, tc));
+    if (th.wainscot) {
+      const wc = new THREE.Color(th.wainscot), wh = th.wainscotH ?? 1.05;
+      const panels = [boxGeo(0, 0.12, -hd + 0.012, L.w, wh - 0.12, 0.02, wc), boxGeo(-hw + 0.012, 0.12, 0, 0.02, wh - 0.12, L.d, wc), boxGeo(hw - 0.012, 0.12, 0, 0.02, wh - 0.12, L.d, wc)];
+      for (const sx of [-1, 1]) panels.push(boxGeo(sx * (doorW / 2 + sideW / 2), 0.12, hd - 0.012, sideW, Math.min(wh, 0.78) - 0.12, 0.02, wc));
+      const pm = new THREE.Mesh(mergeGeometries(panels), mat(th.wainscotMat ?? 'paint'));
+      pm.receiveShadow = true;
+      S.add(pm);
+      panels.forEach((g) => g.dispose());
+      this.disposables.push(pm.geometry);
+      trim.push(boxGeo(0, wh, -hd + 0.03, L.w, 0.05, 0.05, tc), boxGeo(-hw + 0.03, wh, 0, 0.05, 0.05, L.d, tc), boxGeo(hw - 0.03, wh, 0, 0.05, 0.05, L.d, tc));
+    }
     trim.push(boxGeo(-doorW / 2, 0, hd - 0.03, 0.1, 2.45, 0.08, tc), boxGeo(doorW / 2, 0, hd - 0.03, 0.1, 2.45, 0.08, tc), boxGeo(0, 2.4, hd - 0.03, doorW + 0.2, 0.1, 0.08, tc), boxGeo(0, 0, hd - 0.03, 0.05, 2.4, 0.05, tc));
     for (const sx of [-1, 1]) trim.push(boxGeo(sx * (doorW / 2 + sideW / 2), 0.88, hd - 0.08, sideW - 0.7, 0.05, 0.18, tc));
     const tm = new THREE.Mesh(mergeGeometries(trim), mat('paint'));
@@ -205,8 +219,9 @@ export class InteriorScene {
       this.disposables.push(sm, m.geometry);
     }
 
-    // light: the sky through the windows, ceiling lamps (a few cast light, all of them glow)
-    this.hemi = new THREE.HemisphereLight('#fff6ea', '#5a4a3a', 0.9);
+    // light: the sky through the windows, ceiling lamps (a few cast light, all of them glow). V2: at the levels a
+    // real room has (the rooms were lit like a photo studio, every pale surface burnt out to white)
+    this.hemi = new THREE.HemisphereLight('#f4ecdf', '#4a3e32', 0.4);
     S.add(this.hemi);
     this.sun = new THREE.DirectionalLight('#fff4e0', 1.2);
     this.sun.position.set(-L.w * 0.3, L.h * 1.6, L.d * 1.4);
@@ -234,9 +249,9 @@ export class InteriorScene {
       }
     }
     for (const l of ranked.slice(0, MAX_LAMPS)) {
-      const p = new THREE.PointLight(l.c, l.i * 16, Math.max(L.w, L.d) * 1.3, 1.5);
+      const p = new THREE.PointLight(l.c, l.i * 7.5, Math.max(L.w, L.d) * 1.3, 1.6);
       p.position.set(l.x, l.y - 0.1, l.z);
-      p.userData.base = l.i * 16;
+      p.userData.base = l.i * 7.5;
       S.add(p);
       this.lamps.push(p);
     }
@@ -267,8 +282,8 @@ export class InteriorScene {
   light(day: number, lampsOn: number, power = 1): void {
     const sky = new THREE.Color('#0e1626').lerp(new THREE.Color('#d8e8f6'), day);
     this.outside.color.copy(sky).multiplyScalar(0.55 + day * 0.5);
-    this.sun.intensity = 0.15 + day * 1.6;
-    this.hemi.intensity = (0.5 + day * 0.55) * (power ? 1 : 0.35 + day * 0.6);
+    this.sun.intensity = 0.08 + day * 0.85;
+    this.hemi.intensity = (0.2 + day * 0.28) * (power ? 1 : 0.35 + day * 0.6);
     const lit = (0.75 + lampsOn * 0.35) * power;
     for (const p of this.lamps) p.intensity = p.userData.base * lit;
     this.fixtures.color.setScalar(power ? 0.7 + lit * 0.6 : 0.12);

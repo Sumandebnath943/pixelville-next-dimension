@@ -2,7 +2,8 @@
 import type { Building, XY } from './types';
 import { GH, GW, G_GRASS, World } from './world';
 import { Life } from './life';
-import { FOOT_PX, LANE_PX } from './traffic';
+import { Traffic } from './traffic';
+import { Walk } from './walking';
 import { Sim } from './agents';
 import { Settings } from './settings';
 import { MIN_PER_SEC, T } from './core';
@@ -118,13 +119,20 @@ export const Festivals: any = {
       if (roads.length > 20) {
         const a = roads[(Math.random() * roads.length) | 0], b = roads[(Math.random() * roads.length) | 0];
         const path = World.roadPath(a % GW, (a / GW) | 0, b % GW, (b / GW) | 0);
-        if (path && path.length > 14) this.santa = { path, prog: 0, x: path[0][0] * T + 8, y: path[0][1] * T + 8, dirx: 1, diry: 0 };
+        if (path && path.length > 14) {
+          this.santa = { path, prog: 0, x: path[0][0] * T + 8, y: path[0][1] * T + 8, dirx: 1, diry: 0, seed: 1225 };
+          this.santa.trip = { path, prog: 0 };
+          Walk.plan(this.santa, this.santa.trip, null, null);
+        }
       }
     }
     if (this.santa) {
-      this.santa.prog += 0.25 * (gm / MIN_PER_SEC); // V2: Santa strolls at walking pace
-      Life.followPath(this.santa, this.santa.path, this.santa.prog, FOOT_PX); // V2 (Milestone 8): on the pavement
-      if (this.santa.prog >= this.santa.path.length - 1) this.santa = null;
+      // V2: Santa strolls at walking pace on the pavement, and crosses where people do (sim/walking.ts)
+      const s = this.santa;
+      s.trip.prog = Math.min(s.path.length - 1, s.trip.prog + Walk.step(s, s.trip, gm / MIN_PER_SEC, 0.25));
+      Walk.pose(s, s.trip);
+      s.prog = s.trip.prog;
+      if (s.prog >= s.path.length - 1) this.santa = null;
     }
     // …and at midnight, the sleigh crosses the sky, dropping gifts
     const midnight = Sim.clock >= 1420 || Sim.clock < 30;
@@ -333,10 +341,11 @@ export const Festivals: any = {
     if (tr.phase === 'hauling') {
       const path = tr.haulPath;
       if (path && path.length > 1) {
-        tr.prog += 0.45 * (gm / MIN_PER_SEC); // a procession's pace, about 13 km/h
         // (the flatbed's own position: the tree's x, y are the square it's bound for)
         tr.cv ??= { x: 0, y: 0, dirx: 1, diry: 0 };
-        Life.followPath(tr.cv, path, Math.min(tr.prog, path.length - 1), LANE_PX);
+        // a procession's pace, about 13 km/h; V2: in the traffic, never through it (on blue lights: the escort)
+        tr.prog += Traffic.advance(tr.cv, (tr.cv.drv ??= {}), path, Math.min(tr.prog, path.length - 1), 1, 0.45, gm / MIN_PER_SEC, 2.4, true);
+        Life.followPath(tr.cv, path, Math.min(tr.prog, path.length - 1), Traffic.lanePx(tr.cv.drv));
         Life.convoy = tr.cv;
       }
       if (!path || path.length < 2 || tr.prog >= path.length - 1 || yd >= 19) {
@@ -380,3 +389,5 @@ export const Festivals: any = {
     }
   },
 };
+// V2: Santa on his stroll is a road user on foot (drivers stop for him at the crossings)
+Traffic.sources.push((foot) => { if (Festivals.santa) foot(Festivals.santa); });

@@ -229,6 +229,11 @@ export class Indoors {
     if (walkable(this.L!, bx, bz)) this.pos.set(bx, bz);
   }
 
+  /** V2: how far the walk has gone (its bob's phase), for the footsteps' sounds */
+  bobPhase(): number {
+    return this.bob;
+  }
+
   /** the building's name for prompts and cards */
   name(): string {
     return this.b?.type === 'lodge' ? "the Founder's Lodge" : `the ${CAT[this.b.type].name}`;

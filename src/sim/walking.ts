@@ -14,7 +14,7 @@
    Positions are V1 pixels (16 a tile, tile centres at +8).
    ============================================================ */
 import { World } from './world';
-import { Traffic, FOOT_PX, turnAt } from './traffic';
+import { Traffic, FOOT_PX, turnAt, lanePose } from './traffic';
 
 const T = 16;
 /** how far (px) a walker steps aside to pass someone */
@@ -37,7 +37,13 @@ export interface WalkState {
   dodge: number; dodgeWant: number;
   /** where the last crossing was (path steps), so it isn't made twice */
   done: number;
+  /** V2: seconds left stepping round something standing on the pavement (the line may leave the pavement) */
+  wide?: number;
 }
+
+/** V2: how far from the road's centreline (px) a walker's middle keeps: clear of the kerb (2.6 m, plus a body),
+ *  and no further out than the back of the pavement */
+const PAVE_IN = 5.8, PAVE_OUT = 8.4;
 
 const isRoad = (x: number, y: number): boolean => World.isRoad(x, y);
 /** the travel direction into step k (or out of it at the start) */
@@ -104,38 +110,87 @@ export const Walk = {
     if (!w) return speed * dt;
     // stepping aside, eased
     w.dodge += (w.dodgeWant - w.dodge) * Math.min(1, dt * 3);
+    if (w.wide) w.wide = Math.max(0, w.wide - dt);
     let v = speed * w.pace;
     // someone just ahead on this pavement, or coming the other way on our line: step aside, or keep their pace
+    // (V2: the Founder on foot too, and anyone standing on the pavement: walked round, never through)
     const hx = p.hx ?? p.dirx ?? 1, hy = p.hy ?? p.diry ?? 0;
+    const crossing = w.lat !== null;
+    // (which way is away from the road: the side we walk on)
+    const out = w.side;
     w.dodgeWant = 0;
-    for (const ob of Traffic.near(p.x, p.y, 22, NEAR)) {
-      if (ob.car || ob.o === p) continue;
-      const o = ob.o as any;
-      const rx = o.x - p.x, ry = o.y - p.y;
+    let blockedBy = 0;
+    for (const ob of Traffic.near(p.x, p.y, 26, NEAR, true)) {
+      if (ob.o === p) continue;
+      const rx = ob.x * T - p.x, ry = ob.y * T - p.y;
       const along = rx * hx + ry * hy, across = rx * -hy + ry * hx;
+      if (ob.car) {
+        // V2: a vehicle's body across our line (the Founder's car left on the pavement, a car backing out of its
+        // drive): wait while it moves, go round it on the side away from the road while it stands
+        if (crossing || along < -2 || along > 7) continue;
+        const ca = Math.abs(ob.hx * hx + ob.hy * hy), cn = Math.abs(ob.hx * -hy + ob.hy * hx);
+        const ea = ((ca * ob.len) / 2 + cn * ob.w) * T, ec = ((cn * ob.len) / 2 + ca * ob.w) * T;
+        if (along - ea > 3.2 || along + ea < -0.6) continue;
+        const shiftR = across + ec + 0.9, shiftL = across - ec - 0.9;
+        if (shiftR <= 0 || shiftL >= 0) continue; // (clear of our line already)
+        const vv = ob.v >= 0 ? ob.v : 1;
+        if (!ob.still && vv > 0.05) { blockedBy = 1; continue; }
+        // (out round it if the verge has room; else past it on the road side, as people step round a car on the kerb)
+        const lat = Walk.offset(t, w.side) * out;
+        const shift = lat + Math.abs(out > 0 ? shiftR : shiftL) <= PAVE_OUT + 2 ? (out > 0 ? shiftR : shiftL) : out > 0 ? shiftL : shiftR;
+        if (Math.abs(shift) < 9) { w.dodgeWant = w.dodge + shift; w.wide = 1.5; }
+        else blockedBy = 1;
+        continue;
+      }
+      const o = ob.o as any;
+      // (V2: two setting off from the same door at once: one lets the other go a step ahead and falls in beside)
+      if (along > -0.6 && along < 0.5 && Math.abs(across) < 1 && !ob.still && ((p.seed >>> 0) || 1) > ((o?.seed >>> 0) || 0)) {
+        v = Math.min(v, speed * w.pace * 0.55);
+        w.dodgeWant = across >= 0 ? -DODGE * 2 : DODGE * 2;
+        continue;
+      }
       if (along < 0.5 || along > 14 || Math.abs(across) > 6) continue;
-      const same = (o.hx ?? o.dirx ?? 0) * hx + (o.hy ?? o.diry ?? 0) * hy;
+      const same = ob.hx * hx + ob.hy * hy;
+      // (stepping aside, away from them, unless the pavement's edge leaves no room that way: then the other way)
+      const mine = Walk.offset(t, w.side), theirs0 = mine + across;
+      const sideStep = (d: number): number => {
+        const keep = w.dodge;
+        w.dodge = keep + d;
+        const sep = Math.abs(Walk.offset(t, w.side) - theirs0);
+        w.dodge = keep;
+        return sep;
+      };
+      const step2 = (away: number): number => (sideStep(-away) > sideStep(away) + 0.3 ? -away : away);
       if (Math.abs(across) < 4) {
-        if (same > 0.5) {
+        if (ob.still) {
+          // someone standing on the pavement (the Founder, a casualty, a queue): round them, away from the road
+          if (along < 6) w.dodgeWant = step2(across * out > 0.6 ? (across > 0 ? -DODGE * 2 : DODGE * 2) : out * DODGE * 2.2);
+        } else if (same > 0.5) {
           // the same way: overtake on the side away from the road if there's room, else fall in behind
-          const theirs = o.trip?.walk?.pace ?? 1;
-          if (theirs < w.pace - 0.04) w.dodgeWant = across > 0 ? -DODGE * 2 : DODGE * 2;
-          else if (along < 9) v = Math.min(v, speed * theirs * (along < 6 ? 0.8 : 1));
-        } else if (same < -0.5) w.dodgeWant = across > 0 ? -DODGE * 2 : DODGE * 2; // meeting: both keep right of each other
+          const theirs = o?.trip?.walk?.pace ?? 1;
+          if (theirs < w.pace - 0.04) w.dodgeWant = step2(across > 0 ? -DODGE * 2 : DODGE * 2);
+          // (V2: and close behind someone who has stopped, stop too: they used to walk on into them)
+          else if (along < 9) v = Math.min(v, along < 1.8 ? 0 : speed * theirs * (along < 6 ? 0.8 : 1));
+        } else if (same < -0.5) w.dodgeWant = step2(across > 0 ? -DODGE * 2 : DODGE * 2); // meeting: both keep right of each other
       }
     }
+    if (blockedBy) v = 0;
     // a crossing ahead: walk up to the kerb, wait for a gap, cross straight over
     if (w.crossAt >= 0 && t.prog + v * dt >= w.crossAt) {
       // (people waiting to cross stand a step apart at the kerb, not on one spot)
       const step = Math.max(0, w.crossAt - t.prog - ((((p.seed >>> 0) || 1) % 5) * 0.045));
       const from = Walk.offset(t, w.side), to = Walk.offset(t, w.crossTo);
+      const sp = speed * w.pace * T * 1.15; // (a brisker step over the road, px/s)
       if (w.lat === null) {
-        // at the kerb: anything coming along this street?
-        if (w.wait < KERB_WAIT && Walk.trafficNear(p)) { w.wait += dt; return step; }
+        // at the kerb: nothing standing across the way over, and nothing coming that would reach us before we're
+        // across (V2: after a long wait, anything that can still stop for us in time; never into a moving car)
+        if (!Walk.clearToCross(p, t, from, to, sp, w.wait >= KERB_WAIT)) { w.wait += dt; return step; }
         w.lat = from;
       }
-      const sp = speed * w.pace * T * 1.15 * dt; // (a brisker step over the road)
-      w.lat += Math.sign(to - w.lat) * Math.min(sp, Math.abs(to - w.lat));
+      const dir = Math.sign(to - w.lat);
+      // (V2: and never step into something that has stopped across the way meanwhile)
+      if (Walk.bodyAt(t, w.lat + dir * 1.4, p)) { w.wait += dt; if (w.wait < KERB_WAIT * 3) return step; }
+      w.lat += dir * Math.min(sp * dt, Math.abs(to - w.lat));
       if (Math.abs(to - w.lat) < 1e-3) {
         w.side = w.crossTo; w.lat = null; w.wait = 0;
         // (and on from the spot where they crossed; that crossing is behind them)
@@ -148,24 +203,50 @@ export const Walk = {
     return v * dt;
   },
 
-  /** is a vehicle coming along the street at (p.x, p.y), close enough to matter? */
-  trafficNear(p: any): boolean {
-    for (const ob of Traffic.near(p.x, p.y, 48, NEAR)) {
+  /** V2: may the walker at the kerb cross from lateral `from` to `to` (px) here? Nothing's body across the way, and
+   *  nothing moving that reaches the line before they're over (`relaxed`: that couldn't stop for them in time) */
+  clearToCross(p: any, t: any, from: number, to: number, speed: number, relaxed: boolean): boolean {
+    const n = Math.max(2, Math.ceil(Math.abs(to - from) / 1.2));
+    for (let i = 0; i <= n; i++) if (Walk.bodyAt(t, from + ((to - from) * i) / n, p)) return false;
+    const cross = Math.abs(to - from) / Math.max(1, speed) + 1.5; // seconds on the road, and a margin
+    for (const ob of Traffic.near(p.x, p.y, 64, NEAR, true)) {
       if (!ob.car) continue;
       const o = ob.o as any;
-      const v = o.trip ? o.trip.v ?? 0 : o.v ?? (o.pause > 0 ? 0 : 1);
-      if (v < 0.15) continue; // standing still: it'll wait for us
-      const rx = p.x - o.x, ry = p.y - o.y;
-      if (rx * ob.dx + ry * ob.dy > -4) return true; // heading our way (or level with us)
+      const v = ob.v >= 0 ? ob.v : o?.trip ? o.trip.v ?? 0 : o?.v ?? (o?.pause > 0 ? 0 : 1);
+      if (v < 0.12) continue; // standing still (its body was checked above)
+      // how far it has to go to reach our line, along its heading (tiles)
+      const rx = p.x / T - ob.x, ry = p.y / T - ob.y;
+      const ahead = rx * ob.hx + ry * ob.hy, side = Math.abs(rx * -ob.hy + ry * ob.hx);
+      if (ahead < -ob.len / 2 - 0.3 || side > 0.75) continue; // gone past, or on another street
+      const gap = Math.max(0, ahead - ob.len / 2 - 0.2);
+      if (relaxed ? gap < (v * v) / (2 * 0.45) + 0.6 : gap / v < cross) return false;
+    }
+    return true;
+  },
+
+  /** V2: is lateral offset `lat` (px) on the walker's path at their spot inside a vehicle's body? */
+  bodyAt(t: any, lat: number, me: unknown): boolean {
+    const path: number[][] = t.path, n = path.length;
+    const prog = Math.max(0, Math.min(n - 1, t.prog));
+    const k = Math.round(prog), u = prog - k;
+    const [dx, dy] = dirAt(path, k, u >= 0);
+    const x = (path[k][0] + 0.5 + dx * u) - (dy * lat) / T, y = (path[k][1] + 0.5 + dy * u) + (dx * lat) / T;
+    for (const ob of Traffic.near(x * T, y * T, 24, NEAR2, true)) {
+      if (!ob.car || ob.o === me) continue;
+      const rx = x - ob.x, ry = y - ob.y;
+      if (Math.abs(rx * ob.hx + ry * ob.hy) < ob.len / 2 + 0.05 && Math.abs(rx * -ob.hy + ry * ob.hx) < ob.w + 0.05) return true;
     }
     return false;
   },
 
   /** the signed lateral offset (px, right of the centreline) of side `s`: the pavement, or the crossing line
-   *  across a side street's mouth (the same distance out), with this walker's own line and any step aside */
+   *  across a side street's mouth (the same distance out), with this walker's own line and any step aside
+   *  (V2: never in towards the carriageway, where the cars' wing mirrors pass: out onto the verge instead) */
   offset(t: any, s: number): number {
     const w: WalkState = t.walk;
-    return s * (FOOT_PX + w.line) + (w.dodge || 0);
+    const lat = s * (FOOT_PX + w.line) + (w.dodge || 0);
+    // (round a car standing on the pavement, a step either side of it is allowed)
+    return (w.wide || 0) > 0 ? s * Math.max(0.6, Math.min(PAVE_OUT + 2, lat * s)) : s * Math.max(PAVE_IN, Math.min(PAVE_OUT, lat * s));
   },
 
   /** where the walker is (sets x, y, dirx/diry: the stretch's axis, hx/hy: their heading) */
@@ -206,3 +287,96 @@ export const Walk = {
   },
 };
 const NEAR: ReturnType<typeof Traffic.near> = [];
+const NEAR2: ReturnType<typeof Traffic.near> = [];
+
+/* ---------- V2: the crowds an incident draws (onlookers, neighbours with buckets, reporters) ----------
+   They used to glide in a straight line from their door to the scene in a few seconds, through houses, parked
+   cars and the traffic, and stood in a ring that took in the middle of the road. Now each walks (or runs) out to
+   the street, along its pavement (round the corners on the kerb), and off it to a spot on the pavement or the
+   verge near the scene; on the way they're road users like anyone on foot (sim/traffic.ts). Their progress stays
+   `f` (0 at the door … 1 at the spot), so the incident code is unchanged. Positions are V1 pixels. */
+interface Route { pts: number[][]; cum: number[]; total: number }
+const G_WATER = 1;
+const free = (tx: number, ty: number): boolean =>
+  World.inB(tx, ty) && !World.isRoad(tx, ty) && !World.isRail(tx, ty) && !World.buildingAt(tx, ty) && World.ground[World.idx(tx, ty)] !== G_WATER;
+export const Stroll = {
+  /** a spot (px) moved off the carriageway: onto the pavement of the street it's on, or the nearest open ground */
+  offRoad(x: number, y: number): { x: number; y: number } {
+    const tx = Math.floor(x / T), ty = Math.floor(y / T);
+    if (!World.isRoad(tx, ty) && !World.isRail(tx, ty) && !World.buildingAt(tx, ty)) return { x, y };
+    if (World.isRoad(tx, ty)) {
+      const ew = isRoad(tx - 1, ty) || isRoad(tx + 1, ty), ns = isRoad(tx, ty - 1) || isRoad(tx, ty + 1);
+      const lx = x - (tx * T + 8), ly = y - (ty * T + 8);
+      // a plain stretch: its pavement, on the side the spot was nearer to (if that side isn't more road)
+      if (ew && !ns) { const s = ly >= 0 ? 1 : -1; if (!isRoad(tx, ty + s)) return { x, y: ty * T + 8 + s * (FOOT_PX + 0.3) }; if (!isRoad(tx, ty - s)) return { x, y: ty * T + 8 - s * (FOOT_PX + 0.3) }; }
+      if (ns && !ew) { const s = lx >= 0 ? 1 : -1; if (!isRoad(tx + s, ty)) return { x: tx * T + 8 + s * (FOOT_PX + 0.3), y }; if (!isRoad(tx - s, ty)) return { x: tx * T + 8 - s * (FOOT_PX + 0.3), y }; }
+    }
+    // anywhere else (a junction, a building): the nearest open ground
+    for (let r = 6; r <= 40; r += 4)
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+        if (free(Math.floor(px / T), Math.floor(py / T))) return { x: px, y: py };
+      }
+    return { x, y };
+  },
+
+  /** the walk from (sx, sy) to (tx, ty): to the street, along the pavement, to the spot */
+  route(o: any): Route {
+    if (o.route && o.route.sx === o.sx && o.route.tx === o.tx) return o.route.r;
+    const pts: number[][] = [[o.sx, o.sy]];
+    const a = World.nearestRoad(Math.floor(o.sx / T), Math.floor(o.sy / T), 4), b = World.nearestRoad(Math.floor(o.tx / T), Math.floor(o.ty / T), 6);
+    const path: number[][] | null = a && b ? World.roadPath(a.x, a.y, b.x, b.y) : null;
+    if (path && path.length) {
+      // the pavement on the side of the street the start is on
+      const p0 = path[0], p1 = path[1] || p0;
+      const dx = Math.sign(p1[0] - p0[0]) || (p1[1] === p0[1] ? 1 : 0), dy = Math.sign(p1[1] - p0[1]);
+      const side = (o.sx - (p0[0] * T + 8)) * -dy + (o.sy - (p0[1] * T + 8)) * dx >= 0 ? 1 : -1;
+      const pose = { x: 0, y: 0, hx: 1, hy: 0, dx: 1, dy: 0 };
+      const n = path.length;
+      for (let s = 0; s <= n - 1 + 1e-6; s += 0.25) {
+        lanePose(path, Math.min(n - 1, s), side * FOOT_PX, 1, pose);
+        pts.push([pose.x, pose.y]);
+      }
+    }
+    pts.push([o.tx, o.ty]);
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const r = { pts, cum, total: Math.max(1, cum[cum.length - 1]) };
+    o.route = { sx: o.sx, tx: o.tx, r };
+    return r;
+  },
+
+  /** would the next step (`dir` +1 on towards the spot, −1 back) put them in a vehicle's way? (they wait for it) */
+  blocked(o: any, dir: number): boolean {
+    const r = Stroll.route(o), keep = o.f;
+    o.f = Math.max(0, Math.min(1, keep + (dir * 1.4) / r.total));
+    const save = { x: o.x, y: o.y, hx: o.hx, hy: o.hy, dirx: o.dirx, diry: o.diry };
+    Stroll.place(o);
+    const x = o.x / T, y = o.y / T;
+    Object.assign(o, save);
+    o.f = keep;
+    for (const ob of Traffic.near(x * T, y * T, 24, NEAR2, true)) {
+      if (!ob.car) continue;
+      const rx = x - ob.x, ry = y - ob.y;
+      if (Math.abs(rx * ob.hx + ry * ob.hy) < ob.len / 2 + 0.06 && Math.abs(rx * -ob.hy + ry * ob.hx) < ob.w + 0.06) return true;
+    }
+    return false;
+  },
+
+  /** how fast `f` runs at `px` pixels a second (2.8 a walk, 6 a run) */
+  rate(o: any, px: number): number {
+    return px / Stroll.route(o).total;
+  },
+
+  /** set o.x, o.y and the heading for its progress `f` */
+  place(o: any): void {
+    const r = Stroll.route(o), d = Math.max(0, Math.min(1, o.f)) * r.total;
+    let i = 1;
+    while (i < r.cum.length - 1 && r.cum[i] < d) i++;
+    const a = r.pts[i - 1], b = r.pts[i], seg = r.cum[i] - r.cum[i - 1] || 1, k = Math.max(0, Math.min(1, (d - r.cum[i - 1]) / seg));
+    o.x = a[0] + (b[0] - a[0]) * k; o.y = a[1] + (b[1] - a[1]) * k;
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    o.hx = (b[0] - a[0]) / l; o.hy = (b[1] - a[1]) / l;
+    o.dirx = o.hx; o.diry = o.hy;
+  },
+};

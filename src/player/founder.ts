@@ -184,14 +184,39 @@ export class Founder {
   private person!: Person;
   private ride: Ride | null = null;
   private lastCar = { speed: 0, yaw: 0 };
-  private buildBody(): void {
+  /** V2: what the Founder wears, from the village's shops (colours; unset: the Founder's own purple) */
+  style: { top?: string; coat?: string; legs?: string; shoes?: string; scarf?: string } = {};
+  /** V2: the day the Founder last had a cut or a shave (people notice, that day) */
+  groomed = -1;
+  private hat: THREE.Group | null = null;
+  private scarfMesh: THREE.Mesh | null = null;
+  /** V2: put on something bought in a shop (the body is rebuilt in the new colours) */
+  restyle(part: 'top' | 'coat' | 'legs' | 'shoes' | 'scarf', colour: string): void {
+    this.style[part] = colour;
+    if (part === 'scarf') { (this.scarfMesh?.material as THREE.MeshStandardMaterial | undefined)?.color.set(colour); return; }
+    this.dressBody();
+  }
+  /** the Founder's figure in the clothes they wear, with the hat and the scarf on */
+  private dressBody(): void {
     const c = (h: string): THREE.Color => new THREE.Color(h);
+    const st = this.style;
+    if (this.person) {
+      this.mesh.remove(this.person.root);
+      if (this.hat) this.person.bones.head.remove(this.hat);
+      if (this.scarfMesh) this.person.bones.neck.remove(this.scarfMesh);
+    }
     this.person = new Person({
       height: 1.83, build: 1.04, female: false, skin: c('#e0ac85'), hair: c('#3a2618'),
-      top: c('#4a2a6a'), legs: c('#2a2238'), shoes: c('#16121a'), longHair: false, longSleeves: true, skirt: false, coat: c('#4a2a6a'),
+      top: c(st.top ?? st.coat ?? '#4a2a6a'), legs: c(st.legs ?? '#2a2238'), shoes: c(st.shoes ?? '#16121a'), longHair: false, longSleeves: true, skirt: false,
+      coat: c(st.coat ?? st.top ?? '#4a2a6a'),
     });
     this.person.carriesUmbrella = false;
     this.mesh.add(this.person.root);
+    if (this.hat) this.person.bones.head.add(this.hat);
+    if (this.scarfMesh) this.person.bones.neck.add(this.scarfMesh);
+  }
+  private buildBody(): void {
+    this.dressBody();
     const felt = surface(new THREE.MeshStandardMaterial({ color: 0x1e1a24, roughness: 0.75 }), { snow: 0.8, wet: 0.5 }, 'felt');
     const gold = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.35, metalness: 0.6 });
     const hat = new THREE.Group();
@@ -205,11 +230,14 @@ export class Founder {
     hat.rotation.x = -0.05;
     hat.traverse((o) => (o.castShadow = true));
     this.person.bones.head.add(hat);
+    this.hat = hat;
     const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.016, 8, 24), surface(new THREE.MeshStandardMaterial({ color: 0xb8902e, roughness: 0.9 }), { snow: 0.6, wet: 0.6 }, 'scarf'));
     scarf.rotation.x = Math.PI / 2;
     scarf.scale.set(1.15, 1, 0.95);
     scarf.position.set(0, 0.0, 0.008);
     this.person.bones.neck.add(scarf);
+    this.scarfMesh = scarf;
+    if (this.style.scarf) (scarf.material as THREE.MeshStandardMaterial).color.set(this.style.scarf);
     // a faint golden glow at the Founder's feet — villagers say buildings rise where it walks
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 32), new THREE.MeshBasicMaterial({ color: 0xffd060, transparent: true, opacity: 0.3, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
@@ -328,6 +356,9 @@ export class Founder {
     }
     this.fleet.restore(save?.fleet as any);
     this.bag = (save?.bag || []).slice(-16);
+    // V2: in the clothes they last bought
+    const st = save?.style || {};
+    if (JSON.stringify(st) !== JSON.stringify(this.style)) { this.style = { ...st }; this.dressBody(); if (this.scarfMesh) (this.scarfMesh.material as THREE.MeshStandardMaterial).color.set(st.scarf ?? '#b8902e'); }
     if (!this.fleet.list.length) {
       // the Founder's own saloon (also for saves from before vehicles could be owned)
       const v = this.fleet.add({ model: 'founder', name: "Founder's saloon", kind: 'car', style: 'sedan', color: '#3e1a5e', price: 340 });
@@ -415,7 +446,7 @@ export class Founder {
     return {
       x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: at ? { x: at.x, z: at.z, yaw: at.yaw } : null,
       wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), damage: Math.round(this.fleet.cur?.damage ?? 0),
-      fleet: this.fleet.serialize(), returnCars, bag: this.bag.slice(),
+      fleet: this.fleet.serialize(), returnCars, bag: this.bag.slice(), style: { ...this.style },
     };
   }
 
@@ -519,11 +550,16 @@ export class Founder {
   /** V2 (Milestone 8): on foot, the village's traffic is solid too: a car, a bus or a cab standing or passing is
    *  walked round, not through (a moving one that runs into the Founder is a knock: sim/traffic.ts hits) */
   private collideTraffic(p: { x: number; z: number }, r: number): void {
-    for (const ob of Traffic.near(p.x * 2, p.z * 2, 30, this.nearV)) {
-      if (!ob.car) continue;
+    for (const ob of Traffic.near(p.x * 2, p.z * 2, 30, this.nearV, false, true)) {
       const o = ob.o as any;
       const x = (o.x ?? ob.x * 16) * 0.5, z = (o.y ?? ob.y * 16) * 0.5;
-      const yaw = Math.atan2(o.hx ?? ob.dx, o.hy ?? ob.dy), L = ob.len * 8;
+      if (!ob.car) {
+        // V2: the villagers on foot too (they step round the Founder: sim/walking.ts); a body each, not a ghost
+        const rr = r + (ob.still && ob.len ? 0.5 : 0.28), dx = p.x - x, dz = p.z - z, d = Math.hypot(dx, dz);
+        if (d < rr && d > 1e-4) { p.x = x + (dx / d) * rr; p.z = z + (dz / d) * rr; }
+        continue;
+      }
+      const yaw = Math.atan2(ob.hx, ob.hy), L = ob.len * 8;
       capsule(p, r, x, z, yaw, Math.max(0.2, L / 2 - 0.9), L > 6 ? 1.25 : L < 3 ? 0.45 : 0.92);
     }
   }
@@ -649,8 +685,16 @@ export class Founder {
       const o = ob.o as any;
       const ox = (o.x ?? ob.x * 16) * 0.5, oz = (o.y ?? ob.y * 16) * 0.5;
       if (!ob.car) {
-        // someone on foot in the car's path
-        if (!o.trip || o.state !== 'walk' || o.knocked) continue;
+        // V2: someone lying in the road (or anyone standing at a scene): the car stops against them, never over them
+        if (!o.trip || o.state !== 'walk' || o.knocked) {
+          for (const k of mine) {
+            const mx = c.x + fx * k, mz = c.z + fz * k, dx = mx - ox, dz = mz - oz, d = Math.hypot(dx, dz), rr = R + (ob.len ? 0.6 : 0.3);
+            if (d >= rr || d < 1e-4) continue;
+            c.x += (dx / d) * (rr - d); c.z += (dz / d) * (rr - d);
+            c.speed *= 0.2;
+          }
+          continue;
+        }
         for (const k of mine) {
           const mx = c.x + fx * k, mz = c.z + fz * k;
           if (Math.hypot(mx - ox, mz - oz) > R + 0.3) continue;
@@ -663,8 +707,9 @@ export class Founder {
         }
         continue;
       }
-      // a vehicle: its body as a row of circles along its heading
-      let hx = o.dirx ?? ob.dx, hz = o.diry ?? ob.dy;
+      // a vehicle: its body as a row of circles along its heading (V2: its true heading, round a bend too: the
+      // stretch's axis left a turning car's nose and tail where the Founder's car could drive through them)
+      let hx = ob.hx, hz = ob.hy;
       const hl = Math.hypot(hx, hz) || 1;
       hx /= hl; hz /= hl;
       const L = ob.len * 8, r = L > 6 ? 1.25 : L < 3 ? 0.6 : 0.95;

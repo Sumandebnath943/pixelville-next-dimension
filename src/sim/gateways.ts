@@ -20,7 +20,8 @@ import { MIN_PER_SEC, T } from './core';
 import { GW, GH, World } from './world';
 import { Sim, PRICES } from './agents';
 import { Life } from './life';
-import { FOOT_PX } from './traffic';
+import { Traffic } from './traffic';
+import { Walk } from './walking';
 import { Mind } from './mind';
 import { Tasks } from './tasks';
 
@@ -290,8 +291,12 @@ export const Gateways = {
         if (v.stay <= 0 || !World.buildings.includes(v.venue)) { v.phase = 'out'; v.path = [...v.path].reverse(); v.prog = 0; v.venue.inside = Math.max(0, v.venue.inside - 1); }
         continue;
       }
-      v.prog += 0.3 * dt; // walking pace, like the villagers
-      Life.followPath(v, v.path, Math.min(v.prog, v.path.length - 1), FOOT_PX); // V2 (Milestone 8): on the pavement
+      // walking pace, like the villagers; V2: on the pavement as they walk, giving way at the kerb and round each
+      // other (sim/walking.ts), and in the traffic's sight (they used to cross side streets through the cars)
+      if (!v.trip || v.trip.path !== v.path) { v.trip = { path: v.path, prog: v.prog }; Walk.plan(v, v.trip, null, v.phase === 'in' ? v.venue : null); }
+      v.trip.prog = Math.min(v.path.length - 1, v.trip.prog + Walk.step(v, v.trip, dt, 0.3));
+      Walk.pose(v, v.trip);
+      v.prog = v.trip.prog;
       if (v.prog >= v.path.length - 1) {
         if (v.phase === 'in') {
           v.phase = 'stay';
@@ -378,3 +383,5 @@ export const Gateways = {
     if (s) this.lineTried = s.lt || '';
   },
 };
+// V2: visitors walking the streets are road users on foot
+Traffic.sources.push((foot) => { for (const v of Gateways.visitors) if (v.phase !== 'stay') foot(v); });

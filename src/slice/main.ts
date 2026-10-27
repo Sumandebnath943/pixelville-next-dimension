@@ -5,6 +5,7 @@
    snow cover and leaf fall), wind, street life, and cameras at
    eye level and from above.
    ============================================================ */
+import { lodEye } from '../gfx/vegetation';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, detectQuality } from '../gfx/pipeline';
@@ -322,6 +323,7 @@ async function main(): Promise<void> {
       f.update(dt);
     }
     street.grass.update(camera.position, P.grassRange);
+    lodEye.value.copy(camera.position); // (V2: the leaves thin with distance from the viewer)
     precip.update(st.rain, st.snowfall, sky.ambient);
 
     // reflections: the river every frame it's on screen, the street only when wet

@@ -11,7 +11,8 @@ import { Mind } from './mind';
 import { Calamity } from './calamity';
 import { Gov } from './gov';
 import { Festivals } from './festivals';
-import { Traffic, lanePose, railPose, FOOT_PX, kerbside } from './traffic';
+import { Traffic, lanePose, railPose, kerbside, isBox, CAR_LEN } from './traffic';
+import { Walk, Stroll } from './walking';
 import { peakTrail } from './peak';
 import { Rep } from './reputation';
 import { Health } from './health';
@@ -113,27 +114,39 @@ export const Life: any = {
   coverStory(cx: number, cy: number, ref: any, headline: string) {
     const station = World.buildings.find((b: Building) => b.type === 'tvstation' && b.connected && !b.construction && !b.ruined);
     if (!station || this.reporters.length >= 3) return;
+    // (V2: filming from the pavement, not the middle of the road)
+    const spot = Stroll.offRoad(cx + 10, cy + 6);
     this.reporters.push({
       sx: station.door.x * T + 8, sy: station.door.y * T + 8,
-      tx: cx + 10, ty: cy + 6,
+      tx: spot.x, ty: spot.y,
       f: 0, phase: 'come', stay: 30, age: 0, ref: ref || null,
       seed: (station.id * 131 + this.reporters.length * 17) >>> 0,
     });
     if (headline) News.breaking(headline);
+  },
+  /** V2: someone in a gathering crowd moves along their route (sim/walking.ts Stroll) at `px` pixels a second */
+  stroll(o: any, px: number, dt: number) {
+    // (and they wait for a car in their way, as anyone on foot does)
+    // (for a while: something left standing across their way for good, they go round it)
+    const there = px > 0 ? o.f >= 1 : o.f <= 0;
+    const wait = !there && (o.waitB || 0) < 8 && Stroll.blocked(o, Math.sign(px));
+    o.waitB = wait ? (o.waitB || 0) + dt : 0;
+    if (!there && !wait) o.f = Math.max(0, Math.min(1, o.f + dt * Stroll.rate(o, Math.abs(px)) * Math.sign(px)));
+    Stroll.place(o);
   },
   tickReporters(dt: number) {
     const gm = dt * MIN_PER_SEC;
     for (const r of this.reporters) {
       r.age += gm;
       if (r.phase === 'come') {
-        r.f = Math.min(1, r.f + dt * 0.35);
+        this.stroll(r, 5, dt); // (hurrying with the camera)
         if (r.f >= 1) r.phase = 'report';
       } else if (r.phase === 'report') {
         r.stay -= gm;
         const live = r.ref && !r.ref.over && r.age < 200;
         if (r.stay <= 0 && !live) r.phase = 'leave';
       } else {
-        r.f -= dt * 0.3;
+        this.stroll(r, -2.8, dt);
       }
     }
     this.reporters = this.reporters.filter((r: any) => r.phase !== 'leave' || r.f > 0);
@@ -193,10 +206,11 @@ export const Life: any = {
       if (helpers.length >= 4) break;
       if (!CAT[h.type].res || !h.residents.length || h === b || h.ruined) continue;
       if (Math.abs(h.x - b.x) + Math.abs(h.y - b.y) > 22) continue;
+      // (V2: where they stand with the buckets: off the road, out of the traffic)
+      const at = Stroll.offRoad(cx + Math.cos(helpers.length * 1.6 + b.id) * (b.w * 8 + 9), cy + Math.sin(helpers.length * 1.6 + b.id) * (b.h * 8 + 7) + 5);
       helpers.push({
         sx: h.door.x * T + 8, sy: h.door.y * T + 8,
-        tx: cx + Math.cos(helpers.length * 1.6 + b.id) * (b.w * 8 + 9),
-        ty: cy + Math.sin(helpers.length * 1.6 + b.id) * (b.h * 8 + 7) + 5,
+        tx: at.x, ty: at.y,
         f: 0, seed: (h.id * 613 + helpers.length * 7) >>> 0,
         kind: helpers.length % 2 ? 'woman' : 'man',
       });
@@ -306,7 +320,7 @@ export const Life: any = {
       }
     }
     // bucket crews hurry over; disband when the fire is over
-    for (const k of this.buckets) for (const h of k.helpers) h.f = Math.min(1, h.f + dt * 0.3);
+    for (const k of this.buckets) for (const h of k.helpers) this.stroll(h, 6, dt); // (V2: running with the buckets, by the streets)
     this.buckets = this.buckets.filter((k: any) => k.b.fire);
     // trucks
     for (const u of this.fireTrucks) {
@@ -316,7 +330,12 @@ export const Life: any = {
         const step = Traffic.advance(u, (u.drv ??= {}), u.path, u.prog, 1, 2.5, dt, 1.1, true);
         u.prog += step;
         this.followPath(u, u.path, Math.min(u.prog, u.path.length - 1), Traffic.lanePx(u.drv));
-        if (Traffic.there(u.drv, u.path.length - 1 - u.prog, step, dt)) { u.phase = 'douse'; u.douse = 22; }
+        if (Traffic.there(u.drv, u.path.length - 1 - u.prog, step, dt)) {
+          // (V2: behind anything already standing at the fire, not on top of it)
+          u.prog = Traffic.settle(u, u.path, Math.min(u.prog, u.path.length - 1), Traffic.lanePx(u.drv), 1.1);
+          this.followPath(u, u.path, u.prog, Traffic.lanePx(u.drv));
+          u.phase = 'douse'; u.douse = 22;
+        }
       } else if (u.phase === 'douse') {
         u.douse -= gm;
         if (u.douse <= 0 || !u.target.fire) {
@@ -539,10 +558,17 @@ export const Life: any = {
     const doorPx = { x: stop.door.x * T + 8, y: stop.door.y * T + 6 };
     let ax = stop.door.x - cx, ay = stop.door.y - cy;              // step out toward the kerb
     if (!ax && !ay) ay = 1;
+    // V2: off a bus or a cab, they step down from its kerbside door onto the pavement and walk away from the road
+    // (they used to appear in the middle of the road, inside the bus, and walk out through its side)
+    const road = this.buses.includes(vehicle) || this.taxis.includes(vehicle);
+    const hx = vehicle.hx ?? vehicle.dirx ?? 1, hy = vehicle.hy ?? vehicle.diry ?? 0, hl = Math.hypot(hx, hy) || 1;
+    const nx = -hy / hl, ny = hx / hl, out = (this.buses.includes(vehicle) ? 2.4 : 1.9) + 1.3;
     if (vehicle.pax && vehicle.pax.length && Math.random() < 0.85) {
       const n = 1 + (Math.random() < 0.35 ? 1 : 0);
-      for (let i = 0; i < n && vehicle.pax.length; i++)
-        this.spawnAlighter(doorPx.x, doorPx.y, ax, ay, vehicle.pax.shift());
+      for (let i = 0; i < n && vehicle.pax.length; i++) {
+        if (road) this.spawnAlighter(vehicle.x + nx * out + (hx / hl) * (2.5 - i * 1.6), vehicle.y + ny * out + (hy / hl) * (2.5 - i * 1.6), nx * 0.3 + (hx / hl) * (i ? -0.95 : 0.95), ny * 0.3 + (hy / hl) * (i ? -0.95 : 0.95), vehicle.pax.shift(), 2.8);
+        else this.spawnAlighter(doorPx.x, doorPx.y, ax, ay, vehicle.pax.shift());
+      }
     }
     if (q && q.waiting.length && vehicle.pax.length < vehicle.cap) {
       const room = vehicle.cap - vehicle.pax.length;
@@ -551,14 +577,24 @@ export const Life: any = {
       stop.visitors += n;                                          // the stop earns its keep
     }
   },
+  /** V2: where the i-th person in the queue at a stop stands (px): along the pavement by the shelter, a step apart
+   *  (render/actors.ts draws them there; the traffic indexes them so passers-by walk round them) */
+  queueSpot(stop: Building, i: number): { x: number; y: number; yaw: number } {
+    const x0 = stop.door.x * T + 8, y0 = stop.door.y * T + 8;
+    const bx = (stop.x + stop.w / 2) * T, by = (stop.y + stop.h / 2) * T;
+    const uy = Math.sign(by - y0);
+    // (a queue runs along the street: across the way from the shelter's door if it faces up or down the map)
+    const along = uy ? [1, 0] : [0, 1];
+    return { x: (x0 + bx) / 2 + along[0] * (i * 1.6 - 4), y: (y0 + by) / 2 + along[1] * (i * 1.6 - 4), yaw: Math.atan2(x0 - bx, y0 - by) };
+  },
   /* a passenger hops off and wanders a few steps onto the pavement, then fades */
-  spawnAlighter(px: number, py: number, awayX: number, awayY: number, pax: any) {
+  spawnAlighter(px: number, py: number, awayX: number, awayY: number, pax: any, speed = 12) {
     if (this.alighters.length > 50 || !pax) return;
     if (World.isRail((px / T) | 0, (py / T) | 0)) return;   // never set foot on the tracks
     const m = Math.hypot(awayX, awayY) || 1;
     this.alighters.push({
       seed: pax.seed, kind: pax.kind, x: px, y: py,
-      vx: (awayX / m) * 12, vy: (awayY / m) * 12,
+      vx: (awayX / m) * speed, vy: (awayY / m) * speed, hx: awayX / m, hy: awayY / m,
       life: 3.5 + Math.random() * 1.5, ph: Math.random() * 7,
     });
   },
@@ -1162,7 +1198,11 @@ export const Life: any = {
           if (!World.roadMap[i]) continue;
           const x = i % GW, y = (i / GW) | 0;
           const m = World.roadMask(x, y);
-          if ((m === 5 || m === 10) && World.ground[i] !== G_WATER) straights.push([x, y]);
+          // (V2: and not just past a junction: drivers wait at a junction for room on its far side, and a coned-off
+          // lane there would hold them at the line for ever)
+          const ax = m === 10 ? 1 : 0, ay = m === 5 ? 1 : 0;
+          const nearBox = [-2, -1, 1, 2].some((k) => isBox(x + ax * k, y + ay * k));
+          if ((m === 5 || m === 10) && World.ground[i] !== G_WATER && !nearBox) straights.push([x, y]);
         }
         if (straights.length > 6) {
           const [x, y] = straights[(Math.random() * straights.length) | 0];
@@ -1198,10 +1238,10 @@ export const Life: any = {
     const helpers = [];
     for (const spot of this.crowdSpots(cx, cy, 40)) {
       if (helpers.length >= 7) break;
+      const at = Stroll.offRoad(cx + Math.cos(helpers.length * 1.3) * (b.w * 8 + 10), cy + Math.sin(helpers.length * 1.3) * (b.h * 8 + 8));
       helpers.push({
         sx: spot.x, sy: spot.y,
-        tx: cx + Math.cos(helpers.length * 1.3) * (b.w * 8 + 10),
-        ty: cy + Math.sin(helpers.length * 1.3) * (b.h * 8 + 8),
+        tx: at.x, ty: at.y,
         f: 0, seed: (spot.id * 977 + helpers.length) >>> 0,
         kind: ['man', 'woman'][helpers.length % 2],
       });
@@ -1244,7 +1284,7 @@ export const Life: any = {
       if (ruin) this.startDisaster(ruin, 'rebuild');
       return;
     }
-    for (const h of D.helpers) h.f = Math.min(1, h.f + dt * 0.25); // hurry to the site
+    for (const h of D.helpers) this.stroll(h, 6, dt); // hurry to the site (V2: by the streets, at a run)
     D.t -= gm;
     if (D.phase === 'respond' && D.t <= 30) {
       D.phase = 'clear';
@@ -1337,9 +1377,11 @@ export const Life: any = {
     const spots = this.crowdSpots(cx, cy, 40);
     for (let i = 0; i < n && i < spots.length; i++) {
       const a = i * 2.4 + (cx + cy) * 0.01;
+      // (V2: watching from the pavement or the verge, never standing in the road the traffic still uses)
+      const at = Stroll.offRoad(cx + Math.cos(a) * (11 + (i % 2) * 4), cy + Math.sin(a) * 8 + 3);
       this.gawkers.push({
         sx: spots[i].x, sy: spots[i].y,
-        tx: cx + Math.cos(a) * (11 + (i % 2) * 4), ty: cy + Math.sin(a) * 8 + 3,
+        tx: at.x, ty: at.y,
         f: 0, phase: 'come', stay: 14 + i * 4, age: 0, ref: ref || null, gawk: true,
         seed: (spots[i].id * 389 + i * 31) >>> 0, kind: i % 2 ? 'woman' : 'man',
       });
@@ -1350,7 +1392,7 @@ export const Life: any = {
     for (const g of this.gawkers) {
       g.age += gm;
       if (g.phase === 'come') {
-        g.f = Math.min(1, g.f + dt * 0.3);
+        this.stroll(g, 4, dt); // (V2: walking briskly over, by the streets)
         if (g.f >= 1) g.phase = 'watch';
       } else if (g.phase === 'watch') {
         g.stay -= gm;
@@ -1358,7 +1400,7 @@ export const Life: any = {
         const live = g.ref && !g.ref.over && g.age < 240;
         if (g.stay <= 0 && !live) g.phase = 'leave';
       } else {
-        g.f -= dt * 0.25;
+        this.stroll(g, -2.8, dt);
       }
     }
     this.gawkers = this.gawkers.filter((g: any) => g.phase !== 'leave' || g.f > 0);
@@ -1577,6 +1619,18 @@ export const Life: any = {
     const force = speed * mass;
     p.knocked = true;
     p.freezeT = 10 + Math.min(25, force * 2);
+    // V2: thrown ahead of what hit them, clear of it (they used to fall where they stood, under the car, and lie there
+    // with the car on top of them until the ambulance came)
+    if (veh && veh.x !== undefined) {
+      let hx = veh.hx ?? veh.dirx ?? 0, hy = veh.hy ?? veh.diry ?? 0;
+      const hl = Math.hypot(hx, hy);
+      if (hl > 1e-6) {
+        hx /= hl; hy /= hl;
+        const half = (mass >= 1.6 ? 1.3 : mass >= 1.25 ? 0.75 : mass < 0.7 ? 0.3 : 0.56) * 8;
+        const ahead = (p.x - veh.x) * hx + (p.y - veh.y) * hy;
+        if (ahead < half + 2.5) { p.x += hx * (half + 2.5 - ahead); p.y += hy * (half + 2.5 - ahead); }
+      }
+    }
     p.bubble = '🤕'; p.bubbleUntil = performance.now() + 6000;
     p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 10);
     Snd.crunch({ x: p.x, y: p.y });
@@ -1832,8 +1886,11 @@ export const Life: any = {
     if (c) {
       const B = c.burglar;
       if (B.phase === 'approach' || B.phase === 'flee') {
-        B.prog += 0.7 * dtSim; // V2: a burglar on foot runs ~5.6 m/s
-        this.followPath(B, B.path, B.prog, FOOT_PX);
+        // V2: a burglar on foot runs ~5.6 m/s, on the pavement, round people and cars (sim/walking.ts)
+        if (!B.trip || B.trip.path !== B.path) { B.trip = { path: B.path, prog: B.prog }; Walk.plan(B, B.trip, null, null); }
+        B.trip.prog = Math.min(B.path.length - 1, B.trip.prog + Walk.step(B, B.trip, dtSim, 0.7));
+        Walk.pose(B, B.trip);
+        B.prog = B.trip.prog;
         if (B.prog >= B.path.length - 1) {
           if (B.phase === 'approach') {
             B.phase = 'rob'; c.robT = 26;
@@ -1871,6 +1928,9 @@ export const Life: any = {
       this.followPath(u, u.path, Math.min(u.prog, u.path.length - 1), Traffic.lanePx(u.drv));
       if (Traffic.there(u.drv, u.path.length - 1 - u.prog, step, dtSim)) {
         if (u.phase === 'go') {
+          // (V2: pulled up behind anything already standing at the scene)
+          u.prog = Traffic.settle(u, u.path, Math.min(u.prog, u.path.length - 1), Traffic.lanePx(u.drv), CAR_LEN);
+          this.followPath(u, u.path, u.prog, Traffic.lanePx(u.drv));
           // arrived at the scene
           const cc = u.patrol ? null : this.crime;
           if (cc && (cc.burglar.phase === 'rob' ||

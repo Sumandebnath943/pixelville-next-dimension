@@ -58,6 +58,9 @@ class Geo {
   rand: number[] = [];
   col: number[] = [];
   idx: number[] = [];
+  /** V2: per vertex: the branch level (wood), or the leaf card's centre and its rank for thinning out (leaves) */
+  lvl: number[] = [];
+  card: number[] = [];
   get n(): number {
     return this.pos.length / 3;
   }
@@ -78,11 +81,61 @@ class Geo {
     g.setAttribute('aWind', new THREE.Float32BufferAttribute(this.wind, 4));
     g.setAttribute('aRand', new THREE.Float32BufferAttribute(this.rand, 1));
     if (this.col.length) g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    if (this.card.length) g.setAttribute('aCard', new THREE.Float32BufferAttribute(this.card, 4));
     g.setIndex(this.idx);
     g.computeBoundingSphere();
     return g;
   }
 }
+
+/**
+ * V2: a lighter version of a built tree for further off: the same vertex buffers (so the same tree, branch for
+ * branch and leaf for leaf where it keeps them) with only the triangles of the branches up to `maxLevel` and of the
+ * leaf cards ranked below `keep` (the leaf shader scales the cards it keeps up as the rest drop away, so the crown
+ * stays as full and the same shape: see THIN).
+ */
+function subset(g: THREE.BufferGeometry, keep: (a: number) => boolean): THREE.BufferGeometry {
+  const src = g.index!.array, idx: number[] = [];
+  for (let i = 0; i < src.length; i += 3) if (keep(src[i])) idx.push(src[i], src[i + 1], src[i + 2]);
+  const out = new THREE.BufferGeometry();
+  for (const [k, a] of Object.entries(g.attributes)) out.setAttribute(k, a);
+  out.setIndex(idx);
+  out.boundingSphere = g.boundingSphere;
+  return out;
+}
+
+/* V2: leaf cards thin out with distance, continuously. Each card has a rank (0…1); at distance d the cards ranked
+   below keep(d) = clamp((uLodD0 / d)^1.3, 1/8, 1) are drawn, each scaled up by 1/√keep about its centre so the crown
+   keeps its cover and its outline, and the rest shrink to nothing. The meshes a tree switches between further off
+   (subset above) hold exactly the cards that are still drawn there, so a switch changes nothing on screen: no tree
+   swaps its shape as the camera moves. (Distances from uLodEye, the viewer, so the shadow pass thins the same.) */
+export const lodEye = { value: new THREE.Vector3() };
+export const lodD0 = { value: 40 };
+const KEEP_MIN = 0.125;
+const THIN_DECL = /* glsl */ `
+attribute vec4 aCard;
+uniform vec3 uLodEye;
+uniform float uLodD0;
+uniform float uThin;
+`;
+const THIN = /* glsl */ `
+{
+  vec3 lo = vec3(0.0);
+  #ifdef USE_INSTANCING
+    lo = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  #endif
+  lo = (modelMatrix * vec4(lo, 1.0)).xyz;
+  float keep = mix(1.0, clamp(pow(uLodD0 / max(1.0, distance(lo, uLodEye)), 1.3), ${KEEP_MIN.toFixed(3)}, 1.0), uThin);
+  transformed = aCard.w >= keep ? aCard.xyz : aCard.xyz + (transformed - aCard.xyz) * inversesqrt(keep);
+}
+`;
+/** the fraction of cards drawn at distance d (as the shader has it) */
+function keepAt(d: number): number {
+  return Math.max(KEEP_MIN, Math.min(1, Math.pow(lodD0.value / Math.max(1, d), 1.3)));
+}
+/** the cards (by rank) and the branch levels each level of detail holds */
+const LOD_KEEP = [1.01, 0.5, 0.25, KEEP_MIN];
+const LOD_WOOD = [9, 1, 1, 0], LOD_WOOD_CONIFER = [9, 1, 0, 0];
 
 function rng(seed: number): () => number {
   let s = (seed * 2654435761) >>> 0 || 1;
@@ -159,7 +212,7 @@ const SPECIES: Record<Species, SpeciesDef> = {
   },
 };
 
-interface TreeGeo { wood: THREE.BufferGeometry; leaves: THREE.BufferGeometry; height: number }
+interface TreeGeo { wood: THREE.BufferGeometry; leaves: THREE.BufferGeometry; height: number; lods: { wood: THREE.BufferGeometry; leaves: THREE.BufferGeometry }[] }
 
 const _t = new THREE.Vector3(), _n1 = new THREE.Vector3(), _n2 = new THREE.Vector3(), _p = new THREE.Vector3(), _nn = new THREE.Vector3();
 function perp(d: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
@@ -219,6 +272,7 @@ export function buildTree(species: Species, seed: number): TreeGeo {
         _nn.copy(nrm).multiplyScalar(Math.cos(a)).addScaledVector(bin, Math.sin(a));
         _p.copy(pts[i]).addScaledVector(_nn, r);
         wood.v(_p, _nn, (k / radial) * uRep, arc, [Math.min(1, _p.y / H), flexAt(t), 0, phase], R());
+        wood.lvl.push(level);
       }
     }
     for (let i = 0; i < segs; i++)
@@ -249,6 +303,10 @@ export function buildTree(species: Species, seed: number): TreeGeo {
         const i0 = leaves.v(c0, lightN, 0, 0, w, r, tint), i1 = leaves.v(c1, lightN, 1, 0, w, r, tint);
         const i2 = leaves.v(c2, lightN, 1, 1, w, r, tint), i3 = leaves.v(c3, lightN, 0, 1, w, r, tint);
         leaves.idx.push(i0, i1, i2, i0, i2, i3);
+        // (V2: its centre and its rank, for thinning out with distance: a hash, so the tree's own shape is untouched)
+        const rank = hash(i0 >> 2, seed, 17);
+        const mx = (c0.x + c2.x) / 2, my = (c0.y + c2.y) / 2, mz = (c0.z + c2.z) / 2;
+        for (let q = 0; q < 4; q++) leaves.card.push(mx, my, mz, rank);
       }
     }
 
@@ -274,7 +332,14 @@ export function buildTree(species: Species, seed: number): TreeGeo {
 
   const trunkLen = sp.conifer ? H : H * sp.lenRatio[0] * 1.15;
   grow(new THREE.Vector3(0, -0.2, 0), new THREE.Vector3((R() - 0.5) * 0.08, 1, (R() - 0.5) * 0.08), trunkLen + 0.2, sp.trunkR * (0.85 + R() * 0.3), 0, 0, R() * 6.28);
-  return { wood: wood.build(), leaves: leaves.build(), height: H };
+  const wg = wood.build(), lg = leaves.build();
+  // V2: the same tree lighter for further off: fewer of the fine branches, fewer (larger) leaf cards
+  const woodMax = sp.conifer ? LOD_WOOD_CONIFER : LOD_WOOD;
+  const lods = LOD_KEEP.map((keep, i) => ({
+    wood: i === 0 ? wg : subset(wg, (a) => wood.lvl[a] <= woodMax[i]),
+    leaves: i === 0 ? lg : subset(lg, (a) => leaves.card[a * 4 + 3] < keep),
+  }));
+  return { wood: wg, leaves: lg, height: H, lods };
 }
 
 /** a rounded bush (or a hedge when `len` > 0): leaf cards over an ellipsoid shell around a dark core */
@@ -311,6 +376,7 @@ export function buildBush(rx: number, ry: number, rz: number, seed: number, len 
     const tint = new THREE.Color().setHSL(0.26 + (R() - 0.5) * 0.05, 0.45, 0.36 + (R() - 0.5) * 0.1);
     const i0 = g.v(c0, ln, 0, 0, w, r, tint), i1 = g.v(c1, ln, 1, 0, w, r, tint), i2 = g.v(c2, ln, 1, 1, w, r, tint), i3 = g.v(c3, ln, 0, 1, w, r, tint);
     g.idx.push(i0, i1, i2, i0, i2, i3);
+    for (let q = 0; q < 4; q++) g.card.push(base.x, base.y, base.z, 0); // (V2: a bush keeps every leaf)
   }
   const core = len > 0 ? new THREE.BoxGeometry(len - 0.1, ry * 2 - 0.15, rz * 2 - 0.2) : new THREE.SphereGeometry(1, 10, 8);
   if (len > 0) core.translate(0, ry - 0.05, 0);
@@ -321,13 +387,13 @@ export function buildBush(rx: number, ry: number, rz: number, seed: number, len 
 /* ---------- materials ---------- */
 export const leafFall = { value: 0 };
 
-function foliageMaterial(tex: THREE.Texture, key: string, translucency = 0.35): THREE.MeshStandardMaterial {
+function foliageMaterial(tex: THREE.Texture, key: string, translucency = 0.35, thin = 1): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.45, vertexColors: true, roughness: 0.75, metalness: 0, side: THREE.DoubleSide });
   m.alphaToCoverage = true;
   return surface(m, {
     snow: 0.85, wet: 0.35, keepNormals: true, softBeam: true,
-    vDecl: WIND_DECL,
-    vDisplace: WIND_DISPLACE,
+    vDecl: WIND_DECL + THIN_DECL,
+    vDisplace: THIN + WIND_DISPLACE,
     fDecl: 'varying float vRand;\nvarying float vLeafH;\nuniform float uLeafFall;',
     fColor: `
       // autumn: leaves yellow and brown, then drop
@@ -342,7 +408,7 @@ function foliageMaterial(tex: THREE.Texture, key: string, translucency = 0.35): 
         float back = pow(max(0.0, dot(vdir, uSunDir)), 3.0);
         totalEmissiveRadiance += diffuseColor.rgb * uSunColor * back * ${translucency.toFixed(2)} * 0.12;
       }`,
-    uniforms: { uLeafFall: leafFall },
+    uniforms: { uLeafFall: leafFall, uLodEye: lodEye, uLodD0: lodD0, uThin: { value: thin } },
   }, key);
 }
 
@@ -373,7 +439,7 @@ export class Vegetation {
     this.broadleaf = foliageMaterial(leafCard(3), 'leaf');
     this.smallLeaf = foliageMaterial(leafCard(7, true), 'leafs');
     this.needles = foliageMaterial(needleCard(5), 'needle', 0.15);
-    this.bushMat = foliageMaterial(leafCard(9, true), 'bush', 0.2);
+    this.bushMat = foliageMaterial(leafCard(9, true), 'bush', 0.2, 0);
     this.coreMat = surface(new THREE.MeshStandardMaterial({ color: 0x14200c, roughness: 1 }), { snow: 0.8 }, 'core');
   }
 
@@ -509,13 +575,18 @@ function farTreeGeo(species: Species, seed: number, detail = 1): { crown: THREE.
 }
 
 interface LodSet { wood: THREE.InstancedMesh | null; leaves: THREE.InstancedMesh; deciduous: boolean }
+/** V2: how many trees each level of detail can hold (per species and variant) */
+const LOD_CAP = [700, 1600, 3200, 6000];
+/** the margin (m) a tree's level of detail is picked with: nearer than it stands, so that while the camera moves up to
+ *  the 14 m before the next sort, the mesh still holds every card the shader draws */
+const LOD_MARGIN = 16;
 
 export class TreeLayer {
   group = new THREE.Group();
   private veg: Vegetation;
-  private near = new Map<string, LodSet>();
-  private far = new Map<Species, LodSet>();
-  /** V2 (Milestone 8): beyond `midRange`, twenty-triangle crowns and no trunks */
+  /** V2: per species and variant, the same tree at four levels of detail (see THIN) */
+  private lods = new Map<string, LodSet[]>();
+  /** beyond `midRange`, twenty-triangle crowns and no trunks (V2 (Milestone 8)) */
   private distant = new Map<Species, LodSet>();
   private trees: TreeInstance[] = [];
   private lastX = 1e9;
@@ -532,37 +603,28 @@ export class TreeLayer {
     scene.add(this.group);
     this.veg = new Vegetation(scene);
     scene.remove(this.veg.group);
+    // (the leaves begin to thin at about a third of the old near range: 32 m on medium)
+    lodD0.value = nearRange * 0.34;
     const species: Species[] = ['oak', 'lime', 'birch', 'spruce', 'pine', 'fir'];
     for (const s of species) {
       const sp = SPECIES[s];
       const mats = this.veg.materialsFor(s);
       for (const v of [0, 1]) {
         const t = buildTree(s, 101 + v * 977 + s.length * 31);
-        const set: LodSet = {
-          wood: new THREE.InstancedMesh(t.wood, mats.bark, 600),
-          leaves: new THREE.InstancedMesh(t.leaves, mats.leaves, 600),
-          deciduous: sp.deciduous,
-        };
-        this.prep(set);
-        this.near.set(`${s}:${v}`, set);
+        const sets = t.lods.map((g, i): LodSet => {
+          const set: LodSet = {
+            wood: new THREE.InstancedMesh(g.wood, mats.bark, LOD_CAP[i]),
+            leaves: new THREE.InstancedMesh(g.leaves, mats.leaves, LOD_CAP[i]),
+            deciduous: sp.deciduous,
+          };
+          this.prep(set);
+          // (shadows from the nearer two; the far ones stay out of the mirror passes, as the old far crowns did)
+          if (i >= 2) for (const m of [set.wood!, set.leaves]) { m.castShadow = false; m.layers.set(LAYER_NO_REFLECT); }
+          return set;
+        });
+        this.lods.set(`${s}:${v}`, sets);
       }
-      const f = farTreeGeo(s, 7 + s.length);
-      // V2 (Milestone 8): a solid canopy for distant crowns. They wore the leaf texture, whose cut-outs fade away
-      // with distance (the mipmaps average them out), so far trees lost their crowns and stood as bare trunks
-      // (the white birch trunks looked like boxes floating over the fields)
-      const fset: LodSet = {
-        wood: new THREE.InstancedMesh(f.trunk, mats.bark, cap),
-        leaves: new THREE.InstancedMesh(f.crown, FAR_CROWN(), cap),
-        deciduous: sp.deciduous,
-      };
       this.farTint.set(s, FAR_TINT[s]);
-      this.prep(fset);
-      fset.wood!.castShadow = false;
-      fset.leaves.castShadow = false;
-      // distant crowns stay out of the mirror passes
-      fset.wood!.layers.set(LAYER_NO_REFLECT);
-      fset.leaves.layers.set(LAYER_NO_REFLECT);
-      this.far.set(s, fset);
       const d = farTreeGeo(s, 7 + s.length, 0);
       const dset: LodSet = { wood: null, leaves: new THREE.InstancedMesh(d.crown, FAR_CROWN(), cap), deciduous: sp.deciduous };
       this.prep(dset);
@@ -618,10 +680,14 @@ export class TreeLayer {
     this.dirty = true;
   }
 
-  /** re-sort near/far when the camera has moved far enough */
+  /** re-sort the levels of detail when the camera has moved far enough (V2: the leaves thin every frame, in the
+   *  shader, from where the camera is now) */
   frame(cam: THREE.Vector3): void {
+    lodEye.value.copy(cam);
     const fall = leafFall.value;
-    const sets = [...this.near.values(), ...this.far.values(), ...this.distant.values()];
+    const sets: LodSet[] = [];
+    for (const l of this.lods.values()) sets.push(...l);
+    for (const d of this.distant.values()) sets.push(d);
     for (const s of sets) if (s.deciduous) s.leaves.visible = fall < 0.99;
     // (the far canopies change colour through the autumn)
     if (Math.abs(fall - this.lastFall) > 0.05) { this.lastFall = fall; this.dirty = true; }
@@ -639,7 +705,17 @@ export class TreeLayer {
       const t = this.trees[i];
       const d2 = (t.x - cam.x) ** 2 + (t.z - cam.z) ** 2;
       if (d2 > far2) continue; // lost in the haze
-      const set = d2 < r2 ? this.near.get(`${t.species}:${i & 1}`)! : d2 < m2 ? this.far.get(t.species)! : this.distant.get(t.species)!;
+      let set: LodSet;
+      if (d2 < m2) {
+        // the level of detail that holds every card the shader will draw from here (and from 14 m nearer)
+        const keep = keepAt(Math.max(0, Math.sqrt(d2) - LOD_MARGIN));
+        const l = this.lods.get(`${t.species}:${i & 1}`)!;
+        let k = keep > 0.5 ? 0 : keep > 0.25 ? 1 : keep > KEEP_MIN + 1e-3 ? 2 : 3;
+        // (a full set hands the tree on to the next one out)
+        while (k < 4 && l[k].leaves.count >= l[k].leaves.instanceMatrix.count) k++;
+        if (k >= 4) continue;
+        set = l[k];
+      } else set = this.distant.get(t.species)!;
       if (set.leaves.count >= set.leaves.instanceMatrix.count) continue;
       q.setFromAxisAngle(up, t.rot);
       sc.set(t.scale * (t.sx ?? 1), t.scale, t.scale * (t.sx ?? 1));
@@ -648,7 +724,7 @@ export class TreeLayer {
       const k = set.leaves.count;
       set.wood?.setMatrixAt(k, m4);
       set.leaves.setMatrixAt(k, m4);
-      if (set !== this.near.get(`${t.species}:${i & 1}`)) {
+      if (!set.wood) {
         // (the far canopy's colour: the species', turning with the autumn, and the tree's own tint)
         tc.copy(this.farTint.get(t.species)!);
         if (set.deciduous && fall > 0.12) tc.lerp(AUTUMN, Math.min(1, (fall - 0.12) * 1.6));

@@ -18,7 +18,7 @@ import { Sim } from '../sim/agents';
 import { Mind } from '../sim/mind';
 import { Rep } from '../sim/reputation';
 import { family, on, emit } from '../sim/core';
-import { isJunction, LANE_PX } from '../sim/traffic';
+import { isJunction, Traffic, CAR_LEN } from '../sim/traffic';
 import { drivewayCars, DrivewayCar, styleForPaint } from '../render/parked';
 import type { Founder } from './founder';
 import type { Vehicle } from './fleet';
@@ -381,8 +381,11 @@ export class Wanted {
         u.lost = this.steer(u, t) ? 0 : (u.lost || 0) + 1;
         if (u.lost > 3) { this.sendHome(u); continue; }
       }
-      u.prog = Math.min(u.path.length - 1, u.prog + speed * dt);
-      Life.followPath(u, u.path, u.prog, LANE_PX);
+      // V2: on blue lights in the traffic (sim/traffic.ts): first across junctions, past a queue when the other lane
+      // is clear, but never through a car (a chase used to drive straight through the village's traffic)
+      const step = Traffic.advance(u, (u.drv ??= {}), u.path, u.prog, 1, speed, dt, CAR_LEN, true);
+      u.prog = Math.min(u.path.length - 1, u.prog + step);
+      Life.followPath(u, u.path, u.prog, Traffic.lanePx(u.drv));
     }
   }
   /** a new route to the target from wherever the car is now, without a jump: from its exact spot to the next tile, then on */
@@ -391,8 +394,9 @@ export class Wanted {
     const a = u.path[i], b = u.path[Math.min(i + 1, u.path.length - 1)];
     const path = World.roadPath(Math.round(b[0]), Math.round(b[1]), t.x, t.y);
     if (!path) return false;
-    u.path = [[a[0] + (b[0] - a[0]) * fr, a[1] + (b[1] - a[1]) * fr], ...path];
-    u.prog = 0;
+    // (whole tiles, as the traffic reads them: the tile it's leaving, then the new way on, as far along as it was)
+    u.path = a === b ? path : [a, ...path];
+    u.prog = a === b ? 0 : fr;
     return true;
   }
 

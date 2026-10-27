@@ -25,6 +25,7 @@ import { Hud } from './ui/hud';
 import { Panels } from './ui/panels';
 import { initTouch } from './ui/touch';
 import { Snd } from './audio/sounds';
+import { Soundscape } from './audio/scape';
 import { get, AUTO } from './save/store';
 import { texturesReady } from './gfx/textures';
 import { Traffic } from './sim/traffic';
@@ -47,6 +48,7 @@ import { contacts } from './ai/memory';
 import { jobName } from './player/indoors';
 import { Dialogue } from './ui/dialogue';
 import { Rep } from './sim/reputation';
+import { a as article } from './player/shopping';
 import { Health } from './sim/health';
 import { Power } from './sim/power';
 import { Supply, GOODS } from './sim/supply';
@@ -223,6 +225,7 @@ function openDepartures(b: any): void {
 
 /* ---------- going inside: a fade, the room, and back out to the doorstep ---------- */
 const indoors = new Indoors(stage);
+const scape = new Soundscape(founder, indoors, () => terrain.trees);
 const counter = new Counter({
   purse: founder.purse,
   bag: () => founder.bag,
@@ -240,6 +243,19 @@ const counter = new Counter({
   ],
   about: (b) => panels.showInfo(b),
   talk: (p) => dialogue.start(p, { building: indoors.b }),
+  // V2: what a purchase does for the Founder: a meal or a remedy picks them up, new clothes are put on, a cut makes a
+  // good impression all day, the garage sees to the car, a day out is time well spent (and the staff enjoyed it)
+  use: (u, b) => {
+    if (u.heal) founder.health = Math.min(100, founder.health + u.heal);
+    if (u.wear) founder.restyle(u.wear.part, u.wear.colour);
+    if (u.groom) founder.groomed = Sim.day;
+    if (u.car && founder.vehicle) founder.vehicle.damage = Math.max(0, founder.vehicle.damage - u.car);
+    if (u.outing) {
+      founder.health = Math.min(100, founder.health + 6);
+      const host = indoors.people.find((o) => o.staff)?.p;
+      if (host) Rep.feel(host, 0.3, `showed the Founder round the ${CAT[b.type]?.name.toLowerCase() ?? 'place'}`, `came to the ${CAT[b.type]?.name.toLowerCase() ?? 'place'}`);
+    }
+  },
 });
 /* ---------- talking: face to face, or on the phone ---------- */
 const chatClient = new ChatClient();
@@ -250,10 +266,26 @@ const dialogue = new Dialogue({
   release: () => Input.releaseLock(),
   onStart: (p, onPhone) => {
     document.body.classList.add('talking');
+    // V2: fresh from the barber's: people notice (once each, that day)
+    if (!onPhone && founder.groomed === Sim.day && p.groomSeen !== Sim.day) { p.groomSeen = Sim.day; Rep.feel(p, 0.4, 'thought the Founder looked very smart', 'looked sharp'); }
     tour.saw('talk');
     // someone in the street stops to talk; someone inside turns to face you
     if (!indoors.active && !onPhone && p.state === 'walk' && p.trip) p.freezeT = Math.max(p.freezeT || 0, 600);
     if (indoors.active) indoors.talkingTo = indoors.people.find((o) => o.p === p) ?? null;
+  },
+  // V2: gifts from the shops, given face to face
+  gifts: () => founder.bag.filter((i) => i.gift),
+  give: (p, i) => {
+    const item = founder.bag.filter((g) => g.gift)[i];
+    if (!item) return '…';
+    founder.bag.splice(founder.bag.indexOf(item), 1);
+    const before = Rep.of(p), kid = p.kind === 'kid', toy = /teddy|kite|yo-yo|board game|toy|model car/i.test(item.name);
+    const k = Math.min(4, 0.5 + (item.gift || 1) * 0.5) * (kid && toy ? 1.6 : kid ? 0.6 : 1);
+    Rep.feel(p, k, `was given ${article(item.name)} by the Founder`, `gave ${p.name} ${article(item.name)}`);
+    const name = item.name.toLowerCase();
+    if (before <= -2) return `Oh. The ${name}. …Thank you, I suppose.`;
+    if (kid) return toy ? `For me? A ${name}! Thank you thank you thank you!` : `Thanks! …What is it for?`;
+    return k >= 2.5 ? `The ${name}? For me? That's so kind of you — I don't know what to say.` : `How thoughtful — the ${name}. Thank you.`;
   },
   onEnd: (p) => {
     document.body.classList.remove('talking');
@@ -295,7 +327,7 @@ function goIn(b: any): void {
   fade(() => {
     indoors.enter(b);
     document.body.classList.add('indoors');
-    if (b.type !== 'lodge') Snd.tone(1320, 1320, 0.05, 0.03, 'sine'); // the shop bell
+    if (b.type !== 'lodge') { Snd.uiSound(() => { Snd.tone(1320, 1320, 0.05, 0.03, 'sine'); Snd.tone(1760, 1760, 0.4, 0.02, 'sine', 0.05); }); } // the shop door's bell
   });
 }
 function goOut(): void {
@@ -369,7 +401,7 @@ function savePhoto(): void {
     fl.classList.remove('go');
     void fl.offsetWidth;
     fl.classList.add('go');
-    Snd.tone(1800, 900, 0.08, 0.05, 'square');
+    Snd.uiSound(() => Snd.tone(1800, 900, 0.08, 0.05, 'square'));
   } catch {
     $('pm-saved').textContent = 'The photo could not be saved here.';
   }
@@ -392,7 +424,7 @@ function photoFrame(now: number, dt: number): void {
   if (now - lastPhotoSync > 150) { lastPhotoSync = now; photoPanel.sync(); }
   stage.camera.getWorldDirection(camDir);
   Snd.listen(stage.camera.position.x, stage.camera.position.z, camDir.x, camDir.z);
-  Snd.tick(dt, { dark: stage.night, rainI: 0, snowI: 0, day: Sim.clock > 350 && Sim.clock < 1150, engine: -1 });
+  scape.frame(dt, stage.camera.position.x, stage.camera.position.y, stage.camera.position.z, { dark: stage.night });
 }
 // in photo mode a click (not a drag) on the picture focuses there
 let downAt: { x: number; y: number; t: number } | null = null;
@@ -946,7 +978,7 @@ function frame(now: number): void {
     photoWanted = false;
     try {
       phone.addPhoto(canvas.toDataURL('image/jpeg', 0.92));
-      Snd.tone(1800, 900, 0.08, 0.05, 'square');
+      Snd.uiSound(() => Snd.tone(1800, 900, 0.08, 0.05, 'square'));
     } catch { hud.toast('📷 The camera could not take a photo here'); }
   }
 
@@ -1016,10 +1048,8 @@ function frame(now: number): void {
   // sound: heard from where you are (the view's centre in the Planner), facing the way the camera does
   stage.camera.getWorldDirection(camDir);
   Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
-  Snd.tick(dt, {
-    dark: stage.night, rainI: Weather.isRaining() ? Weather.intensity : 0, snowI: Weather.isSnowing() ? Weather.intensity : 0,
-    day: Sim.clock > 350 && Sim.clock < 1150, engine: founder.driving && !planner.active ? Math.min(1, Math.abs(founder.car.speed) / 30) : -1,
-  });
+  // V2: the soundscape: what's around the listener, the Founder's own engine and footsteps, the room they're in
+  scape.frame(dt, focus.x, stage.camera.position.y, focus.z, { dark: stage.night, planner: planner.active, street: !planner.active && !travel.overlay });
 
   Input.endFrame();
   requestAnimationFrame(frame);
@@ -1156,7 +1186,7 @@ function landingFrame(now: number, dt: number): void {
   stage.render();
   cam.getWorldDirection(camDir);
   Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
-  Snd.tick(dt, { dark: stage.night, rainI: 0, snowI: 0, day: Sim.clock > 350 && Sim.clock < 1150, engine: -1 });
+  scape.frame(dt, cam.position.x, cam.position.y, cam.position.z, { dark: stage.night });
 }
 
 /* boot: continue the last village if there is one, build it a slice at a time

@@ -26,6 +26,9 @@ export interface DialogueApi {
   release(): void;
   onStart?(p: any, phone: boolean): void;
   onEnd?(p: any): void;
+  /** V2: gifts the Founder is carrying (bought in the village's shops), and handing one over: their answer */
+  gifts?(): { name: string }[];
+  give?(p: any, i: number): string;
 }
 
 export class Dialogue {
@@ -43,6 +46,8 @@ export class Dialogue {
     $('tk-close').addEventListener('click', () => this.close());
     $('tk-about').addEventListener('click', () => { if (this.p) this.api.showPerson(this.p); });
     $('tk-topics').addEventListener('click', (e) => {
+      const g = (e.target as HTMLElement).closest<HTMLElement>('[data-gift]');
+      if (g) { this.give(+g.dataset.gift!); return; }
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-topic]');
       if (b) this.topic(b.dataset.topic!);
     });
@@ -100,7 +105,21 @@ export class Dialogue {
     pill.className = `pill ${op >= 1 ? 'ok' : op <= -1 ? 'bad' : ''}`;
   }
   private renderTopics(): void {
-    $('tk-topics').innerHTML = topics(this.ctx!).map((t) => `<button data-topic="${esc(t.id)}">${esc(t.label)}</button>`).join('') + '<button data-topic="bye" class="bye">Goodbye</button>';
+    // (V2: face to face, the gifts in the bag can be given)
+    const gifts = this.where.phone ? [] : (this.api.gifts?.() ?? []).slice(0, 2);
+    $('tk-topics').innerHTML = topics(this.ctx!).map((t) => `<button data-topic="${esc(t.id)}">${esc(t.label)}</button>`).join('')
+      + gifts.map((g, i) => `<button data-gift="${i}" class="gift">🎁 Give the ${esc(g.name.toLowerCase())}</button>`).join('')
+      + '<button data-topic="bye" class="bye">Goodbye</button>';
+  }
+  /** V2: hand over a gift from the bag */
+  give(i: number): void {
+    const g = (this.api.gifts?.() ?? [])[i];
+    if (!g || !this.api.give) return;
+    this.line('me', `I brought you something: the ${g.name.toLowerCase()}.`);
+    this.history.push({ role: 'user', content: `(The Founder gives you a gift: ${g.name}.)` });
+    this.say(this.api.give(this.p, i));
+    this.header();
+    this.renderTopics();
   }
   private line(who: 'them' | 'me', text: string): void {
     const log = $('tk-log');

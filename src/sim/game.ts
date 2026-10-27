@@ -55,7 +55,9 @@ export interface FounderSave {
   /** V2: stolen cars to put back in their families' drives on load (a save keeps none) */
   returnCars?: { home: number; car: unknown }[];
   /** what the Founder is carrying (bought over counters) */
-  bag?: { name: string; from: string; day: number; food?: boolean; ticket?: boolean }[];
+  bag?: { name: string; from: string; day: number; food?: boolean; ticket?: boolean; gift?: number }[];
+  /** V2: what the Founder wears (bought in the shops) */
+  style?: { top?: string; coat?: string; legs?: string; shoes?: string; scarf?: string };
   /** V2 (Milestone 6): shifts worked, by job (src/player/shifts.ts) */
   jobs?: unknown;
 }

@@ -7,7 +7,7 @@
 import { CAT } from '../sim/catalog';
 import { Rep } from '../sim/reputation';
 import { TICKETS, WARES, Ware } from '../interiors/plan';
-import { buy, listPrice, BagItem } from '../player/shopping';
+import { buy, listPrice, BagItem, WareUse } from '../player/shopping';
 import { Supply } from '../sim/supply';
 import type { Wallet } from '../player/wallet';
 
@@ -26,6 +26,8 @@ export interface CounterApi {
   about: (b: any) => void;
   /** chat with whoever is serving */
   talk: (p: any) => void;
+  /** V2: what a purchase does for the Founder (eaten, worn, a treatment, a service, an outing) */
+  use?: (u: WareUse, b: any) => void;
 }
 
 export class Counter {
@@ -71,6 +73,7 @@ export class Counter {
       $('cu-body').querySelectorAll<HTMLElement>('[data-buy]').forEach((el) => el.addEventListener('click', () => {
         const r = buy(this.api.purse, this.api.bag(), b, list[+el.dataset.buy!], kind === 'counter' ? server : null, kind === 'tickets');
         this.api.toast(r.msg);
+        if (r.ok && r.use) this.api.use?.(r.use, b);
         this.open(kind, b, server);
       }));
       this.api.show();

@@ -143,8 +143,9 @@ describe('the wanted level', () => {
     const u = Life.police.find((q: any) => q.pursuit);
     expect(u).toBeTruthy();
     const d0 = Math.hypot(u.x / 2 - f.car.x, u.y / 2 - f.car.z);
-    for (let s = 0; s < 3 / 0.05; s++) w.update(0.05);
-    expect(Math.hypot(u.x / 2 - f.car.x, u.y / 2 - f.car.z)).toBeLessThan(d0 - 50); // ~85 km/h along the road
+    // (V2: in the traffic now, so it pulls away from the station as a car does, up to ~85 km/h along the road)
+    for (let s = 0; s < 6 / 0.05; s++) w.update(0.05);
+    expect(Math.hypot(u.x / 2 - f.car.x, u.y / 2 - f.car.z)).toBeLessThan(d0 - 50);
     for (let s = 0; s < 12 / 0.05 && !busted; s++) w.update(0.05);
     expect(busted).toBe(1);
   });

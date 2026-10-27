@@ -256,7 +256,12 @@ export const Health = {
         a.prog = Math.min(stop, a.prog + step);
         Life.followPath(a, a.path, a.prog, Traffic.lanePx(a.drv));
         // (V2: or held up just short of the spot: the crew walk the last few metres)
-        if (Traffic.there(a.drv, stop - a.prog, step, dt)) { a.phase = 'treat'; a.t = 8; }
+        if (Traffic.there(a.drv, stop - a.prog, step, dt)) {
+          // (V2: pulled up behind whatever already stands there: a second ambulance at a crash, a squad car)
+          a.prog = Traffic.settle(a, a.path, a.prog, Traffic.lanePx(a.drv), 0.75);
+          Life.followPath(a, a.path, a.prog, Traffic.lanePx(a.drv));
+          a.phase = 'treat'; a.t = 8;
+        }
       } else if (a.phase === 'treat') {
         a.t -= gm;
         if (p.state !== 'hurt') { this.turnBack(a); continue; }

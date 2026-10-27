@@ -295,7 +295,7 @@ export class Stage {
   }
   private indoorFresh = false;
   /** indoors, exposure is set for lamplight and daylight through the windows */
-  indoorExposure = 1;
+  indoorExposure = 0.8;
 
   /** V2 (Milestone 8): how lit the street lamps are (0 by day … 1 at night) */
   lampK = 0;
