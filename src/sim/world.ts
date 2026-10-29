@@ -1151,6 +1151,11 @@ export const World: any = {
         sk: b.stock !== undefined ? Math.round(b.stock * 10) / 10 : undefined,
         st: b.store || undefined,
         mt: b.matsNeed !== undefined ? [Math.round(b.mats * 10) / 10, b.matsNeed, Math.round(b.matsUsed * 10) / 10] : undefined,
+        // V2: the money (sim/economy.ts): what a household owes, a site's budget, the Founder's own site, days unpaid
+        dt: b.debts?.length ? b.debts.map((d: any) => [d.to, Math.round(d.n * 100) / 100]) : undefined,
+        sf: b.siteFunds !== undefined ? Math.round(b.siteFunds) : undefined,
+        bf: b.byFounder ? 1 : undefined,
+        ud: b.unpaidDays || undefined,
       })),
       extra: extra || {},
     });
@@ -1230,6 +1235,10 @@ export const World: any = {
       if (bs.sk !== undefined) b.stock = bs.sk;
       if (bs.st) b.store = { food: 0, mats: 0, tex: 0, prod: 0, ...bs.st };
       if (bs.mt && b.construction > 0) { b.mats = bs.mt[0]; b.matsNeed = bs.mt[1]; b.matsUsed = bs.mt[2]; b.stalled = b.mats <= 0.01; }
+      if (bs.dt) b.debts = bs.dt.map(([to, n]: number[]) => ({ to, n }));
+      if (bs.sf !== undefined && b.construction > 0) b.siteFunds = bs.sf;
+      if (bs.bf && b.construction > 0) b.byFounder = true;
+      if (bs.ud) b.unpaidDays = bs.ud;
       this.buildings.push(b);
       for (let j = 0; j < h; j++) for (let i = 0; i < w; i++)
         this.bmap[this.idx(bx + i, by + j)] = this.buildings.length;

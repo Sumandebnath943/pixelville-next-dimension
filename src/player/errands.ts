@@ -199,6 +199,8 @@ export class Errands {
     const name = CAT[b.type].name;
     if (Rep.price(b, 2).refused) { this.toast(`🙅 The staff at the ${name} won't serve you`); return; }
     if (!f.purse.spend(2, `Scratch card · ${name}`, 'purchase', b)) { this.toast('👛 Not enough money for a scratch card'); return; }
+    // (V2: it's the village fund's lottery: the stake goes to the fund that pays the prizes, less the shop's 20c)
+    b.funds -= 1.8; Gov.treasury += 1.8;
     const r = Math.random();
     const win = r < 1 / 250 ? 200 : r < 1 / 250 + 1 / 40 ? 20 : r < 1 / 250 + 1 / 40 + 1 / 8 ? 3 : 0;
     if (!win) { this.toast(`🎟️ No luck this time at the ${name}`); return; }

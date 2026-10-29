@@ -64,6 +64,10 @@ import { trailhead } from './sim/peak';
 import { Gov } from './sim/gov';
 import { ShiftPanel } from './ui/shiftpanel';
 import { Approach } from './sim/approach';
+import { FOUNDER_TREATMENT } from './sim/economy';
+import { AutoVillage, AutoPlan } from './sim/autovillage';
+import { Festivals } from './sim/festivals';
+import { SEASONS, SEASON_EMOJI } from './sim/weather';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const $ = (id: string) => document.getElementById(id)!;
@@ -137,6 +141,13 @@ const togglePlanner = () => {
     Input.releaseLock();
   }
 };
+/** V2: god view: the Planner sees the village clearly through storm, mist and fog (off: the weather hides it again) */
+const toggleGod = (): void => {
+  const on = !Settings.get('godView');
+  Settings.set('godView', on);
+  hud.toast(on ? '👁️ God view — the storm, mist and fog no longer hide the village from the Planner' : '🌦️ God view off — the Planner sees the weather again', undefined, true);
+  hud.update();
+};
 /** a place from a toast, a card or the minimap: fly the Planner over it, or on the street, route there */
 const goTo = (px: { x: number; y: number }, label?: string): void => {
   if (inPlanner()) { planner.focus(px.x * 0.5, px.y * 0.5); return; }
@@ -151,6 +162,8 @@ const hud = new Hud({
   setTool: (k) => planner.setTool(k),
   openMayor: () => panels.showMayor(),
   togglePhone: () => togglePhone(),
+  toggleGod: () => toggleGod(),
+  godView: () => !!Settings.get('godView'),
 });
 const panels = new Panels({
   toast: (m) => hud.toast(m),
@@ -161,6 +174,8 @@ const panels = new Panels({
     ...shiftActions(b),
   ],
   afterLoad: () => {
+    endAuto(false); // (V2: a loaded or new village isn't watched: the Auto village's choices go with it)
+    autoMade = false;
     buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); wanted.reset();
     // Milestone 7: a brand-new village for someone who hasn't had the guide yet
     if (!Settings.get('tourDone') && World.buildings.length <= 2 && !tour.active) tour.start();
@@ -533,9 +548,10 @@ wanted.onWasted = () => {
   }
   wanted.returnAll();
   wanted.reset();
-  const bill = hospital ? Math.min(120, Math.max(0, Math.floor(founder.wallet))) : 0;
-  if (bill) founder.purse.spend(bill, 'Hospital bill', 'purchase', hospital);
-  const where = hospital ? `Patched up at the hospital${bill ? ` — the bill was $${bill}` : ''}.` : 'No hospital in the village: a neighbour patched you up at the Lodge.';
+  // V2: the hospital's bill in full, what the wallet can't cover owed to the hospital (it used to be whatever was in the
+  // wallet: nothing at all for a broke Founder)
+  const paid = hospital ? founder.purse.charge(FOUNDER_TREATMENT, 'Hospital bill', hospital) : 0;
+  const where = hospital ? `Patched up at the hospital — the bill was $${FOUNDER_TREATMENT}${paid < FOUNDER_TREATMENT ? ` ($${FOUNDER_TREATMENT - paid} owed to the hospital)` : ''}.` : 'No hospital in the village: a neighbour patched you up at the Lodge.';
   blackout('wasted', 'Wasted', `${where}${car}`, 240, () => {
     const at = hospital || Game.lodge();
     if (at) founder.stepOutOf(at);
@@ -635,7 +651,7 @@ Input.attach(canvas);
 initTouch();
 canvas.addEventListener('click', () => {
   // with the phone out, the mouse stays free for it
-  if (!planner.active && !panels.anyModalOpen() && !phone.open && !photo.active && !landing) Input.requestLock(canvas);
+  if (!planner.active && !panels.anyModalOpen() && !phone.open && !photo.active && !landing && !auto) Input.requestLock(canvas);
 });
 
 /* ---------- Milestone 7: the gamepad through every menu (topmost first) ---------- */
@@ -847,6 +863,14 @@ function frame(now: number): void {
     return;
   }
 
+  // V2: Auto village: raised behind its own screen, then watched from the air
+  if (autoBuilding || auto) {
+    if (auto && !autoBuilding) autoFrame(now, dt);
+    Input.endFrame();
+    requestAnimationFrame(frame);
+    return;
+  }
+
   // photo mode: the world is paused
   if (photo.active) {
     photoFrame(now, dt);
@@ -873,6 +897,7 @@ function frame(now: number): void {
     else if (!panels.closeAll() && planner.active && !planner.leaving) planner.exit();
   }
   if (Input.take('undo') && planner.active) Game.undo();
+  if (Input.take('god') && inPlanner()) toggleGod();
   if (planner.active && !planner.leaving) {
     // a gamepad aims with the ring at the centre: A places or picks, X pauses, LB the next palette tab
     if (Input.device === 'pad') {
@@ -962,6 +987,8 @@ function frame(now: number): void {
   // V2 (Milestone 8): from high over the town at night, the eye opens up a little more, and every lamp's pool of light
   // shows on the ground (only a few lamps are real lights)
   stage.viewBoost = planner.active ? 1 + stage.night * Math.min(1, planner.dist / 160) * 0.9 : 1;
+  // V2: god view clears the Planner's view of the weather (it comes back as the camera descends)
+  stage.clearView = planner.active && !planner.leaving && !!Settings.get('godView');
   stage.update(dt, focus, terrain.lampSpots);
   terrain.setPools(stage.lampK * (planner.active ? 0.075 : 0.05) / Math.max(0.6, stage.sky.exposure * 0.25));
   if (!inside) {
@@ -1187,6 +1214,199 @@ function landingFrame(now: number, dt: number): void {
   cam.getWorldDirection(camDir);
   Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
   scape.frame(dt, cam.position.x, cam.position.y, cam.position.z, { dark: stage.night });
+}
+
+/* ---------- V2: Auto village: a bustling, ready-made village to watch live and grow ----------
+   A tap raises a whole village (sim/autovillage.ts) behind its own screen; then the camera drifts over it, from the
+   square to the school gates to the farms, while its people go about their day and it grows on its own. The panel
+   picks the season, the weather and the festival (held until they're let go) and the pace; "Play this village" hands
+   it over at the Lodge. */
+interface Shot { x: number; z: number; r: number; h: number; spin: number; ang: number }
+let auto: { plan: AutoPlan; shot: Shot; from: { pos: THREE.Vector3; look: THREE.Vector3 } | null; blend: number; t: number; i: number; yaw: number; zoom: number } | null = null;
+let autoBuilding = false;
+/** the village in play is one Auto village made (a new one replaces it without asking) */
+let autoMade = false;
+/** what the panel holds: a season, a weather, a festival's day of the year (null: as the calendar has it), the pace */
+const autoPick = { season: null as number | null, wx: null as string | null, fest: null as number | null, speed: 1 };
+const AUTO_FESTS: [number | null, string, number][] = [[null, 'None', -1], [28, '🎆 New Year', 3], [4, '🐣 Easter', 0], [18, '🪔 Diwali', 2], [25, '🎄 Christmas', 3]];
+const AUTO_WX: [string | null, string][] = [[null, 'Natural'], ['clear', '☀️ Clear'], ['clouds', '⛅ Cloudy'], ['rain', '🌧️ Rain'], ['heavy', '⛈️ Storm'], ['snow', '🌨️ Snow']];
+const autoPos = new THREE.Vector3(), autoLook = new THREE.Vector3();
+
+/** the `i`th view: high over the whole village, low along a street, round the square, close by the school gates… */
+function autoShot(i: number): Shot {
+  const plan = auto!.plan, pts = [plan.centre, ...plan.sights];
+  const p = i % 3 === 0 ? plan.centre : pts[Math.floor(Math.random() * pts.length)];
+  const k = [{ r: 175, h: 88 }, { r: 72, h: 24 }, { r: 118, h: 46 }, { r: 50, h: 16 }][i % 4];
+  return { x: p.x, z: p.z, r: k.r, h: k.h, spin: (Math.random() < 0.5 ? -1 : 1) * (0.025 + Math.random() * 0.02), ang: Math.random() * Math.PI * 2 };
+}
+function autoPose(s: Shot, pos: THREE.Vector3, look: THREE.Vector3): void {
+  const a = s.ang + auto!.yaw, r = s.r * auto!.zoom;
+  const x = s.x + Math.cos(a) * r, z = s.z + Math.sin(a) * r;
+  pos.set(x, Math.max(s.h * Math.sqrt(auto!.zoom), founder.groundAt(x, z) + 8), z);
+  look.set(s.x, founder.groundAt(s.x, s.z) + 3, s.z);
+}
+function nextAutoShot(): void {
+  if (!auto) return;
+  auto.from = { pos: stage.camera.position.clone(), look: focus.clone() };
+  auto.blend = 0;
+  auto.i++;
+  auto.shot = autoShot(auto.i);
+  auto.t = 0;
+  auto.yaw = 0;
+  auto.zoom = 1;
+}
+
+/** a tap on Auto village: straight to it from an empty valley or another auto village; otherwise ask first */
+function askAuto(): void {
+  if (autoBuilding) return;
+  if (travel.active || transit.riding() || transit.waiting) { hud.toast('🌱 Finish the journey first', undefined, true); return; }
+  if (auto || autoMade || !World.buildings.some((b: any) => b.type !== 'lodge')) void buildAuto();
+  else panels.show('autoui');
+}
+async function buildAuto(): Promise<void> {
+  if (autoBuilding) return;
+  autoBuilding = true;
+  panels.closeAll();
+  phone.close();
+  dialogue.close();
+  if (photo.active) leavePhoto();
+  if (planner.active) { planner.setTool(null); planner.active = false; planner.leaving = false; }
+  Input.releaseLock();
+  const ov = $('au-build');
+  $('au-build-title').textContent = 'Building an auto village';
+  $('au-build-text').textContent = 'Laying out the streets…';
+  ov.classList.add('on');
+  await yieldFrame();
+  const plan = AutoVillage.build();
+  $('au-build-title').textContent = `Building ${plan.name}`;
+  errands.reset(); gps.clear(); wanted.reset();
+  terrain.update(true);
+  await buildings.buildAll((done, total) => { $('au-build-text').textContent = `Raising the buildings… ${done} of ${total}`; });
+  lastVersion = Game.mapVersion;
+  autoMade = true;
+  enterAuto(plan);
+  ov.classList.remove('on');
+  autoBuilding = false;
+  hud.toast(`🌱 Welcome to ${plan.name} — ${Sim.people.length} villagers. Sit back and watch it live and grow`, undefined, true);
+}
+function enterAuto(plan: AutoPlan): void {
+  auto = { plan, shot: { x: 0, z: 0, r: 1, h: 1, spin: 0, ang: 0 }, from: null, blend: 1, t: 0, i: 0, yaw: 0, zoom: 1 };
+  auto.shot = autoShot(0);
+  document.body.classList.add('auto');
+  document.body.classList.remove('auto-clean');
+  Game.streetMode = false;
+  applyAutoPicks();
+  Game.setSpeed(autoPick.speed);
+  syncAutoPanel();
+}
+/** out of the watching: the pins let go and the village handed over (`play`: at the Lodge, with a word) */
+function endAuto(play: boolean): void {
+  if (!auto) return;
+  const done = (): void => {
+    auto = null;
+    Weather.pin = null;
+    Festivals.pinDay = null;
+    document.body.classList.remove('auto', 'auto-clean');
+    Game.streetMode = true;
+    Game.setSpeed(1);
+    if (play) hud.toast(`🏠 ${World.name} is yours to play — you're at the Lodge. Rise into the Planner ({planner}) to build, or walk into town`, undefined, true);
+  };
+  if (play) fade(done); else done();
+}
+/** the panel's choices, held on the village */
+function applyAutoPicks(): void {
+  Weather.pin = autoPick.season === null && !autoPick.wx ? null : { season: autoPick.season, kind: autoPick.wx };
+  Festivals.pinDay = autoPick.fest;
+}
+function autoChips(id: string, items: [unknown, string][], cur: unknown, set: (v: any) => void): void {
+  const el = $(id);
+  if (!el.childElementCount) {
+    items.forEach(([v, label]) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.addEventListener('click', () => { set(v); syncAutoPanel(); });
+      el.appendChild(b);
+    });
+  }
+  [...el.children].forEach((b, i) => b.classList.toggle('on', items[i][0] === cur));
+}
+function syncAutoPanel(): void {
+  if (!auto) return;
+  $('au-name').textContent = World.name;
+  const wx = ({ clear: '☀️', clouds: '⛅', rain: '🌧️', heavy: '⛈️', snow: '🌨️' } as Record<string, string>)[Weather.kind as string] || '';
+  const now = `Day ${Sim.day} · ${Sim.timeStr()} · ${SEASON_EMOJI[Weather.season]} ${wx} · ${Sim.people.length} villagers`;
+  if ($('au-now').textContent !== now) $('au-now').textContent = now;
+  autoChips('au-season', [[null, 'Calendar'], ...SEASONS.map((s, i): [number, string] => [i, `${SEASON_EMOJI[i]} ${s}`])], autoPick.season, (v) => { autoPick.season = v; applyAutoPicks(); });
+  autoChips('au-wx', AUTO_WX, autoPick.wx, (v) => { autoPick.wx = v; applyAutoPicks(); });
+  autoChips('au-fest', AUTO_FESTS.map(([d, l]): [number | null, string] => [d, l]), autoPick.fest, (v) => {
+    autoPick.fest = v;
+    // (a festival comes in its own season: Christmas in the snow, Diwali in the autumn; the season can still be changed)
+    const f = AUTO_FESTS.find((x) => x[0] === v);
+    if (f && f[2] >= 0) autoPick.season = f[2];
+    applyAutoPicks();
+    if (f && v !== null) hud.toast(`${f[1]} in ${World.name} — the decorations go up${v === 28 || v === 18 ? ', and the fireworks come after dark' : ''}`, undefined, true);
+  });
+  autoChips('au-speed', [[0, 'Pause'], [1, '1×'], [2, '2×'], [3, '4×'], [4, '8×']], Game.speedIdx, (v) => { autoPick.speed = v; Game.setSpeed(v); });
+}
+$('btn-auto').addEventListener('click', () => askAuto());
+$('la-auto').addEventListener('click', () => leaveLanding(() => askAuto()));
+$('au-go').addEventListener('click', () => { panels.close('autoui'); void buildAuto(); });
+$('au-save').addEventListener('click', () => { panels.close('autoui'); $('btn-save').click(); });
+$('au-hide').addEventListener('click', () => document.body.classList.add('auto-clean'));
+$('au-show').addEventListener('click', () => document.body.classList.remove('auto-clean'));
+$('au-view').addEventListener('click', () => nextAutoShot());
+$('au-new').addEventListener('click', () => void buildAuto());
+$('au-play').addEventListener('click', () => endAuto(true));
+
+/** a frame of the Auto village: the world goes on, the camera drifts from one view of it to the next */
+function autoFrame(now: number, dt: number): void {
+  const a = auto!;
+  if (Input.take('hide')) document.body.classList.toggle('auto-clean');
+  if (Input.take('cancel') && !panels.closeAll()) document.body.classList.toggle('auto-clean');
+  Game.tick(dt);
+  if (Game.mapVersion !== lastVersion) { lastVersion = Game.mapVersion; terrain.update(); }
+  buildings.sync();
+  if (buildings.treesVersion !== lastTrees) { lastTrees = buildings.treesVersion; terrain.setExtraTrees(buildings.trees()); }
+  // a drag turns the view, the wheel comes closer
+  Input.dragLook = true;
+  if (!panels.anyModalOpen()) {
+    a.yaw -= Input.look(Settings.get('mouseSens') || 1, false).dx;
+    if (Input.wheel) a.zoom = Math.max(0.35, Math.min(2.2, a.zoom * Math.pow(1.12, Input.wheel)));
+  }
+  a.shot.ang += a.shot.spin * dt;
+  a.t += dt;
+  if (a.t > 38) nextAutoShot();
+  autoPose(a.shot, autoPos, autoLook);
+  const cam = stage.camera;
+  if (a.from && a.blend < 1) {
+    a.blend = Math.min(1, a.blend + dt / 5);
+    const k = a.blend * a.blend * (3 - 2 * a.blend);
+    cam.position.copy(a.from.pos).lerp(autoPos, k);
+    focus.copy(a.from.look).lerp(autoLook, k);
+  } else {
+    cam.position.copy(autoPos);
+    focus.copy(autoLook);
+  }
+  cam.fov = 50;
+  cam.updateProjectionMatrix();
+  cam.lookAt(focus);
+  stage.viewBoost = 1 + stage.night * 0.6;
+  stage.moving = false;
+  stage.clearView = false;
+  stage.update(dt, focus, terrain.lampSpots);
+  terrain.setPools(stage.lampK * 0.07 / Math.max(0.6, stage.sky.exposure * 0.25));
+  terrain.frame(stage.night, cam.position);
+  actors.update(dt, focus.x, focus.z, 420, now, stage.night);
+  stage.render();
+  cam.getWorldDirection(camDir);
+  Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
+  scape.frame(dt, cam.position.x, cam.position.y, cam.position.z, { dark: stage.night });
+  if (now - lastHud > 400) {
+    lastHud = now;
+    hud.update();
+    syncAutoPanel();
+    hud.drawMinimap({ x: focus.x, z: focus.z, yaw: Math.atan2(camDir.x, camDir.z), planner: false, w: 0, h: 0 });
+  }
 }
 
 /* boot: continue the last village if there is one, build it a slice at a time

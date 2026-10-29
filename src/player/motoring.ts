@@ -69,6 +69,12 @@ export class Motoring {
       f.fleet.owed -= paid;
       this.toast(`🧾 Paid $${paid} of your outstanding fines${f.fleet.owed > 0 ? ` — $${Math.round(f.fleet.owed)} still owed` : ''}`);
     }
+    // V2: and bills for what was already had (a cab ride, the hospital), to whoever is owed
+    if (f.purse.bills.length && this.owedT <= 0 && f.wallet >= 1) {
+      this.owedT = 5;
+      const paid = f.purse.settle();
+      if (paid) this.toast(`🧾 Paid $${paid} of what you owed${f.purse.owing() > 0 ? ` — $${Math.round(f.purse.owing())} still to pay` : ''}`);
+    }
     if (v) this.warnings(v);
     const own = f.fleet.cur;
     if (!own) { this.illegalT = 0; this.ticketed = false; return; }
@@ -266,6 +272,8 @@ export class Motoring {
       this.toast(`👛 The ${m.name} is $${p.cost} — you have $${Math.floor(f.wallet)}`);
       return false;
     }
+    // (V2: the dealer keeps its margin and pays the maker beyond the map for the car, as it does for the villagers')
+    showroom.funds -= p.cost * 0.75;
     const prev = f.vehicle;
     const v = f.fleet.add({ model: m.id, name: m.name, kind: m.kind, style: m.style, color, price: m.price });
     const s = this.frontage(showroom);

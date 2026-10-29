@@ -92,6 +92,7 @@ describe('the supply chain', () => {
     const shop = build('electronics', C.x + 4, C.y + 6);
     Supply.init(shop);
     shop.stock = 0;
+    shop.funds = 200; // (V2: a shop pays for what it orders)
     Supply.allow.prod = 20;
     Supply.dispatch();
     const t = Life.trucks.find((k: any) => k.to === shop);
@@ -111,6 +112,7 @@ describe('the supply chain', () => {
   it('the freight train stocks the station, and the station supplies the shops', () => {
     town(405);
     const st = build('trainstation', C.x + 16, C.y - 8);
+    st.funds = 200; // (V2: the station buys the freight it sells on)
     Supply.freightCall(st);
     expect(Supply.storeUsed(st)).toBeGreaterThan(0);
     const shop = build('toyshop', C.x + 4, C.y + 6);

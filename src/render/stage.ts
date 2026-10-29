@@ -34,6 +34,8 @@ export function darkness(_clock?: number): number {
 }
 
 interface Wx { overcast: number; clouds: number; rain: number; snowfall: number; fog: number; wind: number }
+/** a clear day: what god view shows whatever the weather is doing */
+const CLEAR_SKY: Wx = { overcast: 0, clouds: 0.22, rain: 0, snowfall: 0, fog: 1, wind: 0.22 };
 function weatherTarget(): Wx {
   const k = Weather.kind as string, i = Weather.intensity as number;
   switch (k) {
@@ -191,7 +193,8 @@ export class Stage {
     const hour = Sim.clock / 60;
     this.sky.update(dt, hour, dayOfYear(), { overcast: st.overcast, clouds: st.clouds, fog: st.fog, snow: ENV.snow.value }, focus, this.camera);
     if (this.sky.envTexture) this.scene.environment = this.sky.envTexture;
-    const gloom = Weather.gloom();
+    // (V2: god view lifts the weather's gloom and its lightning from the view as well)
+    const gloom = Weather.gloom() * (1 - this.clearK);
     this.night = Math.min(1, this.sky.nightK * 0.95 + gloom * 0.5);
     lastNight = this.night;
 
@@ -204,7 +207,7 @@ export class Stage {
     }
 
     // lightning: the whole town flashes
-    this.flashLight.intensity = Weather.flash * (Settings.get('calm') ? 1.5 : 6); // (gentler with reduced motion)
+    this.flashLight.intensity = Weather.flash * (Settings.get('calm') ? 1.5 : 6) * (1 - this.clearK); // (gentler with reduced motion)
 
     // interiors, lamps, signs
     interiorDay.value = this.sky.ambient * 0.07;
@@ -240,22 +243,40 @@ export class Stage {
     g.contrast.value = 1.05 - st.overcast * 0.06;
   }
 
+  /** V2: god view (the Planner, when the player asks for it): the view clears of rain, snow, mist and fog whatever the
+   *  sim's weather is doing; the weather itself goes on (the streets still get wet, the snow still settles) */
+  clearView = false;
+  /** how far the view has cleared, 0…1 */
+  clearK = 0;
+  private clearBoost = 0;
+
   /** the weather drifts towards the sim's; wet streets, settled snow and autumn leaves follow at their own pace */
   private drift(dt: number): void {
-    const tg = weatherTarget();
-    const st = this.st, k = Math.min(1, dt * 0.35);
+    const real = weatherTarget();
+    // god view: a quick turn of the sky to a clear day (and back again just as quickly when it's switched off)
+    const want = this.clearView ? 1 : 0;
+    if (want !== Math.round(this.clearK) || (this.clearK > 0 && this.clearK < 1)) this.clearBoost = 2.5;
+    this.clearK += Math.sign(want - this.clearK) * Math.min(Math.abs(want - this.clearK), dt * 1.6);
+    this.clearBoost = Math.max(0, this.clearBoost - dt);
+    const c = this.clearK, tg: Wx = { ...real };
+    if (c > 0) for (const key of Object.keys(tg) as (keyof Wx)[]) tg[key] = real[key] + (CLEAR_SKY[key] - real[key]) * c;
+    const fast = this.clearBoost > 0 ? 8 : 1;
+    const st = this.st, k = Math.min(1, dt * 0.35 * fast);
     st.overcast += (tg.overcast - st.overcast) * k;
     st.clouds += (tg.clouds - st.clouds) * k;
-    st.rain += (tg.rain - st.rain) * Math.min(1, dt * 0.5);
-    st.snowfall += (tg.snowfall - st.snowfall) * Math.min(1, dt * 0.5);
+    st.rain += (tg.rain - st.rain) * Math.min(1, dt * 0.5 * fast);
+    st.snowfall += (tg.snowfall - st.snowfall) * Math.min(1, dt * 0.5 * fast);
     st.fog += (tg.fog - st.fog) * k;
-    st.wind += (tg.wind - st.wind) * Math.min(1, dt * 0.3);
-    const sunny = this.sky.sunAbove ? Math.max(0, ENV.sunDir.value.y) * (1 - st.overcast) : 0;
-    if (st.rain > 0.15) ENV.wet.value = Math.min(1, ENV.wet.value + dt * 0.08 * st.rain);
+    st.wind += (tg.wind - st.wind) * Math.min(1, dt * 0.3 * fast);
+    // (the ground answers the real weather, not the cleared view)
+    const rain = c > 0 ? Math.max(st.rain, real.rain) : st.rain, snowfall = c > 0 ? Math.max(st.snowfall, real.snowfall) : st.snowfall;
+    const overcast = c > 0 ? real.overcast : st.overcast;
+    const sunny = this.sky.sunAbove ? Math.max(0, ENV.sunDir.value.y) * (1 - overcast) : 0;
+    if (rain > 0.15) ENV.wet.value = Math.min(1, ENV.wet.value + dt * 0.08 * rain);
     else ENV.wet.value = Math.max(ENV.snow.value > 0.3 ? 0.12 : 0, ENV.wet.value - dt * (0.004 + sunny * 0.02));
     // winter keeps its snow; it settles while it falls and melts once the season turns
     const winter = Weather.season === 3;
-    if (st.snowfall > 0.15) ENV.snow.value = Math.min(1, ENV.snow.value + dt * 0.02 * st.snowfall);
+    if (snowfall > 0.15) ENV.snow.value = Math.min(1, ENV.snow.value + dt * 0.02 * snowfall);
     else if (!winter) ENV.snow.value = Math.max(0, ENV.snow.value - dt * (0.006 + sunny * 0.01));
     else ENV.snow.value = Math.max(0.35, ENV.snow.value - dt * sunny * 0.002);
     snowUniform.value = ENV.snow.value;

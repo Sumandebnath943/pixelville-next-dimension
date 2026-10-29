@@ -188,8 +188,16 @@ export const Walk = {
         w.lat = from;
       }
       const dir = Math.sign(to - w.lat);
-      // (V2: and never step into something that has stopped across the way meanwhile)
-      if (Walk.bodyAt(t, w.lat + dir * 1.4, p)) { w.wait += dt; if (w.wait < KERB_WAIT * 3) return step; }
+      // (V2: and never step into something that has stopped across the way meanwhile: back to the kerb they set out
+      // from, rather than standing out in the road, where the drivers wait for anyone on foot (and the car across the
+      // way could be one of them, waiting for them: they used to stand there, then walk on through it))
+      if (Walk.bodyAt(t, w.lat + dir * 1.4, p)) {
+        w.wait += dt;
+        const back = from - w.lat;
+        if (Math.abs(back) < 0.05) w.lat = null; // (on the kerb again: they wait there, off the road)
+        else if (!Walk.bodyAt(t, w.lat - Math.sign(dir) * 1.4, p)) w.lat += Math.sign(back) * Math.min(sp * dt, Math.abs(back));
+        return step;
+      }
       w.lat += dir * Math.min(sp * dt, Math.abs(to - w.lat));
       if (Math.abs(to - w.lat) < 1e-3) {
         w.side = w.crossTo; w.lat = null; w.wait = 0;

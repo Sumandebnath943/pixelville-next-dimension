@@ -43,6 +43,7 @@ const ON_ROAD = 0.29;      // closer than this to the centreline, a pedestrian i
 const PRIO_AFTER = 2.5;    // V2: seconds held at a junction before crossing traffic lets that driver go first
 const PASS_AFTER = 1.5;    // seconds stuck behind something stopped before pulling out to pass
 const RELAX_AFTER = 20;    // V2: seconds stuck behind something parked before passing it on a shorter view of the road ahead
+const PED_AFTER = 6;       // V2: seconds stood for people on foot before the driver waits only for those in its own lane
 const HONK_AFTER = 2;      // seconds held up by the Founder before the horn
 const SWERVE = 0.35;       // how fast a car moves across the road (tiles/s, at walking pace)
 /** V2: half the width of a vehicle `len` tiles long (tiles) */
@@ -203,7 +204,7 @@ interface Over { o: unknown; os: unknown[]; lens: number[]; t: number }
 interface Run { path: number[][]; k0: number; k1: number; keys: number[]; m: number[]; d: number[]; x: number[] }
 /** per-vehicle state kept on its trip object: speed, time stuck, the overtake under way, its lane, V2: the junction
  *  box it holds, and how long it has waited at one (since which tick) */
-export interface Drive { v?: number; wait?: number; honk?: number; lat?: number; over?: Over | null; box?: Run | null; jw?: number; js?: number }
+export interface Drive { v?: number; wait?: number; honk?: number; lat?: number; over?: Over | null; box?: Run | null; jw?: number; js?: number; pw?: number }
 /** the Founder as the sim sees them: V1 pixels, a heading, at the wheel or on foot */
 export interface Guest { x: number; y: number; dx: number; dy: number; car: boolean; still: boolean; len?: number }
 
@@ -450,9 +451,21 @@ export const Traffic = {
         const q = lanePose(tw.path, 0, LANE_PX, 1, WAIT);
         const key = Math.round(q.x) * 4096 + Math.round(q.y), n = waitN.get(key) ?? 0;
         waitN.set(key, n + 1);
-        const along = (n % 2 ? -1 : 1) * Math.ceil(n / 2) * 1.6, out = FOOT_PX - LANE_PX + (n >= 8 ? 1.2 : 0);
-        p.waitX = q.x - q.dy * out + q.dx * along; p.waitY = q.y + q.dx * out + q.dy * along;
-        put(p, p.waitX, p.waitY, q.dx, q.dy, false, 0, true);
+        const along = (n % 2 ? -1 : 1) * Math.min(6, Math.ceil(n / 2) * 1.6);
+        // V2: on the pavement in front of their own door, the building at their back: never out in a lane (worked out
+        // from the way the trip sets off, a door opening onto a junction put them in the other street's carriageway,
+        // where the car pulling out of the next door stopped for them, inside the junction, and locked it)
+        const b = p.at, d = b?.door;
+        const u = !d ? null : d.y >= b.y + b.h ? [0, -1] : d.y < b.y ? [0, 1] : d.x >= b.x + b.w ? [-1, 0] : d.x < b.x ? [1, 0] : null;
+        if (u) {
+          const cx = b.door.x * T + 8, cy = b.door.y * T + 8, out = FOOT_PX + (n >= 8 ? 0.6 : 0);
+          p.waitX = cx + u[0] * out - u[1] * along; p.waitY = cy + u[1] * out + u[0] * along;
+          put(p, p.waitX, p.waitY, -u[1], u[0], false, 0, true);
+        } else {
+          const out = FOOT_PX - LANE_PX + (n >= 8 ? 1.2 : 0);
+          p.waitX = q.x - q.dy * out + q.dx * along; p.waitY = q.y + q.dx * out + q.dy * along;
+          put(p, p.waitX, p.waitY, q.dx, q.dy, false, 0, true);
+        }
         continue;
       }
       // V2: someone hurt, lying where they fell until the ambulance comes: driven round, never over
@@ -564,6 +577,8 @@ export const Traffic = {
     let blocker: Ob | null = null;
     /** (V2: how fast the one in front is going our way, so a junction can see it will have moved on) */
     let ahead = 0;
+    /** (V2: how far to the nearest person on foot we're stopping for, and whether anyone's on foot in the road ahead) */
+    let pedFree = Infinity, pedNear = false;
     const segs = segmentsAhead(path, prog, dir, reach, SEGS, 12);
     const seen = SEEN;
     seen.clear();
@@ -587,6 +602,10 @@ export const Traffic = {
           const rx = ob.x - ax, ry = ob.y - ay;
           const along = rx * dx + ry * dy;
           if (along < -0.05 || along > (end || sideways ? 1.35 + half : 1.05)) continue;
+          // (V2: the longer look at the end, or on a hop across an avenue, is for bodies our nose will reach (someone lying
+          // hurt among them); someone standing or walking beyond the next tile's middle is on the pavement past it, where
+          // we never go (a truck hopping across to turn waited for good for the people at the door on the far side))
+          if (!ob.car && !(ob.still && ob.len) && along > 1.05) continue;
           let s = base + along;
           const c = rx * nx + ry * ny; // across the road, + is our side
           const ha = ob.hx * dx + ob.hy * dy; // (its heading along ours)
@@ -617,10 +636,24 @@ export const Traffic = {
             seen.add(ob);
             const f = s - half - ob.len / 2 - GAP;
             if (f < free) { free = f; byTraffic = true; byStill = true; byFounder = false; blocker = ob; ahead = 0; }
-          } else {
-            if (Math.abs(c) > ON_ROAD) continue;
+          } else if (ob.still && !isFounder(ob.o)) {
+            // V2: someone standing still (a queue at a stop, a neighbour waiting at the kerb for a cab, an onlooker):
+            // in the way only standing in our own lane, and then like anything else standing there: waited behind, and
+            // passed. (Anyone standing near the road used to hold the driver for as long as they stood there, and a
+            // driver held inside a junction locked the junction, then the town, for good). Our lane is our body's width
+            // and a hair: the pavement, where they stand, is clear of it
+            if (Math.abs(c - lat) > myW + 0.05) continue;
             seen.add(ob);
             const f = s - half - 0.35;
+            if (f < free) { free = f; byTraffic = true; byStill = true; byFounder = false; blocker = ob; ahead = 0; }
+          } else {
+            if (Math.abs(c) > ON_ROAD) continue;
+            pedNear = true;
+            // (V2: the jam breaker: held a while by people on foot, a driver edges on past anyone not in its own lane)
+            if ((st.pw || 0) > PED_AFTER && Math.abs(c - lat) > myW + 0.1) continue;
+            seen.add(ob);
+            const f = s - half - 0.35;
+            pedFree = Math.min(pedFree, f);
             if (f < free) { free = f; byTraffic = false; byStill = false; byFounder = isFounder(ob.o); blocker = null; ahead = 0; }
           }
         }
@@ -761,6 +794,9 @@ export const Traffic = {
     if (lateFor) { nv = Math.max(0, v - DEC_MAX * dt); step = nv * dt; }
     else if (step > room) { step = room; nv = room / dt; }
     st.v = nv;
+    // (V2: how long we've stood for people on foot: the jam breaker above; once it's edging past them it carries on
+    // until they're behind it, rather than stopping again the moment it moves)
+    st.pw = pedNear && ((st.pw || 0) > PED_AFTER || (nv < 0.05 && pedFree <= free + 0.01)) ? (st.pw || 0) + dt : 0;
     // across the road, towards our lane (or the oncoming one while passing)
     const want = st.over ? -LANE : LANE;
     const sway = Math.max(SWERVE, nv * 0.7) * dt;
@@ -810,7 +846,8 @@ export const Traffic = {
           const s = base + along, c = rx * nx + ry * ny;
           if (s <= 0) continue;
           seen.add(ob);
-          if (!ob.car && !(ob.still && ob.len)) { if (Math.abs(c) < ON_ROAD) walker = Math.min(walker, s); continue; }
+          // (someone lying in the road, or standing still, is passed like anything parked; V2: the standing too)
+          if (!ob.car && !(ob.still && !isFounder(ob.o))) { if (Math.abs(c) < ON_ROAD) walker = Math.min(walker, s); continue; }
           const ha = ob.hx * dx + ob.hy * dy, ca = Math.abs(ha), cn = Math.abs(ob.hx * nx + ob.hy * ny);
           const ea = (ca * ob.len) / 2 + cn * ob.w, ec = (cn * ob.len) / 2 + ca * ob.w;
           // (something across the road is in both lanes)
@@ -856,10 +893,15 @@ export const Traffic = {
    *  of it, facing it: about to move into it)? */
   coming(me: unknown, x: number, y: number, close = false): boolean {
     const cx = x + 0.5, cy = y + 0.5;
+    // (V2: two set off from the very same spot, as trucks sent from one yard at once are: the later one in the index lets
+    // the other go first, as on the road. Each saw the others "about to move into" the spot it wanted, and none ever
+    // went; a farm's six delivery trucks locked its gate, and the street behind, for good)
+    const m: any = me, mx = typeof m?.x === 'number' ? m.x / T : NaN, my = typeof m?.y === 'number' ? m.y / T : NaN;
     for (let j = -2; j <= 2; j++)
       for (let i = -2; i <= 2; i++)
         for (const ob of grid.get(World.idx(x + i, y + j)) || []) {
           if (ob.o === me || !ob.car || ob.still) continue;
+          if (Math.abs(ob.x - mx) < 0.08 && Math.abs(ob.y - my) < 0.08 && rank(ob.o) > rank(me)) continue;
           const slow = ob.v >= 0 && ob.v < 0.15;
           if (slow && !close) continue;
           const rx = cx - ob.x, ry = cy - ob.y, ahead = rx * ob.hx + ry * ob.hy;

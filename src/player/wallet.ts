@@ -6,15 +6,53 @@
    ============================================================ */
 import { Sim } from '../sim/agents';
 import { Rep } from '../sim/reputation';
+import { World } from '../sim/world';
+import { Gov } from '../sim/gov';
 
 export type EntryKind = 'reward' | 'win' | 'income' | 'purchase' | 'fine';
 export interface Entry { day: number; time: string; amount: number; label: string; kind: EntryKind }
+/** V2: a bill the wallet couldn't cover: owed to a building (its id), or to the village fund (0) */
+export interface Bill { to: number; n: number; label: string }
 
 export class Wallet {
   balance = 120;
   ledger: Entry[] = [];
+  /** V2: what the Founder owes for services already had (a cab, the hospital), paid off as money comes in */
+  bills: Bill[] = [];
   /** called after every change (the HUD flashes the amount) */
   onChange: ((e: Entry) => void) | null = null;
+
+  /** V2: a service already had: paid as far as the wallet goes, the rest owed to `to` (nothing is let off). Returns
+   *  what was paid now */
+  charge(amount: number, label: string, to?: any): number {
+    const a = Math.max(0, Math.round(amount));
+    const now = Math.min(a, Math.max(0, Math.floor(this.balance)));
+    if (now > 0) this.spend(now, label, 'purchase', to);
+    if (a > now) {
+      const id = to?.id ?? 0, b = this.bills.find((x) => x.to === id);
+      if (b) b.n += a - now; else this.bills.push({ to: id, n: a - now, label });
+    }
+    return now;
+  }
+  /** V2: what's owed, all told */
+  owing(): number {
+    return this.bills.reduce((s, b) => s + b.n, 0);
+  }
+  /** V2: pay off what's owed from what's in the wallet; returns what was paid */
+  settle(): number {
+    let paid = 0;
+    for (const b of this.bills) {
+      const n = Math.min(b.n, Math.floor(this.balance));
+      if (n <= 0) break;
+      const to = b.to ? World.buildings.find((x: any) => x.id === b.to) : null;
+      this.record(-n, `Paid off · ${b.label}`, 'purchase');
+      if (to) to.funds = (to.funds || 0) + n;
+      else Gov.treasury += n; // (the village fund, or a place that's gone: its debts went to the fund)
+      b.n -= n; paid += n;
+    }
+    this.bills = this.bills.filter((b) => b.n > 0);
+    return paid;
+  }
 
   /** money in; `from` (a building) pays it out of its own funds, as far as they go */
   earn(amount: number, label: string, kind: EntryKind = 'reward', from?: any): number {
@@ -55,8 +93,9 @@ export class Wallet {
     return { in: i, out: o };
   }
 
-  restore(balance: number | undefined, ledger: Entry[] | undefined): void {
+  restore(balance: number | undefined, ledger: Entry[] | undefined, bills?: Bill[]): void {
     this.balance = balance ?? 120;
     this.ledger = Array.isArray(ledger) ? ledger.slice(-80) : [];
+    this.bills = Array.isArray(bills) ? bills.filter((b) => b && b.n > 0).map((b) => ({ ...b })) : [];
   }
 }

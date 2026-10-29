@@ -18,13 +18,14 @@ import { Health } from '../sim/health';
 import { Power, PLANT_CAP } from '../sim/power';
 import { Supply, GOODS, SELLS, MAKES, YARD } from '../sim/supply';
 import { Edu } from '../sim/education';
+import { Economy, COUNTY_GRANT } from '../sim/economy';
 import { SLOTS, AUTO, get, put, metaOf } from '../save/store';
 import { Snd } from '../audio/sounds';
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: unknown) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const icon = (name: string): string => `<svg><use href="#i-${name}"/></svg>`;
-const money = (n: number): string => '$' + Math.round(n).toLocaleString();
+const money = (n: number): string => (n < -0.5 ? '−$' : '$') + Math.abs(Math.round(n)).toLocaleString();
 
 /* ---------- the V2 card: overline, title, status pills, facts, notes, actions ---------- */
 type Pill = [string, '' | 'ok' | 'warn' | 'bad'];
@@ -159,8 +160,19 @@ export class Panels {
     if (d.res && !b.ruined) {
       facts.push(['Savings', money(b.funds)]);
       if (b.ownerId) facts.push(['Tenure', 'Renting from another family']);
+      // V2: what the household owes (bills it couldn't pay: the hospital, the power, a fine), paid off as money comes in
+      const owed = Economy.owed(b);
+      if (owed >= 1) facts.push(['Owes', `${money(owed)} · paid off as money comes in`]);
     }
-    if (d.visit && b.funds > 0) facts.push(['Lifetime takings', money(b.funds)]);
+    // V2: a workplace's money: the till its wages come out of (a public service's from the village fund's budget), and
+    // whether yesterday's were paid in full
+    if (d.jobs && !b.ruined && !b.construction) {
+      facts.push([Economy.isPublic(b.type) ? 'Budget in hand' : 'In the till', money(b.funds || 0)]);
+      if (b.lastWages !== undefined || b.lastUnpaid) facts.push(["Yesterday's wages", `${money(b.lastWages || 0)} paid${b.lastUnpaid ? ` · ${money(b.lastUnpaid)} short` : ''}`]);
+      if ((b.unpaidDays || 0) >= 2) pills.push([Economy.isPublic(b.type) ? 'Village fund short · staff unpaid' : `Can't pay its staff · ${b.unpaidDays} days`, 'bad']);
+      notes.push(Economy.isPublic(b.type) ? 'A public service: its staff are paid from the village fund (the county\'s grant and the taxes), plus anything it charges.'
+        : `Pays its staff from its takings${Economy.trade(b.type) > 0 ? ' and its trade beyond the village' : ''}.`);
+    }
     if (b.founderId) {
       const f = Sim.people.find((p: any) => p.id === b.founderId);
       if (f) {
@@ -211,6 +223,8 @@ export class Panels {
     const over = [CAT_LABEL[d.cat] || 'Building', b.ruined ? '' : Gov.districtName(b.x, b.y)].filter(Boolean).join(' · ');
     el.innerHTML = card({ over, title: d.name, emo: d.emoji, lvl: b.level > 1 ? b.level - 1 : 0, pills, facts, wide, notes, actions });
     if (canUpgrade) ($('upgrade-home') as HTMLButtonElement).onclick = () => {
+      // (V2: only if they can still afford it: the card may be minutes old)
+      if (b.funds < (b.level === 1 ? 250 : 600) || b.upgrading) { this.showInfo(b); return; }
       if (b.level === 1) { b.funds -= 180; b.upgrading = 240; } else { b.funds -= 420; b.upgrading = 300; }
       this.api.toast(`🔨 The ${b.residents[0].surname}s are adding a floor — you talked them into it!`);
       this.showInfo(b);
@@ -402,6 +416,13 @@ export class Panels {
       ['Health', hr.hospitals ? `${hr.ward} of ${hr.beds} hospital beds taken · ${hr.sick} unwell${Health.wave ? ' · flu season' : ''}` : `No hospital · ${hr.sick} unwell${hr.serious ? `, ${hr.serious} badly` : ''}`],
       ['Graduates', `${grads}${openPosts ? ` · ${openPosts} graduate post${openPosts > 1 ? 's' : ''} unfilled` : ''}`],
       ['Goods', `${sr.wanting.length ? `short of ${sr.wanting.map((g: keyof typeof GOODS) => GOODS[g].name.toLowerCase()).join(', ')}` : 'flowing'}${sr.bare ? ` · ${sr.bare} shop${sr.bare > 1 ? 's' : ''} sold out` : ''}${sr.stalled ? ` · ${sr.stalled} site${sr.stalled > 1 ? 's' : ''} waiting for materials` : ''}`],
+    );
+    // V2: the village fund pays the public services' staff: what it has, what the county sends, and who went unpaid
+    const unpaid = World.buildings.filter((b: any) => Economy.isPublic(b.type) && (b.unpaidDays || 0) >= 1 && !b.ruined).map((b: any) => CAT[b.type].name);
+    const broke = World.buildings.filter((b: any) => CAT[b.type].jobs && !Economy.isPublic(b.type) && (b.unpaidDays || 0) >= 2 && !b.ruined).length;
+    c.facts!.push(
+      ['Village fund', `${money(Gov.treasury)}${Gov.treasury < 0 ? ' (owed to the county)' : ''} · the county sends ${money(Gov.grantToday || COUNTY_GRANT * Sim.people.length)} a day`],
+      ['Wages', `${unpaid.length ? `the fund couldn't pay the ${[...new Set(unpaid)].join(', ').toLowerCase()} staff in full` : 'public staff paid'}${broke ? ` · ${broke} business${broke > 1 ? 'es' : ''} can't pay their staff` : ''}`],
     );
     c.notes!.push(`<b>Tax policy</b>, yours to set:<select id="tax-select">
       <option value="low"${Gov.taxRate === 'low' ? ' selected' : ''}>Low — happy homes, lean treasury</option>

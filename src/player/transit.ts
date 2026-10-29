@@ -146,6 +146,8 @@ export class Transit {
     if (!here) { this.toast('🚕 No road here for a cab to reach'); return false; }
     const stands = World.buildings.filter((b: any) => b.type === 'taxistand' && active(b));
     if (!stands.length) { this.toast('🚕 There is no taxi stand in the village yet'); return false; }
+    // V2: no cab comes out for a fare that can't pay even the flag-fall (a broke Founder used to ride free)
+    if (this.founder.purse.balance < FARES.cabBase + FARES.cabTile * 10) { this.toast(`👛 A cab is at least $${Math.ceil(FARES.cabBase + FARES.cabTile * 10)} — you have $${Math.floor(this.founder.purse.balance)}`); return false; }
     // a free cab from the nearest rank that can reach us
     stands.sort((a: any, b: any) => (a === standHint ? -1 : b === standHint ? 1 : 0) || (Math.abs(a.x * TM - fx) + Math.abs(a.y * TM - fz)) - (Math.abs(b.x * TM - fx) + Math.abs(b.y * TM - fz)));
     for (const st of stands) {
@@ -173,8 +175,14 @@ export class Transit {
     const to = World.nearestRoad(Math.floor(d.x / TM), Math.floor(d.z / TM), 6);
     const route = at && to && World.roadPath(at.x, at.y, to.x, to.y);
     if (!route || route.length < 2) { this.toast('🚕 "Can\'t get there by road, sorry"'); return; }
+    // V2: the fare is quoted before the meter starts, and the driver wants to know you can pay it
+    const fare = Math.round(FARES.cabBase + FARES.cabTile * route.length);
+    if (this.founder.purse.balance < fare) {
+      this.toast(`🚕 "${d.label}? That's about $${fare}." You have $${Math.floor(this.founder.purse.balance)} — pick somewhere nearer on the Map, or walk`);
+      return;
+    }
     cab.route = route; cab.prog = 0; cab.dir = 1;
-    c.fare = Math.round(FARES.cabBase + FARES.cabTile * route.length);
+    c.fare = fare;
     c.phase = 'riding';
     this.aboard = { kind: 'taxi', v: cab, from: null, to: null, stop: null, moved: 0, last: { x: cab.x, y: cab.y }, dist: 8 };
     this.toast(`🚕 "${d.label}? About $${c.fare}." Off you go`);
@@ -336,13 +344,14 @@ export class Transit {
   private dropOff(): void {
     const c = this.cab!;
     const cab = c.v;
-    const paid = this.founder.purse.spend(c.fare, 'Taxi fare', 'purchase', c.stand) ? c.fare : this.founder.purse.balance > 0 && this.founder.purse.spend(Math.floor(this.founder.purse.balance), 'Taxi fare (all you had)', 'purchase', c.stand) ? -1 : 0;
+    // (V2: the meter is paid; if fines took the money on the way, the rest is owed to the rank: no ride is free)
+    const paid = this.founder.purse.charge(c.fare, 'Taxi fare', World.buildings.includes(c.stand) ? c.stand : undefined);
     this.aboard = null;
     this.founder.endRide();
     // out on the kerb side
     const side = Math.atan2(cab.dirx || 0, cab.diry || 1) + Math.PI / 2;
     this.founder.placeAt(cab.x * PX + Math.sin(side) * 2.2, cab.y * PX + Math.cos(side) * 2.2, Math.atan2(cab.dirx || 0, cab.diry || 1));
-    this.toast(paid > 0 ? `🚕 "That's $${c.fare}, thanks!" You're here.` : paid < 0 ? `🚕 The driver takes what you have and shakes their head` : '🚕 You had nothing to pay with — the driver lets it go, this once');
+    this.toast(paid >= c.fare ? `🚕 "That's $${c.fare}, thanks!" You're here.` : `🚕 "That's $${c.fare}." You had $${paid} — the other $${c.fare - paid} is owed to the rank, taken as money comes in`);
     this.releaseCab();
   }
 

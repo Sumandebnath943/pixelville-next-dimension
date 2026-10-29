@@ -24,6 +24,7 @@ import { Tasks } from './tasks';
 import { News } from './news';
 import { Gov } from './gov';
 import { Edu } from './education';
+import { Economy, OUTPATIENT_FEE, AMBULANCE_FEE } from './economy';
 
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 
@@ -133,6 +134,7 @@ export const Health = {
     if (p.carHeld) { p.carHeld.free = true; p.carHeld = null; }
     spot = spot || { x: p.x, y: p.y };
     p.state = 'hurt';
+    p.downT = 0;
     p.at = p.home;
     p.trip = null; p.dest = null; p.events = []; p.returnAt = undefined; p.backTo = null;
     p.x = spot.x; p.y = spot.y;
@@ -176,7 +178,9 @@ export const Health = {
   /** onto the ward at `h` (the patient is already inside) */
   admit(p: any, h: any): void {
     if (!this.freeBed(h)) {
-      // seen in casualty and sent home with instructions
+      // seen in casualty and sent home with instructions (V2: and billed for it, the ambulance too if it brought them)
+      this.charge(p, h, OUTPATIENT_FEE + (p.byAmbulance ? AMBULANCE_FEE : 0));
+      p.byAmbulance = false;
       if (p.cond) p.cond.sev = Math.max(0, p.cond.sev - 12);
       p.returnAt = Sim.clock + 30 > 1435 ? 1435 : Sim.clock + 30;
       Life.say(`🏥 The ward at the Hospital is full — ${Sim.fullName(p)} was seen in casualty and sent home`);
@@ -188,16 +192,25 @@ export const Health = {
     Mind.learnPlace(p, h);
   },
 
+  /** V2: the hospital's bill for `p`: the household pays what it can; the village fund covers the rest while it has the
+   *  money (it used to cover it even with none, and the hospital was paid from thin air); what's left after that the
+   *  household owes the hospital, paid off as money comes in (sim/economy.ts) */
+  charge(p: any, h: any, bill: number): void {
+    const paid = Math.min(bill, Math.max(0, Math.floor((p.home?.funds || 0) - 10)));
+    if (p.home) p.home.funds -= paid;
+    const cover = Math.min(bill - paid, Math.max(0, Gov.treasury));
+    Gov.treasury -= cover;
+    if (h) h.funds = (h.funds || 0) + paid + cover;
+    if (p.home) Economy.owe(p.home, h, bill - paid - cover);
+  },
+
   /** discharged: pay the bill, walk out */
   discharge(p: any): void {
     const h = World.buildings.find((b: any) => b.id === p.ward);
     const days = Math.max(1, Sim.day - (p.wardDay ?? Sim.day) + 1);
     p.ward = 0;
-    const bill = BILL_PER_DAY * days;
-    const paid = Math.min(bill, Math.max(0, p.home.funds - 10));
-    p.home.funds -= paid;
-    if (paid < bill) Gov.treasury = Math.max(0, Gov.treasury - (bill - paid)); // the village fund covers the rest
-    if (h) h.funds += bill;
+    this.charge(p, h, BILL_PER_DAY * days + (p.byAmbulance ? AMBULANCE_FEE : 0));
+    p.byAmbulance = false;
     p.mood = Math.min(98, (p.mood ?? 60) + 6);
     Mind.remember(p, 'health', 'came home from the hospital', 1, h ? h.id : 0);
     if (h && p.at === h && p.state === 'in') Sim.startTrip(p, p.home, null);
@@ -208,7 +221,10 @@ export const Health = {
     if (dest.type !== 'hospital' || !p.toWard) return;
     p.toWard = false;
     if (p.cond && p.cond.sev >= SERIOUS - 10) this.admit(p, dest);
-    else p.returnAt = Math.min(1435, Sim.clock + 40); // seen, given something, sent home
+    else { // seen, given something, sent home (V2: billed for it)
+      this.charge(p, dest, OUTPATIENT_FEE);
+      p.returnAt = Math.min(1435, Sim.clock + 40);
+    }
   },
 
   /** feeling poorly: off to the hospital on foot (or by ambulance, for the frail) */
@@ -290,6 +306,11 @@ export const Health = {
     const hospital = this.hospitals().length > 0;
     for (const p of Sim.people) {
       if (p.state === 'hurt') {
+        // V2: an ambulance that can't get through (the streets locked solid round them): after two hours the neighbours
+        // carry them home, as they do where no ambulance can come at all (lying in the road, they held up the very
+        // traffic the ambulance was stuck in, for good). The ambulance turns back on its own
+        p.downT = (p.downT || 0) + step;
+        if (p.downT >= 120 && p.helpT === undefined) { this.homeCare(p, 'neighbours'); continue; }
         if (p.helpT !== undefined) {
           p.helpT -= step;
           if (p.helpT <= 0) this.homeCare(p, 'neighbours');
@@ -322,11 +343,15 @@ export const Health = {
   /** the ambulance reached the hospital with its patient */
   deliver(p: any, h: any): void {
     if (!Sim.people.includes(p)) return;
-    if (!World.buildings.includes(h) || h.ruined || h.fire || !this.freeBed(h)) {
+    const there = World.buildings.includes(h) && !h.ruined;
+    if (!there || h.fire || !this.freeBed(h)) {
+      // (V2: patched up in casualty and sent home: the ambulance and the visit are still on the bill)
+      if (there) this.charge(p, h, OUTPATIENT_FEE + AMBULANCE_FEE);
       this.homeCare(p, 'full');
       return;
     }
     p.state = 'in'; p.at = h; h.inside++;
+    p.byAmbulance = true; // (V2: on the bill when they're discharged)
     this.admit(p, h);
     Life.say(`🏥 ${Sim.fullName(p)} is on the ward at the Hospital${p.cond?.cause ? ` after being hurt ${p.cond.cause}` : ''}`, doorPx(h));
   },

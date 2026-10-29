@@ -369,7 +369,7 @@ export class Founder {
     if (save) {
       this.pos.set(save.x, save.y, save.z);
       this.yaw = this.camYaw = save.yaw;
-      this.purse.restore(save.wallet, save.ledger as Entry[] | undefined);
+      this.purse.restore(save.wallet, save.ledger as Entry[] | undefined, save.bills);
       if (save.car) Object.assign(this.car, { x: save.car.x, z: save.car.z, yaw: save.car.yaw, speed: 0 });
       else this.parkCarAtLodge(lodge);
     } else if (lodge) {
@@ -445,7 +445,7 @@ export class Founder {
     if (this.hijacked?.stolen) returnCars.push({ home: this.hijacked.stolen.home, car: this.hijacked.stolen.car });
     return {
       x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: at ? { x: at.x, z: at.z, yaw: at.yaw } : null,
-      wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), damage: Math.round(this.fleet.cur?.damage ?? 0),
+      wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), bills: this.purse.bills.map((b) => ({ ...b })), damage: Math.round(this.fleet.cur?.damage ?? 0),
       fleet: this.fleet.serialize(), returnCars, bag: this.bag.slice(), style: { ...this.style },
     };
   }

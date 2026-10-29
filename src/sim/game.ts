@@ -49,6 +49,8 @@ export interface FounderSave {
   wallet: number;
   /** V2: the wallet's ledger (newest last) and the car's dents */
   ledger?: { day: number; time: string; amount: number; label: string; kind: string }[];
+  /** V2: bills the wallet couldn't cover, owed to a building (its id) or the village fund (0) */
+  bills?: { to: number; n: number; label: string }[];
   damage?: number;
   /** V2: the Founder's vehicles (src/player/fleet.ts) */
   fleet?: { list: unknown[]; current: number; owed: number };
@@ -107,7 +109,7 @@ export const Game = {
     this.undoStack = [];
   },
 
-  newMap(name: string, scenarioId: string, seed?: number): void {
+  newMap(name: string, scenarioId: string, seed?: number, quiet = false): void {
     World.genStarterMap(seed);
     this.resetAll();
     Weather.init();
@@ -123,7 +125,7 @@ export const Game = {
       this.toast(`🎯 Scenario: ${def.name} — ${def.desc}. Good luck!`);
     }
     this.afterMapEdit();
-    this.toast(`New land discovered 🗺️ — open the Planner ({planner}) and drop a house to found ${World.name}!`);
+    if (!quiet) this.toast(`New land discovered 🗺️ — open the Planner ({planner}) and drop a house to found ${World.name}!`);
   },
 
   /** The Founder's Lodge: the player's home base beside the west highway. */
@@ -294,6 +296,7 @@ export const Game = {
     if (d.building) {
       const b = World.placeBuilding(key, x, y, false, f);
       if (!b) return false;
+      b.byFounder = true; // (V2: the Founder's own: it opens with a few days' wages in the till, sim/economy.ts)
       this.afterMapEdit();
       Snd.place();
       this.toast(`🏗️ ${d.name} under construction${b.connected ? '' : ' — ⚠️ no road access!'}`);

@@ -31,6 +31,7 @@ export const Settings: any = {
     headBob: true,        // first-person head bob
     calm: false,          // reduce motion
     tourDone: false,      // the first-day guide has been seen (or skipped)
+    godView: false,       // V2: god view: the Planner sees the village clearly through storm, mist and fog
   },
 
   load() {

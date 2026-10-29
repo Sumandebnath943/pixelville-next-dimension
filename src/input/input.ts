@@ -12,7 +12,7 @@ import { Settings } from '../sim/settings';
 export type Action =
   | 'jump' | 'interact' | 'vehicle' | 'camera' | 'planner' | 'phone' | 'run'
   | 'rotate' | 'cancel' | 'undo' | 'pause' | 'journal' | 'help' | 'photo' | 'hide' | 'shoot'
-  | 'forward' | 'back' | 'left' | 'right' | 'climb' | 'descend';
+  | 'forward' | 'back' | 'left' | 'right' | 'climb' | 'descend' | 'god';
 
 /** the actions a player can rebind, in the order Settings lists them; `group` keeps clashes apart
  *  (the plane's climb can share E with "use", since nobody talks to anyone from the flight deck) */
@@ -31,6 +31,7 @@ export const BINDABLE: { a: Action; label: string; group: 'main' | 'fly' }[] = [
   { a: 'journal', label: 'Task book', group: 'main' },
   { a: 'photo', label: 'Photo mode', group: 'main' },
   { a: 'rotate', label: 'Turn the door (Planner)', group: 'main' },
+  { a: 'god', label: 'God view (Planner): see through the weather', group: 'main' },
   { a: 'help', label: 'Help', group: 'main' },
   { a: 'climb', label: 'Climb · rise (plane, photo, Planner turn)', group: 'fly' },
   { a: 'descend', label: 'Descend · sink (plane, photo, Planner turn)', group: 'fly' },
@@ -38,7 +39,7 @@ export const BINDABLE: { a: Action; label: string; group: 'main' | 'fly' }[] = [
 export const DEFAULT_KEYS: Partial<Record<Action, string[]>> = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'], jump: ['Space'], interact: ['KeyE'], vehicle: ['KeyF'], camera: ['KeyV'],
-  phone: ['Tab'], planner: ['KeyP'], journal: ['KeyJ'], photo: ['F2'], rotate: ['KeyR'], help: ['F1'],
+  phone: ['Tab'], planner: ['KeyP'], journal: ['KeyJ'], photo: ['F2'], rotate: ['KeyR'], help: ['F1'], god: ['KeyG'],
   climb: ['KeyE'], descend: ['KeyQ'],
   // fixed: Esc always cancels, H hides the photo panel, Enter takes the photo
   cancel: ['Escape'], hide: ['KeyH'], shoot: ['Enter', 'NumpadEnter'],

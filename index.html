@@ -66,6 +66,7 @@
       <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.5 4.5a4.5 4.5 0 0 0-4.3 5.8L4.5 16a2.1 2.1 0 0 0 3 3l5.7-5.7a4.5 4.5 0 0 0 5.8-4.3l-2.7 2.7-2.6-.7-.7-2.6z" /></symbol>
       <symbol id="i-hardhat" viewBox="0 0 24 24"><path d="M3 17.5h18M4.5 17.5v-2a7.5 7.5 0 0 1 15 0v2M10 8.3V6h4v2.3M8 9.4l1 5M16 9.4l-1 5" /></symbol>
       <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></symbol>
+      <symbol id="i-godeye" viewBox="0 0 24 24"><path d="M3.5 14S7 9 12 9s8.5 5 8.5 5-3.5 5-8.5 5-8.5-5-8.5-5z" /><circle cx="12" cy="14" r="2.3" /><path d="M12 2.5v3M5.5 4.8l1.8 2.4M18.5 4.8l-1.8 2.4" /></symbol>
     </svg>
 
     <canvas id="game"></canvas>
@@ -98,6 +99,7 @@
           <span id="filebtns">
             <button class="ib" id="btn-phone" title="Phone — map, wallet, news (Tab)"><svg><use href="#i-phone" /></svg></button>
             <button class="ib" id="btn-planner" title="Planner — rise up and build (P)"><svg><use href="#i-crane" /></svg></button>
+            <button class="ib" id="btn-god" title="God view — see the village clearly through storm, mist and fog (G)"><svg><use href="#i-godeye" /></svg></button>
             <button class="ib" id="btn-journal" title="Task book & village news (J)"><svg><use href="#i-book" /></svg><span id="journal-badge"></span></button>
             <button class="ib" id="btn-stats" title="Village history"><svg><use href="#i-chart" /></svg></button>
             <button class="ib" id="btn-menu" title="Menu"><svg><use href="#i-menu" /></svg></button>
@@ -107,6 +109,7 @@
           <button id="btn-save"><svg><use href="#i-save" /></svg>Save village</button>
           <button id="btn-load"><svg><use href="#i-folder" /></svg>Load village</button>
           <button id="btn-new"><svg><use href="#i-map" /></svg>Found a new village</button>
+          <button id="btn-auto"><svg><use href="#i-sprout" /></svg>Auto village</button>
           <hr />
           <button id="btn-settings"><svg><use href="#i-gear" /></svg>Settings</button>
           <button id="btn-sound"><svg><use href="#i-sound" /></svg><span>Sound on</span></button>
@@ -281,6 +284,14 @@
         <div class="row-end"><button data-close="newmap">Cancel</button><button class="primary" id="nm-start">Found the village</button></div>
       </div></div>
 
+      <!-- V2: Auto village: a ready-made village to watch -->
+      <div id="autoui" class="modal"><div class="modal-card glass">
+        <header class="m-head"><h1>Auto village</h1><button class="ib" data-close="autoui" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <p class="note">A bustling, ready-made village to sit back and watch: its people go about their day, and it grows on its own. Choose the season, the weather and the festival whenever you like.</p>
+        <p class="note">This replaces the village you're in. Your save slots are kept: save this village first if you want to come back to it.</p>
+        <div class="row-end"><button data-close="autoui">Cancel</button><button id="au-save"><svg><use href="#i-save" /></svg>Save this village first</button><button class="primary" id="au-go">Build it</button></div>
+      </div></div>
+
       <div id="showroomui" class="modal"><div class="modal-card glass wide">
         <header class="m-head"><h1 id="sr-title">Showroom</h1><button class="ib" data-close="showroomui" title="Close"><svg><use href="#i-close" /></svg></button></header>
         <p class="note" id="sr-sub"></p>
@@ -339,7 +350,8 @@
           <div><h3>The Planner</h3>
             <p><kbd data-k="planner">P</kbd> rise into the Planner and back down · <kbd data-k="forward">W</kbd><kbd data-k="left">A</kbd><kbd data-k="back">S</kbd><kbd data-k="right">D</kbd> glide · wheel zoom · <kbd data-k="descend">Q</kbd>/<kbd data-k="climb">E</kbd> or right-drag to rotate<br />
             Pick from the palette and click to place · <kbd data-k="rotate">R</kbd> turns the door side · drag roads, rails, rivers and the bulldozer<br />
-            Click any building or villager to inspect · right-click or <kbd>Esc</kbd> cancels · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · up to 8× speed · Settings → Controls changes any key</p></div>
+            Click any building or villager to inspect · right-click or <kbd>Esc</kbd> cancels · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · up to 8× speed · Settings → Controls changes any key<br />
+            <kbd data-k="god">G</kbd> god view: the view clears of storm, mist and fog (the weather goes on below); again to see the weather</p></div>
           <div><h3>Gamepad and touch</h3>
             <p>Sticks move and look · <kbd>A</kbd> jump · <kbd>X</kbd> use · <kbd>Y</kbd> vehicle · <kbd>R3</kbd> camera · <kbd>LB</kbd> photo · <kbd>View</kbd> phone · <kbd>Menu</kbd> Planner · triggers drive. In any menu the d-pad moves, <kbd>A</kbd> presses, <kbd>B</kbd> backs out. In the Planner the ring in the middle is your cursor: <kbd>A</kbd> places, <kbd>LB</kbd> turns the palette's tabs, <kbd>X</kbd> pauses.<br />
             On phones: left thumb moves, right thumb looks, buttons for the rest (▲▼ climb and descend on the flight deck). In the Planner, drag to pan and pinch to zoom.</p></div>
@@ -371,6 +383,23 @@
       <div class="pm-actions"><button id="pm-hide">Hide <kbd>H</kbd></button><button class="primary" id="pm-shoot"><svg><use href="#i-camera" /></svg>Save photo <kbd>Enter</kbd></button></div>
       <p class="pm-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>E</kbd>/<kbd>Q</kbd> up, down · <kbd>Shift</kbd> faster · drag to look · wheel zooms · <kbd>Esc</kbd> leaves</p>
     </div>
+    <!-- V2: Auto village: the watching panel (season, weather, festival, pace) and the build in progress -->
+    <div id="auto" class="glass" aria-label="Auto village">
+      <div class="pm-head"><b id="au-name">Auto village</b><span id="au-now"></span><button class="ib" id="au-hide" title="Hide the panel (H)"><svg><use href="#i-close" /></svg></button></div>
+      <div class="pm-sec">Season</div>
+      <div class="pm-chips" id="au-season"></div>
+      <div class="pm-sec">Weather</div>
+      <div class="pm-chips" id="au-wx"></div>
+      <div class="pm-sec">Festival</div>
+      <div class="pm-chips" id="au-fest"></div>
+      <div class="pm-sec">Pace</div>
+      <div class="pm-chips" id="au-speed"></div>
+      <p class="pm-note">Drag to turn the view · wheel to come closer · <kbd>H</kbd> hides this</p>
+      <div class="pm-actions"><button id="au-view"><svg><use href="#i-camera" /></svg>Another view</button><button id="au-new"><svg><use href="#i-sprout" /></svg>New village</button></div>
+      <button class="primary" id="au-play"><svg><use href="#i-home" /></svg>Play this village</button>
+    </div>
+    <button id="au-show" class="glass"><svg><use href="#i-sprout" /></svg>Auto village</button>
+    <div id="au-build"><div class="glass"><b id="au-build-title">Building an auto village</b><span id="au-build-text">Laying out the streets…</span></div></div>
     <div id="flash"></div>
     <div id="fade"></div>
     <div id="curtain">
@@ -445,6 +474,7 @@
           <button class="primary la-go" id="la-continue"><svg><use href="#i-home" /></svg><span>Continue</span><kbd>Enter</kbd><svg class="la-arrow"><use href="#i-back" /></svg></button>
           <div class="la-list">
             <button id="la-new"><svg><use href="#i-map" /></svg><span>Found a new village<small>Start again in an empty valley</small></span></button>
+            <button id="la-auto"><svg><use href="#i-sprout" /></svg><span>Auto village<small>A ready-made village to watch live and grow</small></span></button>
             <button id="la-load"><svg><use href="#i-folder" /></svg><span>Load a village<small>Open a village you saved</small></span></button>
             <button id="la-controls"><svg><use href="#i-help" /></svg><span>Controls<small>Keyboard, mouse, gamepad and touch</small></span></button>
             <button id="la-settings"><svg><use href="#i-gear" /></svg><span>Settings<small>Graphics, sound and accessibility</small></span></button>

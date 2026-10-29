@@ -11,6 +11,7 @@ import { Power } from './power';
 import { Supply } from './supply';
 import { Edu } from './education';
 import { Hustings } from './hustings';
+import { Economy } from './economy';
 /* ============================================================
    PixelVille — village government, elections & community spirit.
    Adults vote once every 28 in-game days. Their vote is based on
@@ -636,6 +637,7 @@ export const Gov: any = {
       const b = World.placeBuilding('busstop', spot.x, spot.y, false, spot.f);
       if (!b) continue;
       this.treasury -= cost;
+      Economy.commission(b, cost); // (V2: the council's money buys the materials)
       placed++;
     }
     if (placed) {
@@ -682,16 +684,18 @@ export const Gov: any = {
         bA = World.placeBuilding('trainstation', sA.x, sA.y, false, sA.f);
         if (!bA) return;
         this.treasury -= cost;
+        Economy.commission(bA, cost);
       }
       const sB = World.findPlannedSpot('trainstation', { x: far.b.x, y: far.b.y });
       const bB = sB ? World.placeBuilding('trainstation', sB.x, sB.y, false, sB.f) : null;
       if (!bB) { World.refreshConnections(); return; }
       this.treasury -= cost;
+      Economy.commission(bB, cost);
       const aA = anchor(bA), aB = anchor(bB);
       if (aA && aB) {
         const laid = World.connectRail(aA.x, aA.y, aB.x, aB.y);
         if (laid >= 0) {
-          this.treasury = Math.max(0, this.treasury - laid * 2);
+          this.treasury -= laid * 2; // (V2: track laid on credit is owed, not forgiven at $0)
           this.recentBuilds += 2;
           this.say(`🛤️ Railway programme! Mayor ${this.leader.name} is building two stations and laying track out to the ${this.districtName(sB.x, sB.y)}.`);
           Tasks.add('railway1', '🛤️', 'Open the first railway line');
@@ -717,7 +721,7 @@ export const Gov: any = {
       if (aA && aB) {
         const laid = World.connectRail(aA.x, aA.y, aB.x, aB.y);
         if (laid >= 0) {
-          this.treasury = Math.max(0, this.treasury - laid * 2);
+          this.treasury -= laid * 2; // (V2: track laid on credit is owed, not forgiven at $0)
           this.say(`🛤️ Track crews connected the ${this.districtName(st.x, st.y)} station to the main line.`);
           Life.trainT = 0;
         }
@@ -742,6 +746,7 @@ export const Gov: any = {
     const nb = World.placeBuilding('trainstation', spot.x, spot.y, false, spot.f);
     if (!nb) return;
     this.treasury -= cost;
+    Economy.commission(nb, cost);
     const aA = anchor(nb);
     let best = null, bd = 1e9;
     for (let i = 0; i < World.railMap.length; i++) {
@@ -753,7 +758,7 @@ export const Gov: any = {
     if (aA && best) {
       const laid = World.connectRail(aA.x, aA.y, best.x, best.y);
       if (laid >= 0) {
-        this.treasury = Math.max(0, this.treasury - laid * 2);
+        this.treasury -= laid * 2; // (V2: track laid on credit is owed, not forgiven at $0)
         this.say(`🚉 New rail link! The ${this.districtName(spot.x, spot.y)} is joining the railway network — far places, connected.`);
         Life.trainT = 0;
       }
@@ -897,6 +902,7 @@ export const Gov: any = {
     const b = World.placeBuilding(key, spot.x, spot.y, false, spot.f);
     if (!b) return false;
     this.treasury -= cost;
+    Economy.commission(b, cost);
     this.recentBuilds += urgent === key ? 1.5 : 0.8;
     this.unmetNeeds[key] = 0;
     L.built = (L.built || []).concat(CAT[key].name).slice(-8); // the record they run on
@@ -968,6 +974,7 @@ export const Gov: any = {
       const b = World.placeBuilding('townhall', spot.x, spot.y, false, spot.f);
       if (!b) return;
       this.treasury -= cost;
+      Economy.commission(b, cost);
       this.recentBuilds += 0.5;
       World.refreshConnections();
       this.say(`🏛️ Work starts on the mayor's office — Mayor ${this.leader.name} needs a desk.`);
@@ -1047,7 +1054,7 @@ export const Gov: any = {
     // ever afford an extra floor, a second car or a mansion. While the
     // treasury is saving for the railway, the community pays its own way.
     const railSaving = this.leader && Sim.people.length >= 45 && this.countOf('trainstation') === 0;
-    const fromTreasury = this.leader && !railSaving ? Math.min(this.treasury, cost * 0.5) : 0;
+    const fromTreasury = this.leader && !railSaving ? Math.max(0, Math.min(this.treasury, cost * 0.5)) : 0;
     const homes = World.buildings.filter((b: Building) => CAT[b.type].res && b.residents.length && b.funds > 25 && !b.ruined);
     const pool = homes.reduce((sum: number, b: Building) => sum + Math.max(0, (b.funds - 20) * 0.25), 0);
     if (fromTreasury + pool < cost * (urgent ? 1.0 : 1.1)) return false; // a poor village needs time to save
@@ -1066,14 +1073,11 @@ export const Gov: any = {
     const b = World.placeBuilding(need, spot.x, spot.y, false, spot.f);
     if (!b) return false;
     this.treasury -= fromTreasury;
-    let due = cost - fromTreasury;
-    for (const home of homes) {
-      if (due <= 0) break;
-      const share = Math.min((home.funds - 20) * 0.25, due / homes.length + 5);
-      if (share <= 0) continue;
-      home.funds -= share;
-      due -= share;
-    }
+    // V2: every home gives its part of the whole (in proportion to what it can spare): one pass used to fall short and
+    // the building went up part-paid
+    const due = cost - fromTreasury, k = pool > 0 ? Math.min(1, due / pool) : 0;
+    for (const home of homes) home.funds -= Math.max(0, (home.funds - 20) * 0.25) * k;
+    Economy.commission(b, cost);
     if (this._noRoom) this._noRoom[need] = false; // space was found after all
     World.refreshConnections();
     // close the task book entry NOW — the timers reset below, so the timer-gated

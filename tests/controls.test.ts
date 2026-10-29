@@ -13,9 +13,9 @@ describe('controls', () => {
 
   it('binds a key, takes it from whatever had it, and resets', () => {
     expect(Input.binds.interact).toEqual(['KeyE']);
-    expect(Input.bind('interact', 'KeyG')).toEqual([]);
-    expect(Input.binds.interact).toEqual(['KeyG']);
-    expect(Settings.data.keys.interact).toEqual(['KeyG']);
+    expect(Input.bind('interact', 'KeyK')).toEqual([]); // (V2: G is god view's now)
+    expect(Input.binds.interact).toEqual(['KeyK']);
+    expect(Settings.data.keys.interact).toEqual(['KeyK']);
     // F belongs to the vehicle: binding it to "use" leaves the vehicle without a key
     expect(Input.bind('interact', 'KeyF')).toEqual(['vehicle']);
     expect(Input.binds.vehicle).toEqual([]);

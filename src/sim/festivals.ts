@@ -40,7 +40,7 @@ export const Festivals: any = {
   lastAnnounce: '',
 
   reset() {
-    this.tree = null; this.lastAnnounce = '';
+    this.tree = null; this.lastAnnounce = ''; this.pinDay = null;
     this.markets = []; this.carolers = []; this.santa = null; this.sleigh = null;
     this.sleighDay = 0; this.carolT = 0; this._seasonOn = false;
     if (World.clearReserved) World.clearReserved();
@@ -57,7 +57,9 @@ export const Festivals: any = {
   },
   say(m: string) { Life.say(m); },
 
-  yearDay() { return ((Sim.day - 1) % 28) + 1; },
+  /** V2 (Auto village): a festival the player chose: its day of the year, held until it's let go (null: the calendar's) */
+  pinDay: null as number | null,
+  yearDay() { return this.pinDay ?? ((Sim.day - 1) % 28) + 1; },
   year() { return Math.floor((Sim.day - 1) / 28); },
 
   isEaster() { const d = this.yearDay(); return d === 4 || d === 5; },
@@ -208,8 +210,14 @@ export const Festivals: any = {
       this.say('🎁 MERRY CHRISTMAS! Presents under every tree — the whole village gathers at the great one.');
       News.breaking('Merry Christmas from PVTV — scenes of joy at the great tree');
       boost(8);
-      for (const b of World.buildings) // presents aren't free
-        if (CAT[b.type].res && b.residents.length) b.funds = Math.max(0, b.funds - 5);
+      // presents aren't free (V2: they're bought in the village's shops, whose tills take the money: it used to vanish)
+      const shops = World.buildings.filter((b: any) => CAT[b.type].visit === 'shop' && b.connected && !b.ruined && !b.construction);
+      for (const b of World.buildings)
+        if (CAT[b.type].res && b.residents.length) {
+          const spent = Math.min(5, Math.max(0, b.funds));
+          b.funds -= spent;
+          if (shops.length) shops[(Math.random() * shops.length) | 0].funds += spent;
+        }
     } else if (yd === 28) {
       this.say("🎇 New Year's Eve — the countdown is on. Fireworks at midnight over every rooftop!");
       News.breaking("New Year's Eve — town-wide fireworks at midnight");

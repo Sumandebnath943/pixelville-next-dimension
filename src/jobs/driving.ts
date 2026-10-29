@@ -23,6 +23,7 @@ import { Rep } from '../sim/reputation';
 import { Health } from '../sim/health';
 import { Power } from '../sim/power';
 import { Supply, SELLS, MAKES, LOAD, GOODS, Good } from '../sim/supply';
+import { Economy } from '../sim/economy';
 import { placeName } from '../player/transit';
 import {
   Act, Draw, Job, ShiftCtx, active, distTo, doorM, here, kerbM, nowAbs, stoppedNear,
@@ -76,6 +77,7 @@ export class TaxiJob implements Job {
       const a = Life.streetTile(from), b = Life.streetTile(to);
       const path = a && b && World.roadPath(a.x, a.y, b.x, b.y);
       if (!path || path.length < 10) continue; // not worth a cab
+      if ((p.home?.funds || 0) - 5 < Math.round(METER.base + METER.tile * path.length)) continue; // (V2: nor one they can't pay for)
       this.hail(p, from, to, path.length);
       return true;
     }
@@ -117,16 +119,18 @@ export class TaxiJob implements Job {
     this.next = 3;
     this.arrive(fr);
     // the meter (and a tip), from the household's purse into the rank's till: the driver's 60% is paid at clock-off
-    const paid = Math.min(fr.cost, Math.max(0, Math.floor(p.home.funds - 5)));
+    // (V2: a fare short of the meter owes the rank the rest: it used to be let off)
+    const stand = World.buildings.includes(this.c.b) ? this.c.b : null;
+    const paid = Math.min(fr.cost, Math.max(0, Math.floor(p.home.funds)));
+    if (paid < fr.cost) Economy.owe(p.home, stand, fr.cost - paid);
     const tip = Rep.of(p) >= 1 && p.home.funds - paid > 30 ? 1 + Math.round(Math.random()) : 0;
     p.home.funds -= paid + tip;
-    const stand = this.c.b;
-    if (stand && World.buildings.includes(stand)) { stand.funds = (stand.funds || 0) + paid + tip; stand.visitors = (stand.visitors || 0) + 1; }
+    if (stand) { stand.funds = (stand.funds || 0) + paid + tip; stand.visitors = (stand.visitors || 0) + 1; }
     this.c.earn(paid * 0.6 + tip, `Fare: ${p.name} to ${spot(p, fr.to)}`);
     this.c.good(nowAbs() - fr.at < 20 ? 0.7 : 0.4);
     this.served++;
     Rep.feel(p, 1, 'the Founder drove me across town in their cab', `drove ${p.name} across town in a cab`);
-    this.c.toast(paid ? `🚕 "Thanks!" — $${paid} on the meter${tip ? `, and a $${tip} tip` : ''}` : `🚕 ${p.name} couldn't pay — "next time, I promise"`);
+    this.c.toast(paid >= fr.cost ? `🚕 "Thanks!" — $${paid} on the meter${tip ? `, and a $${tip} tip` : ''}` : `🚕 ${p.name} paid $${paid} of the $${fr.cost} — the rest is owed to the rank`);
     this.c.gps.clear();
   }
   private giveUp(): void {

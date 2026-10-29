@@ -30,6 +30,9 @@ export interface HudApi {
   setTool(k: string | null): void;
   openMayor(): void;
   togglePhone(): void;
+  /** V2: god view on or off (the Planner sees through the weather) */
+  toggleGod(): void;
+  godView(): boolean;
 }
 
 /** palette categories: key, tab label, heading, icon */
@@ -92,6 +95,7 @@ export class Hud {
     this.buildPalette();
     $('stat-leader').addEventListener('click', () => api.openMayor());
     $('btn-planner').addEventListener('click', () => api.togglePlanner());
+    $('btn-god').addEventListener('click', () => api.toggleGod());
     $('btn-journal').addEventListener('click', () => this.toggleJournal());
     $('btn-phone').addEventListener('click', () => api.togglePhone());
     // the menu: save, load, new map, settings, sound, help
@@ -274,6 +278,7 @@ export class Hud {
     else leader = 'Self-governing';
     set('stat-leader-text', leader);
     $('btn-planner').classList.toggle('on', this.api.isPlanner());
+    $('btn-god').classList.toggle('on', this.api.godView());
     ($('rci-r') as HTMLElement).style.height = Math.round(s.demand.r * 100) + '%';
     ($('rci-c') as HTMLElement).style.height = Math.round(s.demand.c * 100) + '%';
     ($('rci-i') as HTMLElement).style.height = Math.round(s.demand.i * 100) + '%';

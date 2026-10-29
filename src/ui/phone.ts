@@ -250,6 +250,8 @@ export class Phone {
     const w = this.api.purse;
     const t = w.day();
     let h = `<div class="ph-balance"><span>Balance</span><b>$${Math.round(w.balance)}</b><small>Today: <em class="up">+$${t.in}</em> · <em class="down">−$${t.out}</em></small></div>`;
+    // V2: bills for what was already had (a cab, the hospital), owed until there's money to pay them
+    for (const b of w.bills) h += `<div class="ph-route"><span class="grow">Owed · ${esc(b.label)}<small>Paid off as money comes in</small></span><b class="down">$${Math.round(b.n)}</b></div>`;
     const bag = this.api.bag();
     if (bag.length) {
       h += '<div class="ph-sep">In your bag</div>';

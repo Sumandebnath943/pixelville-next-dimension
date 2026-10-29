@@ -412,7 +412,8 @@ export const Power = {
   /** once a day: the county bills for what it carried, and memories of outages fade */
   daily(): void {
     const imported = Math.max(0, Math.min(COUNTY_CAP, this.demand - this.plantCap));
-    if (imported > 0) Gov.treasury = Math.max(0, Gov.treasury - imported * 0.15);
+    // (V2: the county is paid, if need be on credit: it was forgiven whenever the fund stood at $0)
+    if (imported > 0) Gov.treasury -= imported * 0.15;
     this.recent *= 0.8;
     this.outagesToday = 0;
   },

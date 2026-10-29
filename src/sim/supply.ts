@@ -28,6 +28,8 @@ import { Mind } from './mind';
 import { Power, nearlyThere } from './power';
 import { Traffic, kerbside } from './traffic';
 import { Approach } from './approach';
+import { Economy } from './economy';
+import { STUCK_RELIEF } from './life';
 
 export type Good = 'food' | 'mats' | 'tex' | 'prod';
 export const GOODS: Record<Good, { name: string; emoji: string; color: string; unit: number }> = {
@@ -205,6 +207,12 @@ export const Supply = {
   },
 
   /* ---------- trucks ---------- */
+  /** V2: what a shop has already ordered and not yet paid for (on the road to it) */
+  owing(b: any): number {
+    let n = 0;
+    for (const t of Life.trucks) if (t.to === b && t.phase === 'go') n += t.n * GOODS[t.g as Good].unit * (t.kind === 'import' ? 1 : 0.5);
+    return n;
+  },
   incoming(b: any): number {
     let n = 0;
     for (const t of Life.trucks) if (t.to === b && t.phase === 'go') n += t.n;
@@ -272,10 +280,15 @@ export const Supply = {
     const wanting = new Set<Good>();
     for (const nd of needs) {
       if (Life.trucks.length >= this.maxTrucks()) break;
-      const n = Math.min(LOAD, Math.ceil(nd.n));
+      let n = Math.min(LOAD, Math.ceil(nd.n));
+      // V2: a shop orders what its till can pay for (wholesale here, dearer from off the map); a site's materials are
+      // paid from its budget when the truck arrives
+      const u = GOODS[nd.g].unit, till = nd.site ? Infinity : Math.max(0, nd.b.funds || 0) - this.owing(nd.b);
       const src = this.source(nd.g, nd.b, n);
       if (src) {
         const path = World.roadPath(src.door.x, src.door.y, nd.b.door.x, nd.b.door.y);
+        n = Math.min(n, Math.floor(till / (u * 0.5)));
+        if (n < 1) continue;
         if (path) {
           const take = Math.min(n, Math.floor(src.store ? src.store[nd.g] : src.stock));
           if (src.store) src.store[nd.g] -= take; else src.stock -= take;
@@ -284,6 +297,8 @@ export const Supply = {
         }
       }
       // nothing in town: bring it in from off the map, while today's allowance lasts
+      n = Math.min(n, Math.floor(till / u));
+      if (n < 1) continue;
       if (this.allow[nd.g] >= 4) {
         const path = this.edgePath(nd.b);
         if (path) {
@@ -303,8 +318,10 @@ export const Supply = {
       if (!m || selfMade(b.type) || !active(b) || (b.stock || 0) < YARD * 0.7) continue;
       if (Life.trucks.some((t: any) => t.from === b && t.phase === 'go' && t.kind !== 'deliver')) continue;
       const n = Math.min(30, Math.floor(b.stock));
+      // (V2: a warehouse buys the load, so only one with the money to: the station sells it on by rail)
       const shed = World.buildings
-        .filter((w: any) => STORE_CAP[w.type] && active(w) && (w.type === 'warehouse' || Life.trains.some((tr: any) => tr.type === 'freight')) && STORE_CAP[w.type] - this.storeUsed(w) >= n)
+        .filter((w: any) => STORE_CAP[w.type] && active(w) && (w.type === 'warehouse' || Life.trains.some((tr: any) => tr.type === 'freight')) && STORE_CAP[w.type] - this.storeUsed(w) >= n &&
+          (w.type !== 'warehouse' || (w.funds || 0) >= n * GOODS[m.g].unit * 0.4))
         .sort((a: any, c: any) => near(a, b) - near(c, b))[0];
       const path = shed ? World.roadPath(b.door.x, b.door.y, shed.door.x, shed.door.y) : this.edgePath(b, true);
       if (!path) continue;
@@ -358,21 +375,36 @@ export const Supply = {
     if (to.construction > 0) {
       this.initSite(to);
       to.mats += t.n;
-      if (t.kind === 'import') Gov.treasury = Math.max(0, Gov.treasury - t.n * u * 0.25); // (M7: was half: it pinned the fund at $0)
-      else if (t.from && World.buildings.includes(t.from)) t.from.funds += t.n * u * 0.5;
+      // V2: the site's budget pays for its materials (the Founder's sites and the developers' are paid from beyond the
+      // map); the village fund used to pay a quarter of every import, and the yard was paid for local loads by nobody
+      const paid = Economy.payForMaterials(to, t.n * u * (t.kind === 'import' ? 1 : 0.5));
+      if (t.kind !== 'import' && t.from && World.buildings.includes(t.from)) t.from.funds += paid;
       return;
     }
     if (to.store) {
       to.store[t.g] = (to.store[t.g] || 0) + t.n;
+      // V2: the warehouse buys the load from the yard (it used to take it for nothing)
+      if (t.from && World.buildings.includes(t.from) && to.type === 'warehouse') {
+        const paid = Math.min(t.n * u * 0.4, Math.max(0, to.funds || 0));
+        to.funds -= paid; t.from.funds += paid;
+      }
       return;
     }
     const s = SELLS[to.type];
     if (!s) return;
     this.init(to);
-    to.stock = Math.min(s.cap, to.stock + t.n);
-    // the shop pays wholesale (dearer for imports), as far as its till allows
-    const cost = t.n * u * (t.kind === 'import' ? 1 : 0.5);
-    const paid = Math.min(cost, Math.max(0, to.funds));
+    // the shop pays wholesale (dearer for imports); V2: and takes only what its till can pay for (it used to take the
+    // whole load and pay what it could): the rest goes back to the yard, or back on the road beyond the map
+    const rate = u * (t.kind === 'import' ? 1 : 0.5);
+    const n = Math.min(t.n, s.cap - to.stock, Math.floor(Math.max(0, to.funds) / rate + 1e-6));
+    const back = t.n - Math.max(0, n);
+    if (back > 0) {
+      if (t.kind === 'import') this.allow[t.g as Good] += back;
+      else if (t.from && World.buildings.includes(t.from)) { if (t.from.store) t.from.store[t.g] = (t.from.store[t.g] || 0) + back; else t.from.stock = (t.from.stock || 0) + back; }
+    }
+    if (n <= 0) return;
+    to.stock += n;
+    const paid = n * rate;
     to.funds -= paid;
     if (t.from && World.buildings.includes(t.from)) t.from.funds += paid;
   },
@@ -386,10 +418,13 @@ export const Supply = {
     for (const g of GOOD_KEYS) {
       if (room <= 0) break;
       const want = this.short[g] > 0 || this.wanting.has(g) ? 40 : 15;
-      const n = Math.max(0, Math.min(room, want - station.store[g]));
+      // V2: the station buys the bulk load at the railway's price, as far as its till goes (it sells it on at wholesale);
+      // the village fund used to pay a quarter of it, and nothing at all once it was empty
+      const unit = GOODS[g].unit * 0.4;
+      const n = Math.max(0, Math.min(room, want - station.store[g], Math.floor(Math.max(0, station.funds || 0) / unit)));
       station.store[g] += n;
+      station.funds -= n * unit;
       room -= n;
-      Gov.treasury = Math.max(0, Gov.treasury - n * GOODS[g].unit * 0.25);
     }
   },
 
@@ -401,6 +436,10 @@ export const Supply = {
       if (t.phase === 'go' || t.phase === 'back') {
         const step = Traffic.advance(t, t, t.path, t.prog, 1, TRUCK_SPEED, dt, 0.9);
         t.prog += step;
+        // (V2: gridlock relief, as for the villagers' cars: stuck for good, a load on its way counts as delivered, an
+        // empty truck is back at the yard)
+        t.stuckT = step > 0.002 ? 0 : (t.stuckT || 0) + dt;
+        if (t.stuckT > STUCK_RELIEF) { if (t.phase === 'go' && !t.unloaded) { t.unloaded = true; this.unload(t); } t.done = true; continue; }
         Life.followPath(t, t.path, Math.min(t.prog, t.path.length - 1), Traffic.lanePx(t));
         if (nearlyThere(t, t.path, step, dt)) {
           // (V2: back to the edge, it drives on away down the road; an export is sold beyond the edge, so it doesn't

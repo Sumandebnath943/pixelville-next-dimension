@@ -11,8 +11,11 @@ import { Mind } from './mind';
 import { Calamity } from './calamity';
 import { Gov } from './gov';
 import { Festivals } from './festivals';
-import { Traffic, lanePose, railPose, kerbside, isBox, CAR_LEN } from './traffic';
+import { Traffic, lanePose, railPose, kerbside, isBox, CAR_LEN, FOOT_PX } from './traffic';
 import { Walk, Stroll } from './walking';
+/** V2: seconds a visitor's car, a cab or a delivery truck can stand without moving before it leaves the jam (gridlock
+ *  relief, as for the villagers' cars) */
+export const STUCK_RELIEF = 150;
 import { peakTrail } from './peak';
 import { Rep } from './reputation';
 import { Health } from './health';
@@ -129,8 +132,13 @@ export const Life: any = {
     // (and they wait for a car in their way, as anyone on foot does)
     // (for a while: something left standing across their way for good, they go round it)
     const there = px > 0 ? o.f >= 1 : o.f <= 0;
-    const wait = !there && (o.waitB || 0) < 8 && Stroll.blocked(o, Math.sign(px));
+    // (V2: and once they've waited their while, they do go on, for a few seconds, rather than waiting again at once: the
+    // count went back to nothing the moment it ran out, so they stood for good, often out in the road, with the car
+    // they were waiting for waiting for them)
+    if ((o.goT || 0) > 0) o.goT -= dt;
+    const wait = !there && (o.goT || 0) <= 0 && Stroll.blocked(o, Math.sign(px));
     o.waitB = wait ? (o.waitB || 0) + dt : 0;
+    if (o.waitB >= 8) { o.waitB = 0; o.goT = 4; }
     if (!there && !wait) o.f = Math.max(0, Math.min(1, o.f + dt * Stroll.rate(o, Math.abs(px)) * Math.sign(px)));
     Stroll.place(o);
   },
@@ -509,7 +517,17 @@ export const Life: any = {
       if (cab.hired) continue; // V2: hired by the Founder (src/player/transit.ts drives it)
       if (cab.pause > 0) { cab.pause -= gm; cab.v = 0; this.rankSlot(cab); continue; }
       // V2: cabs drive in the traffic (queues, junctions, crossings, gates)
-      cab.prog += Traffic.advance(cab, cab, cab.route, cab.prog, cab.dir, 1.6, dt) * cab.dir; // ~46 km/h
+      const moved = Traffic.advance(cab, cab, cab.route, cab.prog, cab.dir, 1.6, dt);
+      cab.prog += moved * cab.dir; // ~46 km/h
+      // (V2: gridlock relief: a cab stuck for good is back at its rank for the next fare, any passenger dropped)
+      cab.stuckT = moved > 0.002 ? 0 : (cab.stuckT || 0) + dt;
+      if (cab.stuckT > STUCK_RELIEF) {
+        cab.stuckT = 0; cab.pax = []; cab.returning = false; cab.dir = 1; cab.prog = 0; cab.pause = 4; cab.v = 0;
+        const nr = this.pickTaxiRoute(cab.home, cab.standTile);
+        if (nr) cab.route = nr;
+        cab.x = cab.standTile.x * T + 8; cab.y = cab.standTile.y * T + 8;
+        continue;
+      }
       if (cab.prog >= cab.route.length - 1 && cab.dir > 0) {
         cab.prog = cab.route.length - 1;
         if (!cab.returning) {                            // dropped the fare across town
@@ -582,10 +600,13 @@ export const Life: any = {
   queueSpot(stop: Building, i: number): { x: number; y: number; yaw: number } {
     const x0 = stop.door.x * T + 8, y0 = stop.door.y * T + 8;
     const bx = (stop.x + stop.w / 2) * T, by = (stop.y + stop.h / 2) * T;
-    const uy = Math.sign(by - y0);
-    // (a queue runs along the street: across the way from the shelter's door if it faces up or down the map)
-    const along = uy ? [1, 0] : [0, 1];
-    return { x: (x0 + bx) / 2 + along[0] * (i * 1.6 - 4), y: (y0 + by) / 2 + along[1] * (i * 1.6 - 4), yaw: Math.atan2(x0 - bx, y0 - by) };
+    // V2: on the pavement in front of the shelter, along its front, the shelter at their backs: the queue used to run
+    // across the street when the stop stood at the end of one (or along the kerb into the junction beside it), out in
+    // the lanes, where the traffic waited on it until a bus came, and the bus was stuck in that traffic. Seven to a row,
+    // then a second row a step in, staggered
+    const d = stop.door, u = d.y >= stop.y + stop.h ? [0, -1] : d.y < stop.y ? [0, 1] : d.x >= stop.x + stop.w ? [-1, 0] : [1, 0];
+    const row = Math.floor(i / 7), k = (i % 7) * 1.6 - 4.8 + (row % 2) * 0.8, out = FOOT_PX + Math.min(1, row * 0.6);
+    return { x: x0 + u[0] * out - u[1] * k, y: y0 + u[1] * out + u[0] * k, yaw: Math.atan2(x0 - bx, y0 - by) };
   },
   /* a passenger hops off and wanders a few steps onto the pavement, then fades */
   spawnAlighter(px: number, py: number, awayX: number, awayY: number, pax: any, speed = 12) {
@@ -1368,7 +1389,10 @@ export const Life: any = {
       if (!occupied) continue;
       const d = Math.abs(h.door.x * T + 8 - cx) + Math.abs(h.door.y * T + 8 - cy);
       if (d > maxTiles * T) continue;
-      spots.push({ x: h.door.x * T + 8, y: h.door.y * T + 8, d, id: h.id });
+      // (V2: on the pavement at the door, the building at their back: it was the middle of the road, where they set out
+      // from and came back to, with the traffic waiting on them)
+      const u = h.door.y >= h.y + h.h ? [0, -1] : h.door.y < h.y ? [0, 1] : h.door.x >= h.x + h.w ? [-1, 0] : [1, 0];
+      spots.push({ x: h.door.x * T + 8 + u[0] * FOOT_PX, y: h.door.y * T + 8 + u[1] * FOOT_PX, d, id: h.id });
     }
     spots.sort((a, b) => a.d - b.d);
     return spots;
@@ -1735,9 +1759,23 @@ export const Life: any = {
     }
     for (const t of this.tourists) {
       if (Approach.away(t)) continue; // (V2: still out on the road beyond the edge)
-      if (t.phase === 'visit') { t.stay -= dt * MIN_PER_SEC; if (t.stay <= 0) { t.phase = 'out'; t.path = this.backPath(t.path); t.prog = 0; t.v = 0; } continue; }
-      t.prog += Traffic.advance(t, t, t.path, t.prog, 1, 1.6, dt); // V2: tourist cars at town speed, in the traffic
+      if (t.phase === 'visit') {
+        t.stay -= dt * MIN_PER_SEC;
+        if (t.stay <= 0) {
+          // (V2: out into the traffic once there's room, as a villager pulls out of a drive: it used to appear in the road
+          // at once, inside whatever stood there, and a door on a junction locked the junction)
+          const back = (t.back ??= this.backPath(t.path));
+          t.waitJ = (t.waitJ || 0) + dt;
+          if (Traffic.roomToJoin(t, back, t.waitJ > 20, t.waitJ > 120)) { t.phase = 'out'; t.path = back; t.back = null; t.prog = 0; t.v = 0; }
+        }
+        continue;
+      }
+      const moved = Traffic.advance(t, t, t.path, t.prog, 1, 1.6, dt); // V2: tourist cars at town speed, in the traffic
+      t.prog += moved;
       this.followPath(t, t.path, t.prog, Traffic.lanePx(t));
+      // (V2: gridlock relief, as for the villagers' cars: stuck for good, the visitors give up and go home)
+      t.stuckT = moved > 0.002 ? 0 : (t.stuckT || 0) + dt;
+      if (t.stuckT > STUCK_RELIEF) { t.done = true; if (t.phase === 'in') t.venue.visitors++; continue; }
       if (t.prog >= t.path.length - 1) {
         if (t.phase === 'in') { t.phase = 'visit'; t.venue.visitors++; }
         // (V2: and away down the road beyond the edge, out of sight before it's gone)

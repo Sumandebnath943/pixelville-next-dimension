@@ -358,10 +358,12 @@ export class ShopJob implements Job {
     this.carry = null;
     this.orders.delete(p);
     this.served.add(p);
+    // (V2: nobody leaves with what they can't pay for: it used to be handed over for free)
+    if (p.home.funds < Math.round(item.price * Supply.priceMult(b))) { this.c.bad(`${p.name} couldn't pay for the ${item.name.toLowerCase()} — it goes back on the shelf`); return; }
     const mult = Supply.sale(b, p); // (from the shelves: bare ones send them away disappointed)
     if (mult === null) { this.c.bad(`Sold out — no ${item.name.toLowerCase()} for ${p.name}`); return; }
     const price = Math.round(item.price * mult);
-    if (p.home.funds > price + 5) { p.home.funds -= price; b.funds = (b.funds || 0) + price; }
+    p.home.funds -= price; b.funds = (b.funds || 0) + price;
     // (a tip goes in the till with the price: the business pays its staff, the Founder included, at clock-off)
     const tip = Rep.of(p) >= 0.5 && p.home.funds > 25 ? 1 + Math.round(Math.random() * 2) : 0;
     p.home.funds -= tip;

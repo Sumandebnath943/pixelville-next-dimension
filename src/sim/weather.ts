@@ -14,6 +14,8 @@ import { Sim } from './agents';
 export const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 export const SEASON_EMOJI = ['🌸', '☀️', '🍂', '❄️'];
 export const SEASON_LEN = 7; // days per season
+/** V2: every kind of weather there is (anything else breaks the HUD) */
+export const WEATHER_KINDS = ['clear', 'clouds', 'rain', 'heavy', 'snow'];
 
 export const Weather: any = {
   season: 0,
@@ -26,6 +28,8 @@ export const Weather: any = {
   flash: 0,             // lightning
   rainbowT: 0,
   _wasRain: false,
+  /** V2 (Auto village): a season and/or weather chosen by the player, held until it's let go (null: the calendar's) */
+  pin: null as null | { season?: number | null; kind?: string | null },
 
   init() {
     this.clouds = [];
@@ -36,6 +40,7 @@ export const Weather: any = {
       });
     this.puddles = [];
     this.next = null;
+    this.pin = null;
     this.season = this.seasonOf(Sim.day);
     this.roll();
     this.intensity = this.target;
@@ -83,7 +88,7 @@ export const Weather: any = {
   },
 
   tick(dtSim: number, dtReal: number) {
-    const s = this.seasonOf(Sim.day);
+    const s = this.pin?.season ?? this.seasonOf(Sim.day);
     if (s !== this.season) {
       this.season = s;
       World.dirty = true;                        // recolor the whole map
@@ -93,6 +98,13 @@ export const Weather: any = {
     this.nextChange -= dtSim * MIN_PER_SEC;
     if (this.nextChange <= 0) this.roll();
     if (this.season === 3 && (this.kind === 'rain' || this.kind === 'heavy')) { this.kind = 'snow'; this.target = 0.8; }
+    // V2 (Auto village): the weather the player chose holds (and is what's forecast) until it's let go
+    const held = this.pin?.kind;
+    if (held && WEATHER_KINDS.includes(held)) {
+      this.kind = this.next = held;
+      this.target = ({ clear: 0, clouds: 0.15, rain: 0.55, heavy: 1, snow: 0.75 } as Record<string, number>)[held];
+      this.nextChange = Math.max(this.nextChange, 120);
+    }
 
     const wasRaining = this._wasRain;
     this._wasRain = this.isRaining();

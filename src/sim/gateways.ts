@@ -24,6 +24,7 @@ import { Traffic } from './traffic';
 import { Walk } from './walking';
 import { Mind } from './mind';
 import { Tasks } from './tasks';
+import { Supply } from './supply';
 
 export type Mode = 'road' | 'rail' | 'sea' | 'air' | 'heli';
 export interface Leg { hours: number; fare: number; gate?: 'west' | 'north' }
@@ -301,7 +302,9 @@ export const Gateways = {
         if (v.phase === 'in') {
           v.phase = 'stay';
           v.venue.visitors++; v.venue.inside++;
-          v.venue.funds += ((PRICES as Record<string, number>)[v.venue.type] || 4) * 1.2; // visitors spend a little more
+          // visitors spend a little more (V2: on what's on the shelves: bare ones sell them nothing)
+          const m = Supply.sale(v.venue);
+          if (m !== null) v.venue.funds += ((PRICES as Record<string, number>)[v.venue.type] || 4) * 1.2 * m;
         } else v.done = true;
       }
     }

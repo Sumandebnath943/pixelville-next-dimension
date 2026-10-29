@@ -22,6 +22,7 @@ import { Supply } from './supply';
 import { Power } from './power';
 import { Gateways } from './gateways';
 import { Hustings } from './hustings';
+import { Economy } from './economy';
 /* ============================================================
    PixelVille — citizens, jobs, daily schedules, movement.
    People live in residential buildings, get jobs at workplaces,
@@ -38,6 +39,8 @@ export const SURNAMES = ['Miller', 'Tanaka', 'Okafor', 'Silva', 'Novak', 'Haddad
 export const WALK_SPEED = 0.3; // tiles per real second (scaled by sim speed) — V2: 0.62 → 0.3 (~2.4 m/s)
 export const CAR_SPEED = 1.6; // V2: ~46 km/h in town
 export const CAR_MIN_DIST = 10; // trips longer than this use the family car (V2: 14 → 10)
+/** V2: seconds a car can stand without moving an inch before its driver leaves it and walks on (gridlock relief) */
+export const GIVE_UP_AFTER = 100;
 
 /* ---------------- economy tables ---------------- */
 export const WAGES: Record<string, number> = { office: 22, skyscraper: 28, factory: 18, farm: 12, shop: 13, market: 14, mall: 16, restaurant: 14, cafe: 12, bakery: 12, hotel: 15, bank: 24, gas: 12, school: 18, college: 20, hospital: 22, police: 19, fire: 19, townhall: 20, courthouse: 22, temple: 10, library: 14, amusement: 15, stadium: 16, cinema: 14, theater: 14, museum: 15, gym: 13, pool: 12, airport: 20,
@@ -83,28 +86,30 @@ export const STARTUP_COSTS: Record<string, number> = {
 /* ---------------- twenty-plus honest ways to earn a little money ----------------
    Odd jobs for anyone between careers (and pocket money for the enterprising).
    Some only make sense in certain seasons or near certain terrain. */
-export const SIDE_GIGS = [
-  { name: 'babysitting', emoji: '🍼', pay: [4, 9] },
-  { name: 'dog walking', emoji: '🐕', pay: [3, 7] },
-  { name: 'tutoring kids', emoji: '📚', pay: [5, 11], need: 'school' },
+// (V2: `by` is who pays: 'home' a neighbouring household, 'farm' a farm's till; without one, the work is sold on beyond
+// the village: the catch, the berries, the scrap, the tourists' tips)
+export const SIDE_GIGS: { name: string; emoji: string; pay: number[]; by?: 'home' | 'farm'; need?: string; water?: boolean; winter?: boolean; notWinter?: boolean; seasons?: number[] }[] = [
+  { name: 'babysitting', emoji: '🍼', pay: [4, 9], by: 'home' },
+  { name: 'dog walking', emoji: '🐕', pay: [3, 7], by: 'home' },
+  { name: 'tutoring kids', emoji: '📚', pay: [5, 11], need: 'school', by: 'home' },
   { name: 'fishing at the lake', emoji: '🎣', pay: [4, 12], water: true },
-  { name: 'street music', emoji: '🎸', pay: [2, 10] },
+  { name: 'street music', emoji: '🎸', pay: [2, 10], by: 'home' },
   { name: 'delivering parcels', emoji: '📦', pay: [5, 10] },
-  { name: 'gardening for neighbours', emoji: '🌷', pay: [4, 9], notWinter: true },
-  { name: 'washing windows', emoji: '🪟', pay: [4, 8] },
-  { name: 'shoveling snow', emoji: '❄️', pay: [6, 12], winter: true },
+  { name: 'gardening for neighbours', emoji: '🌷', pay: [4, 9], notWinter: true, by: 'home' },
+  { name: 'washing windows', emoji: '🪟', pay: [4, 8], by: 'home' },
+  { name: 'shoveling snow', emoji: '❄️', pay: [6, 12], winter: true, by: 'home' },
   { name: 'picking berries', emoji: '🫐', pay: [3, 8], seasons: [1, 2] },
-  { name: 'a lemonade stand', emoji: '🍋', pay: [2, 6], seasons: [1] },
-  { name: 'cutting hair at home', emoji: '✂️', pay: [5, 10] },
-  { name: 'fixing bicycles', emoji: '🚲', pay: [5, 11] },
-  { name: 'sewing and mending', emoji: '🪡', pay: [4, 9] },
-  { name: 'painting fences', emoji: '🖌️', pay: [5, 10], notWinter: true },
-  { name: 'washing cars', emoji: '🧽', pay: [4, 9], notWinter: true },
-  { name: 'helping with the harvest', emoji: '🌾', pay: [6, 12], need: 'farm', seasons: [2] },
+  { name: 'a lemonade stand', emoji: '🍋', pay: [2, 6], seasons: [1], by: 'home' },
+  { name: 'cutting hair at home', emoji: '✂️', pay: [5, 10], by: 'home' },
+  { name: 'fixing bicycles', emoji: '🚲', pay: [5, 11], by: 'home' },
+  { name: 'sewing and mending', emoji: '🪡', pay: [4, 9], by: 'home' },
+  { name: 'painting fences', emoji: '🖌️', pay: [5, 10], notWinter: true, by: 'home' },
+  { name: 'washing cars', emoji: '🧽', pay: [4, 9], notWinter: true, by: 'home' },
+  { name: 'helping with the harvest', emoji: '🌾', pay: [6, 12], need: 'farm', seasons: [2], by: 'farm' },
   { name: 'a newspaper round', emoji: '🗞️', pay: [3, 6] },
   { name: 'collecting recyclables', emoji: '♻️', pay: [2, 6] },
   { name: 'foraging mushrooms', emoji: '🍄', pay: [3, 9], seasons: [2] },
-  { name: 'selling home baking', emoji: '🧁', pay: [4, 10] },
+  { name: 'selling home baking', emoji: '🧁', pay: [4, 10], by: 'home' },
   { name: 'guiding tourists', emoji: '🗺️', pay: [5, 12], need: 'hotel' },
 ];
 
@@ -588,6 +593,7 @@ export const Sim: any = {
         b.construction -= Supply.build(b, gm * crewRate); // V2: building eats materials (src/sim/supply.ts)
         if (b.construction <= 0) {
           b.construction = 0; this.completed.push(b); World.dirty = true;
+          Economy.finished(b); // V2: what's left of the site's budget opens its till (sim/economy.ts)
           Tasks.done('b' + b.id, true, `Build the ${CAT[b.type].name}`);
         }
       }
@@ -848,7 +854,7 @@ export const Sim: any = {
     for (const b of World.buildings) {
       if (b.ruined || b.construction) continue;
       const d = CAT[b.type];
-      if (d.res === 'block') { b.funds = Math.max(0, b.funds - 8); continue; } // apartment rent to the void
+      if (d.res === 'block') { Economy.bill(b, null, 8); continue; } // V2: apartment rent to the council that owns the block (it went to the void)
       if (d.res !== 'family' || !b.residents.length) continue;
       // rent flows to the landlord
       if (b.ownerId) {
@@ -869,6 +875,7 @@ export const Sim: any = {
             const mb = World.placeBuilding('mansion', spot.x, spot.y, false, spot.f);
             if (mb) {
               b.funds -= 1150; mb.pendingMoveFrom = b.id;
+              Economy.commission(mb, 1150); // (V2: the family's money buys its materials)
               say(`🏰 The ${family(name)} broke ground on a MANSION — the whole street came to stare`);
               World.refreshConnections();
             }
@@ -912,10 +919,11 @@ export const Sim: any = {
       if (b.level >= 2 && b.funds >= 900 && this.day >= (b.nextInvestmentDay || 0) && Math.random() < 0.14) {
         const spot = World.findPlannedSpot('house');
         if (spot) {
-          b.funds -= 600;
           const nb = World.placeBuilding('house', spot.x, spot.y, false, spot.f);
           if (nb) {
+            b.funds -= 600; // (V2: only once there's a plot to build on: the money used to go even when there wasn't)
             nb.ownerId = b.id;
+            Economy.commission(nb, 600);
             b.nextInvestmentDay = this.day + 5 + ((Math.random() * 4) | 0);
             say(`🏗️ The ${family(name)} are building a rental home — landlords now!`);
             World.refreshConnections();
@@ -923,6 +931,7 @@ export const Sim: any = {
         }
       }
     }
+    Economy.daily(); // V2: yesterday's pay at every workplace, the county's grant, the public services' budgets, debts
     this.payUtilities();
     this.sideGigs();
     this.tickLoans();
@@ -983,8 +992,11 @@ export const Sim: any = {
     const pump = World.buildings.find((b: Building) => b.type === 'watertower' && b.connected && !b.ruined && !b.construction);
     for (const b of World.buildings) {
       if (!CAT[b.type].res || b.ruined || b.construction || !b.residents.length) continue;
-      if (plant && b.funds > 6) { b.funds -= 2.5; plant.funds += 1.5; Gov.treasury += 1; }
-      if (pump && b.funds > 4) { b.funds -= 1.5; pump.funds += 0.8; Gov.treasury += 0.7; }
+      // V2: every home pays for the power it uses (to the plant, or to the village fund, which buys the county's), and
+      // a bill it can't pay is owed, not forgiven (sim/economy.ts)
+      if (plant) { Economy.bill(b, plant, 1.5); Economy.bill(b, null, 1); }
+      else Economy.bill(b, null, 2.5);
+      if (pump) { Economy.bill(b, pump, 0.8); Economy.bill(b, null, 0.7); }
       // a large town living without utilities grumbles about it
       if (this.people.length > 30 && (!plant || !pump)) {
         for (const r of b.residents) if (Math.random() < 0.15) r.mood = Math.max(5, (r.mood === undefined ? 60 : r.mood) - 1);
@@ -1062,18 +1074,21 @@ export const Sim: any = {
     if (stake < 2 || p.home.funds <= stake) return;
     p.home.funds -= stake;
     const say = (m: string) => { Life.say(m); };
+    // V2: the stake goes in the casino's till and every win comes out of it, as far as the till goes (a win used to be
+    // mostly conjured: the house paid 40% of a jackpot and 60% of an ordinary win)
+    casino.funds += stake;
     if (Math.random() < 0.05) { // jackpot
-      const win = stake * (6 + Math.random() * 10);
+      const win = Math.min(stake * (6 + Math.random() * 10), Math.max(0, casino.funds));
       p.home.funds += win;
-      casino.funds = Math.max(0, casino.funds - win * 0.4);
+      casino.funds -= win;
       p.mood = Math.min(98, (p.mood === undefined ? 60 : p.mood) + 15);
       say(`🎰 JACKPOT! ${this.fullName(p)} won $${Math.round(win)} at the casino!`);
       Mind.remember(p, 'luck', 'hit the casino jackpot', 2, casino.id);
     } else if (Math.random() < 0.4) {
-      p.home.funds += stake * 1.6;
-      casino.funds = Math.max(0, casino.funds - stake * 0.6);
+      const win = Math.min(stake * 1.6, Math.max(0, casino.funds));
+      p.home.funds += win;
+      casino.funds -= win;
     } else {
-      casino.funds += stake;
       p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 3);
       if (p.home.funds < 15) {
         // a burned gambler REMEMBERS — and stays away from the tables for a while
@@ -1177,13 +1192,17 @@ export const Sim: any = {
       say(`🌄 Newcomers! The ${fam.surname} family claimed cheap land in the ${district} and are building a homestead`);
     }
     // pioneers often start a farm or a wayside business next to the homestead
-    if (Math.random() < 0.7) {
-      const bizKey = Math.random() < 0.55 ? 'farm' : ['teastall', 'shop', 'gas'][(Math.random() * 3) | 0];
+    const bizKey = Math.random() < 0.55 ? 'farm' : ['teastall', 'shop', 'gas'][(Math.random() * 3) | 0];
+    // (V2: built by hand on cheap land, at half the usual cost, out of the homestead's own funds: it used to be free)
+    const bizCost = Math.round((STARTUP_COSTS[bizKey] || 200) * 0.5);
+    if (Math.random() < 0.7 && nb.funds >= bizCost + 30) {
       for (let tries = 0; tries < 25; tries++) {
         const bx = spot.x - 10 + ((Math.random() * 20) | 0), by = spot.y - 10 + ((Math.random() * 20) | 0);
         if (!World.canPlace(bizKey, bx, by)) continue;
         const biz = World.placeBuilding(bizKey, bx, by);
         if (biz) {
+          nb.funds -= bizCost;
+          Economy.commission(biz, bizCost, 0.75); // (most of it the materials and the till: they did the work themselves)
           const owner = nb.residents.find((r: Person) => r.kind !== 'kid');
           if (owner) { biz.founderId = owner.id; biz.ownerId = nb.id; owner.ownsBusiness = true; }
           say(`🏞️ …and they're putting up a ${CAT[bizKey].name.toLowerCase()} out there. The outskirts are coming alive!`);
@@ -1213,6 +1232,14 @@ export const Sim: any = {
       if (Math.random() > chance) continue;
       const gig = options[(Math.random() * options.length) | 0];
       const pay = gig.pay[0] + Math.random() * (gig.pay[1] - gig.pay[0]);
+      // V2: somebody pays for it: a neighbour for babysitting or a fence painted, the farm for a hand at harvest; what's
+      // picked, fished, foraged or sold to passers-by is sold on beyond the village. No payer, no gig today
+      if (gig.by === 'home' && !Economy.neighbourPays(p, pay)) continue;
+      if (gig.by === 'farm') {
+        const farm = World.buildings.find((b: Building) => b.type === 'farm' && !b.ruined && !b.construction && (b.funds || 0) >= pay + Economy.reserve(b));
+        if (!farm) continue;
+        farm.funds -= pay;
+      }
       p.savings = (p.savings || 0) + pay * 0.6;
       p.home.funds += pay * 0.4;
       p.lastGig = gig.name;
@@ -1223,9 +1250,11 @@ export const Sim: any = {
 
   /* ---------- bank loans: borrowed dreams, daily repayments ---------- */
   tickLoans() {
-    const bank = World.buildings.find((b: Building) => b.type === 'bank' && b.connected && !b.ruined && !b.construction);
+    const anyBank = World.buildings.find((b: Building) => b.type === 'bank' && b.connected && !b.ruined && !b.construction);
     for (const p of this.people) {
       if (!p.loan) continue;
+      // V2: repayments go back to the bank that lent the money (the village fund takes over a vanished bank's book)
+      const bank = World.buildings.find((b: Building) => b.id === p.loan.bank && !b.ruined) || (p.loan.bank === undefined ? anyBank : null);
       const install = Math.max(4, p.loan.balance * 0.06);
       let paid = 0;
       const fromSavings = Math.min(p.savings || 0, install);
@@ -1235,8 +1264,9 @@ export const Sim: any = {
         p.home.funds -= fromHome; paid += fromHome;
       }
       if (paid > 0) {
-        p.loan.balance -= paid * 0.97; // a sliver of interest stays with the bank
-        if (bank) bank.funds += paid * 0.03;
+        // (V2: every repayment goes to the lender, the interest in it included: 97% of it used to vanish)
+        p.loan.balance -= paid;
+        Economy.credit(bank, paid);
         p.loan.missed = 0;
         if (p.loan.balance <= 1) {
           p.loan = null;
@@ -1277,7 +1307,8 @@ export const Sim: any = {
       const footfall = b.lastVisitors === undefined ? b.visitors : b.lastVisitors;
       if (footfall <= 1) {
         b.badDays = (b.badDays || 0) + 1;
-        b.funds = Math.max(0, b.funds - 5); // rent and stock still cost money
+        const rent = Math.min(5, Math.max(0, b.funds)); // rent and stock still cost money (V2: the rates, to the village fund)
+        b.funds -= rent; Gov.treasury += rent;
         if (b.badDays === 5)
           Life.say(`📉 ${this.fullName(founder)}'s ${d.name} is struggling — barely a customer all week`);
         if (b.badDays >= 9 && b.funds <= 5) {
@@ -1315,8 +1346,12 @@ export const Sim: any = {
     for (const p of this.people) {
       if (p.kind === 'kid' || p.aspiration !== 'business' || p.ownsBusiness || p.heldUntil > this.day) continue;
       if (!p.work && p.fundingPlan !== 'risk' && Math.random() < 0.65) {
-        p.savings = (p.savings || 0) + 3 + Math.random() * 4;
-        p.oddJobDays = (p.oddJobDays || 0) + 1;
+        // (V2: odd jobs are for the neighbours, who pay for them, if anyone can spare it)
+        const pay = 3 + Math.random() * 4;
+        if (Economy.neighbourPays(p, pay)) {
+          p.savings = (p.savings || 0) + pay;
+          p.oddJobDays = (p.oddJobDays || 0) + 1;
+        }
       }
     }
 
@@ -1355,8 +1390,8 @@ export const Sim: any = {
     const bank = World.buildings.find((b: Building) => b.type === 'bank' && b.connected && !b.ruined && !b.construction);
     let loanAmount = 0;
     if (capital < total) {
-      // a bank can lend the shortfall — if the founder brings real equity
-      if (bank && capital >= total * 0.4) {
+      // a bank can lend the shortfall — if the founder brings real equity (V2: and the bank has the money to lend)
+      if (bank && capital >= total * 0.4 && (bank.funds || 0) >= total - capital) {
         loanAmount = total - capital;
       } else {
         if (founder.fundingPlan === 'risk') this.tryPettyTheft(founder);
@@ -1371,8 +1406,12 @@ export const Sim: any = {
     const personalSpend = Math.min(founder.savings || 0, ownMoney);
     founder.savings = Math.max(0, (founder.savings || 0) - personalSpend);
     founder.home.funds = Math.max(0, founder.home.funds - (ownMoney - personalSpend));
-    if (loanAmount > 0) founder.loan = { balance: Math.round(loanAmount * 1.08), missed: 0 }; // 8% interest
+    if (loanAmount > 0) { // 8% interest; V2: lent out of the bank's own funds (it used to be conjured)
+      bank.funds -= loanAmount;
+      founder.loan = { balance: Math.round(loanAmount * 1.08), missed: 0, bank: bank.id };
+    }
     Gov.treasury += landCost; // land is bought from the government
+    Economy.commission(business, total - landCost); // (V2: the materials are bought with it; what's left opens the till)
     business.ownerId = founder.home.id;
     business.founderId = founder.id;
     business.landPrice = landCost;
@@ -1412,8 +1451,12 @@ export const Sim: any = {
     const policePresent = World.buildings.some((b: Building) => b.type === 'police' && b.connected && !b.construction && !b.ruined);
     const caught = Math.random() < (policePresent ? 0.7 : 0.24);
     if (caught) {
+      // V2: the loot goes back in the till, and the fine to the village fund (it used to vanish, and the thief kept the loot)
+      const back = Math.min(p.savings, amount);
+      p.savings -= back; target.funds += back;
       const fine = Math.min(p.savings, 10 + Math.round(Math.random() * 15));
       p.savings -= fine;
+      Gov.treasury += fine;
       p.heldUntil = this.day + 3;
       this.safety = Math.max(20, this.safety - 1);
       {
@@ -1530,7 +1573,13 @@ export const Sim: any = {
           }
           t.joined = true;
         }
-        t.prog += Traffic.advance(p, t, t.path, t.prog, 1, t.moto ? 1.4 : CAR_SPEED, dt, t.moto ? 0.3 : CAR_LEN);
+        const moved = Traffic.advance(p, t, t.path, t.prog, 1, t.moto ? 1.4 : CAR_SPEED, dt, t.moto ? 0.3 : CAR_LEN);
+        t.prog += moved;
+        // V2: gridlock relief. A car that hasn't moved for a couple of hours of the village's time (the queues round a
+        // block, each waiting for room the next one fills) is left to be fetched home, and its driver walks on: each
+        // one who leaves the loop opens a gap in it
+        t.stuckT = moved > 0.002 ? 0 : (t.stuckT || 0) + dt;
+        if (t.stuckT > GIVE_UP_AFTER) { this.leaveCar(p, t); return; }
       } else {
         // V2 (Milestone 8): on foot, along a pavement at their own pace, stepping aside for others,
         // waiting at the kerb before crossing (sim/walking.ts)
@@ -1567,23 +1616,23 @@ export const Sim: any = {
               p.mood = Math.min(98, (p.mood === undefined ? 60 : p.mood) + 4);
               p.funDay = this.day;
             }
-            // V2: a shop sells from its shelves — scarce stock costs more, empty shelves sell nothing
-            const mult = Supply.sale(dest, p);
-            const price = mult === null ? 0 : Math.round((PRICES[dest.type] || 0) * mult); // money changes hands
-            if (price && p.home.funds > price) {
-              p.home.funds -= price;
-              const owner = dest.ownerId ? World.buildings.find((o: Building) => o.id === dest.ownerId) : null;
-              if (owner && owner.residents.length) { owner.funds += price * 0.7; dest.funds += price * 0.3; }
-              else dest.funds += price;
-            }
-            if (dest.type === 'pharmacy') Health.medicine(p);
+            // V2: a shop sells from its shelves — scarce stock costs more, empty shelves sell nothing; and nobody walks
+            // out with what they can't pay for (V2: they used to, and the shelf emptied for nothing). The takings go in
+            // the till, which pays the staff; an owner draws what it can spare (sim/economy.ts)
+            const list = PRICES[dest.type] || 0;
+            const afford = !list || p.home.funds >= Math.round(list * Supply.priceMult(dest));
+            const mult = afford ? Supply.sale(dest, p) : null;
+            const price = mult === null ? 0 : Math.round(list * mult); // money changes hands
+            if (price) { p.home.funds -= price; dest.funds += price; }
+            if (!afford) { p.mood = Math.max(5, (p.mood === undefined ? 60 : p.mood) - 1); p.bubble = '👛'; p.bubbleUntil = performance.now() + 2500; }
+            if (dest.type === 'pharmacy' && mult !== null) Health.medicine(p);
             if (dest.type === 'casino' && p.kind !== 'kid') this.gamble(p, dest);
           }
           if (dest === p.work && p.paidDay !== this.day) { // payday
             p.paidDay = this.day;
-            let wage = (WAGES[dest.type] || 15) * (p.wageMult || 1) * Edu.payMult(p, dest); // V2: graduate posts pay more
-            // parched fields yield half a day's pay
-            if (dest.type === 'farm' && Calamity.droughtLevel >= 0.6) wage *= 0.5;
+            // V2: the wage comes out of the workplace's own till (the village fund's budget, for a public service),
+            // as far as it goes: nobody is paid from thin air (sim/economy.ts)
+            const wage = Economy.payday(p, dest, Economy.wageOf(p, dest));
             // Each adult keeps a small personal fund for their own ambitions;
             // the rest still supports the household.
             const personal = wage * (p.savingsRate === undefined ? 0.2 : p.savingsRate);
@@ -1643,12 +1692,29 @@ export const Sim: any = {
     }
   },
   ticket(p: Person, why: string, fine: number) {
-    const paid = Math.min(fine, Math.max(0, Math.floor(p.home?.funds || 0)));
-    if (p.home) p.home.funds -= paid;
-    Gov.treasury += paid;
+    // V2: what the household can't pay now is owed to the village fund (it used to be let off)
+    if (p.home) Economy.bill(p.home, null, fine);
     Mind.remember(p, 'crime', `got a $${fine} ticket for ${why}`, -0.4, 0);
     p.bubble = '🎫'; p.bubbleUntil = performance.now() + 3000;
     if (Math.random() < 0.35) Life.say(`🚓 ${this.fullName(p)} got a $${fine} ticket for ${why}`);
+  },
+
+  /** V2: gridlock relief: the driver leaves the car (fetched home, as after a crash) and walks the rest of the way from
+   *  where it stands (a cab's fare is paid; a motorbike is wheeled home with the car) */
+  leaveCar(p: Person, t: any) {
+    if (t.car) t.car.free = true;
+    p.carHeld = null;
+    const dest = p.dest;
+    const tx = Math.floor(p.x / T), ty = Math.floor(p.y / T);
+    const from = World.isRoad(tx, ty) ? { x: tx, y: ty } : World.nearestRoad(tx, ty, 3);
+    const path = dest && from ? World.walkPath(from.x, from.y, dest.door.x, dest.door.y) || World.roadPath(from.x, from.y, dest.door.x, dest.door.y) : null;
+    p.mood = Math.max(5, (p.mood ?? 60) - 2);
+    p.bubble = '😤'; p.bubbleUntil = performance.now() + 2500;
+    if (!path || path.length < 2) { // (nowhere to walk from here: home, as if the day were over)
+      p.trip = null; p.state = 'in'; p.at = p.home; p.dest = null; p.returnAt = undefined;
+      return;
+    }
+    p.trip = { path, prog: 0, car: null, taxi: false, moto: false };
   },
 
   startTrip(p: Person, dest: Building, until: number, backTo: Building) {

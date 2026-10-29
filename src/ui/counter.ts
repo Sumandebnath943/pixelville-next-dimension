@@ -40,7 +40,7 @@ export class Counter {
       $('cu-title').textContent = 'Cash machine';
       const w = this.api.purse, day = w.day(), owed = this.api.owed();
       $('cu-sub').textContent = 'Your balance and what went in and out lately.';
-      html += `<dl class="facts"><dt>Balance</dt><dd>$${Math.floor(w.balance)}</dd><dt>Today</dt><dd>+$${day.in} · −$${day.out}</dd>${owed ? `<dt>Fines owed</dt><dd>$${owed} (taken as money comes in)</dd>` : ''}</dl>`;
+      html += `<dl class="facts"><dt>Balance</dt><dd>$${Math.floor(w.balance)}</dd><dt>Today</dt><dd>+$${day.in} · −$${day.out}</dd>${owed ? `<dt>Fines owed</dt><dd>$${owed} (taken as money comes in)</dd>` : ''}${w.owing() ? `<dt>Bills owed</dt><dd>$${Math.round(w.owing())} (${esc(w.bills.map((b) => b.label.toLowerCase()).join(', '))}; paid off as money comes in)</dd>` : ''}</dl>`;
       html += w.ledger.slice(-6).reverse().map((e) => `<div class="save-slot"><span class="slot-name">${esc(e.label)}<small>Day ${e.day}, ${e.time}</small></span><b style="color:var(--${e.amount >= 0 ? 'ok' : 'bad'})">${e.amount >= 0 ? '+' : '−'}$${Math.abs(e.amount)}</b></div>`).join('');
     } else {
       const list: Ware[] = kind === 'tickets' ? TICKETS[b.type] || [] : WARES[b.type] || [];
