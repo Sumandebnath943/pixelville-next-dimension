@@ -173,8 +173,8 @@ export const nightUniform = { value: 0 };
    simple geometry is lit by the sky, gets wet, takes snow and sits in the haze */
 export const MAT = {
   solid: surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 }), { snow: 1, wet: 0.7 }, 'm1solid'),
-  ground: surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }), { snow: 1, wet: 0.5, antiTile: 0.2 }, 'm1ground'),
-  road: surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }), { snow: 0.9, wet: 1, puddles: true }, 'm1road'),
+  ground: surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }), { snow: 1, wet: 0.5, antiTile: 0.2, thaw: 1 }, 'm1ground'),
+  road: surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }), { snow: 0.9, wet: 1, puddles: true, plough: 0.85 }, 'm1road'),
   water: surface(new THREE.MeshStandardMaterial({ color: 0x1d4a5a, transparent: true, opacity: 0.9, roughness: 0.06, metalness: 0 }), {}, 'm1water'),
   ice: surface(new THREE.MeshStandardMaterial({ color: 0xdfeaf4, roughness: 0.3, metalness: 0 }), { snow: 1 }, 'm1ice'),
   /** vertex-coloured, unlit: signs, lamps, flames, lights */

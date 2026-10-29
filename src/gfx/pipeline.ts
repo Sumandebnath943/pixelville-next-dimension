@@ -77,19 +77,28 @@ const GradeShader = {
     /** raised blacks, for a faded print (photo mode's filters) */
     lift: { value: 0 },
     time: { value: 0 },
+    /** V2: an unsharp mask (the FXAA's softness, and more when the world is drawn below the screen's resolution) */
+    sharpen: { value: 0 },
+    px: { value: new THREE.Vector2(1 / 1024, 1 / 768) },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float saturation, contrast, vignette, grain, lift, time;
+    uniform float saturation, contrast, vignette, grain, lift, time, sharpen;
+    uniform vec2 px;
     uniform vec3 tint;
     varying vec2 vUv;
     float h(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
     void main() {
       vec4 c = texture2D(tDiffuse, vUv);
       vec3 col = c.rgb;
+      if (sharpen > 0.001) {
+        vec3 nb = texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb
+                + texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb;
+        col = max(col + (col - nb * 0.25) * sharpen, 0.0);
+      }
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(l), col, saturation);
       col = (col - 0.5) * contrast + 0.5;
@@ -163,6 +172,10 @@ export class Pipeline {
     this.composer.setSize(w, h);
     const pr = this.renderer.getPixelRatio();
     this.fxaa?.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
+    (this.grade.uniforms.px.value as THREE.Vector2).set(1 / (w * pr), 1 / (h * pr));
+    // (V2: crisp again after the FXAA's blur, and more so when the world is drawn below the screen's resolution and
+    // stretched up to it)
+    this.grade.uniforms.sharpen.value = (this.profile.msaa ? 0.06 : 0.2) + (1 - this.resScale) * 1.1;
     this.onResize?.(w, h);
   }
   onResize?: (w: number, h: number) => void;
@@ -256,6 +269,8 @@ export class PlanarReflection {
   private normal = new THREE.Vector3(0, 1, 0);
   private point = new THREE.Vector3();
 
+  /** V2: how far the mirror sees (0: as far as the camera) */
+  maxFar = 0;
   constructor(public y: number, public scale = 0.5) {
     this.rt = new THREE.WebGLRenderTarget(512, 512, {
       type: THREE.HalfFloatType,
@@ -284,7 +299,12 @@ export class PlanarReflection {
     vc.far = cam.far;
     vc.near = cam.near;
     vc.updateMatrixWorld();
-    vc.projectionMatrix.copy(cam.projectionMatrix);
+    if (this.maxFar > 0 && !cam.view) {
+      // V2: a mirror that only needs what's near (wet streets) culls the rest (the sky is drawn at the far plane, so it
+      // still fills the mirror)
+      const top = (cam.near * Math.tan(THREE.MathUtils.DEG2RAD * 0.5 * cam.fov)) / cam.zoom, w = 2 * top * cam.aspect;
+      vc.projectionMatrix.makePerspective(-w / 2, w / 2, top, -top, cam.near, Math.min(cam.far, this.maxFar));
+    } else vc.projectionMatrix.copy(cam.projectionMatrix);
     vc.layers.mask = cam.layers.mask & ~(1 << LAYER_NO_REFLECT);
     this.textureMatrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
     this.textureMatrix.multiply(vc.projectionMatrix).multiply(vc.matrixWorldInverse);

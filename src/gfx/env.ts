@@ -18,6 +18,10 @@ export const ENV = {
   wind: { value: 0.35 },
   /** settled snow cover, 0 … 1 */
   snow: { value: 0 },
+  /** V2: the snow is thawing (0 while it falls or lies, 1 as it melts away): it goes in drifts, with wet ground round them */
+  melt: { value: 0 },
+  /** V2: grass still flattened and straw-pale from the winter's snow, 0 … 1 (greens again over a day or two) */
+  thaw: { value: 0 },
   /** surface wetness, 0 … 1 */
   wet: { value: 0 },
   /** rain falling right now, 0 … 1 (ripples) */
@@ -68,6 +72,8 @@ uniform float uTime;
 uniform vec2 uWindDir;
 uniform float uWind;
 uniform float uSnow;
+uniform float uMelt;
+uniform float uThaw;
 uniform float uWet;
 uniform float uRain;
 uniform float uNight;
@@ -107,6 +113,24 @@ float pvFbm(vec2 p) {
   for (int i = 0; i < 3; i++) { s += a * pvNoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
   return s;
 }
+/* V2: settled snow, as a thaw leaves it: drifts and hollows tens of metres across with ragged, soft edges, the last of
+   it lying where the drifts were deepest (the old fine-noise threshold left a salt-and-pepper speckle over everything).
+   pvSnowField is where snow lies longest (about 0.2 … 0.7); pvSnowLine the field value the cover reaches down to */
+float pvSnowField(vec2 xz) {
+  return pvFbm(xz * 0.03 + 3.7) * 0.68 + pvFbm(xz * 0.21 + 11.3) * 0.26 + pvNoise(xz * 1.9) * 0.06;
+}
+float pvSnowLine(float cov) {
+  // (the field is about normal round 0.44, spread 0.095: a cover of 0.15 leaves a fifth of the ground white, 0.3
+  // half, 0.55 nearly all)
+  return mix(0.63, 0.13, clamp(cov / 0.8, 0.0, 1.0));
+}
+/* how white the ground is at xz for a cover of cov: the drifts, and while it's still falling an even dusting first */
+float pvSnowCover(vec2 xz, float cov) {
+  float f = pvSnowField(xz), t = pvSnowLine(cov);
+  float drift = smoothstep(t - 0.02, t + 0.02, f) * mix(0.62, 1.0, smoothstep(t, t + 0.14, f)) * smoothstep(0.0, 0.05, cov);
+  float dust = smoothstep(0.0, 0.55, cov) * (1.0 - uMelt) * (0.82 + 0.18 * pvNoise(xz * 3.0));
+  return max(drift, dust * 0.9);
+}
 /* gusts: slow waves of wind rolling across the land along the wind direction */
 float pvGust(vec2 wp) {
   float along = dot(wp, uWindDir);
@@ -133,6 +157,8 @@ export function bindEnv(u: Record<string, THREE.IUniform>): void {
   u.uWindDir = ENV.windDir;
   u.uWind = ENV.wind;
   u.uSnow = ENV.snow;
+  u.uMelt = ENV.melt;
+  u.uThaw = ENV.thaw;
   u.uWet = ENV.wet;
   u.uRain = ENV.rain;
   u.uNight = ENV.night;

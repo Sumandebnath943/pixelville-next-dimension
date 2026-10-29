@@ -23,8 +23,16 @@ export interface SurfaceOpts {
   puddles?: boolean;
   /** read the traffic-wear mask (tyre tracks, footpaths, kerb piles) */
   wear?: boolean;
+  /** V2: where there's no wear mask (the game's streets), how well the snow is cleared off it (roads ≈ 0.85: grey
+   *  slush instead of a white carriageway; pavements less) */
+  plough?: number;
+  /** V2: grass that comes out of the snow flattened and straw-pale (0 … 1) */
+  thaw?: number;
   /** strength of large-scale colour variation */
   antiTile?: number;
+  /** V2: natural ground with no straight lines (grass, sand, rock, gravel): its texture is sampled twice, the second
+   *  turned and scaled, so its repeat doesn't show from above */
+  antiTex?: boolean;
   /** GLSL declarations for the vertex shader */
   vDecl?: string;
   /** GLSL run after begin_vertex; may modify `transformed` (object space) */
@@ -130,10 +138,11 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
   if (o.puddles) defs.push('#define PV_PUDDLES');
   if (o.wear) defs.push('#define PV_WEAR');
   if (o.antiTile) defs.push('#define PV_ANTITILE');
+  if (o.antiTex) defs.push('#define PV_ANTITEX');
   if (o.softBeam) defs.push('#define PV_SOFTBEAM');
   const head = defs.join('\n') + '\n';
   const hooked = !!(o.vDecl || o.vDisplace || o.fDecl || o.fColor || o.fEmissive || o.keepNormals);
-  const strengths = { uSnowK: { value: snowK }, uWetK: { value: wetK }, uAntiK: { value: o.antiTile ?? 0 } };
+  const strengths = { uSnowK: { value: snowK }, uWetK: { value: wetK }, uAntiK: { value: o.antiTile ?? 0 }, uPloughK: { value: o.plough ?? 0 }, uThawK: { value: o.thaw ?? 0 } };
 
   mat.onBeforeCompile = (sh) => {
     bindEnv(sh.uniforms);
@@ -187,6 +196,8 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         uniform float uSnowK;
         uniform float uWetK;
         uniform float uAntiK;
+        uniform float uPloughK;
+        uniform float uThawK;
         uniform sampler2D uReflTex;
         uniform mat4 uReflMat;
         uniform float uReflOn;
@@ -199,6 +210,22 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         ${o.fDecl || ''}`,
       )
       .replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+          vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+          #ifdef PV_ANTITEX
+          {
+            // V2: a second look at the same texture, turned and scaled, mixed in by a slow world-space noise: its repeat
+            // (an 8 m grid of the same dry patches over every lawn, plain from the Planner) no longer shows
+            float pvK2 = smoothstep(0.32, 0.68, pvNoise(vWPos.xz * 0.019 + 1.3)) * 0.85;
+            vec2 pvUv2 = mat2(0.799, -0.602, 0.602, 0.799) * vMapUv * 0.618 + vec2(0.37, 0.71);
+            sampledDiffuseColor = mix(sampledDiffuseColor, texture2D(map, pvUv2), pvK2);
+          }
+          #endif
+          diffuseColor *= sampledDiffuseColor;
+        #endif`,
+      )
+      .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
         vec3 pvN = normalize(vWNrm);
@@ -209,19 +236,28 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         #endif
         ${o.fColor || ''}
         vec2 pvWear = vec2(0.0);
+        float pvWorn = 0.0; // (1 inside the wear mask: the look lab's street; the game's streets are ploughed instead)
         #ifdef PV_WEAR
           vec2 pvWuv = (vWPos.xz - uWearRect.xy) * uWearRect.zw;
-          if (pvWuv.x > 0.0 && pvWuv.x < 1.0 && pvWuv.y > 0.0 && pvWuv.y < 1.0) pvWear = texture2D(uWearTex, pvWuv).rg;
+          if (pvWuv.x > 0.0 && pvWuv.x < 1.0 && pvWuv.y > 0.0 && pvWuv.y < 1.0) { pvWear = texture2D(uWearTex, pvWuv).rg; pvWorn = 1.0; }
         #endif
         float pvSnow = 0.0;
         float pvSlush = 0.0;
+        float pvMeltWet = 0.0;
+        float pvField = 0.5;
         #ifdef PV_SNOW
         {
-          float sn = pvFbm(vWPos.xz * 0.55 + vWPos.y * 0.3) * 0.7 + pvNoise(vWPos.xz * 4.0) * 0.3;
-          float cov = uSnow * uSnowK;
+          // V2: drifts that thaw from their edges in (env.ts pvSnowCover), wet ground round them, ploughed streets
+          float plough = uPloughK * (1.0 - pvWorn);
+          float cov = uSnow * uSnowK * (1.0 - plough * 0.8);
           float up = smoothstep(0.25, 0.95, pvUp);
-          pvSnow = smoothstep(0.0, 0.22, cov * 1.3 - (1.0 - up) * 0.9 + (sn - 0.5) * (1.0 - cov) * 0.9 - 0.15) * step(0.3, pvUp);
-          pvSlush = pvWear.r * smoothstep(0.03, 0.35, uSnow) * uSnowK;
+          pvField = pvSnowField(vWPos.xz + vWPos.y * 0.3) - (1.0 - up) * 0.3;
+          float t = pvSnowLine(cov);
+          float drift = smoothstep(t - 0.02, t + 0.02, pvField) * mix(0.62, 1.0, smoothstep(t, t + 0.14, pvField)) * smoothstep(0.0, 0.05, cov);
+          float dust = smoothstep(0.0, 0.55, cov) * (1.0 - uMelt) * (0.82 + 0.18 * pvNoise(vWPos.xz * 3.0)) * up;
+          pvSnow = max(drift, dust * 0.9) * step(0.3, pvUp);
+          pvMeltWet = uMelt * smoothstep(0.02, 0.25, cov) * smoothstep(t - 0.16, t - 0.01, pvField) * (1.0 - pvSnow) * step(0.3, pvUp);
+          pvSlush = max(pvWear.r * smoothstep(0.03, 0.35, uSnow) * uSnowK, plough * smoothstep(0.02, 0.3, uSnow) * uSnowK * step(0.6, pvUp));
           pvSnow *= 1.0 - pvWear.r * 0.9;
           pvSnow = max(pvSnow, pvWear.g * smoothstep(0.08, 0.45, uSnow) * step(0.3, pvUp));
         }
@@ -231,11 +267,15 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
           pvPud = smoothstep(0.64 - uWet * 0.08, 0.68 - uWet * 0.08, pvFbm(vWPos.xz * 0.16 + 3.1) + pvWear.r * 0.05)
                 * step(0.92, pvUp) * smoothstep(0.35, 0.9, uWet) * (1.0 - pvSnow);
         #endif
-        float pvWet = max(uWet * uWetK * mix(0.45, 1.0, smoothstep(0.1, 0.8, abs(pvUp))), pvSlush) * (1.0 - pvSnow);
+        float pvWet = max(max(uWet * uWetK * mix(0.45, 1.0, smoothstep(0.1, 0.8, abs(pvUp))), pvSlush), pvMeltWet * 0.85) * (1.0 - pvSnow);
+        // V2: grass out from under the snow comes up flattened and straw-pale, and greens again over a day or two
+        float pvMat = uThaw * uThawK * (1.0 - pvSnow) * (0.55 + 0.45 * smoothstep(0.3, 0.6, pvField));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11))) * vec3(1.3, 1.08, 0.62), pvMat * 0.7);
         diffuseColor.rgb *= mix(1.0, 0.5, pvWet);
         diffuseColor.rgb *= mix(1.0, 0.55, pvPud);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.19, 0.17), pvSlush * 0.55 * (1.0 - pvSnow));
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.94) * (0.92 + 0.08 * pvNoise(vWPos.xz * 9.0)), pvSnow);`,
+        // (old snow greys as it thaws)
+        diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.86, 0.89, 0.94), vec3(0.75, 0.77, 0.79), uMelt * 0.6) * (0.92 + 0.08 * pvNoise(vWPos.xz * 9.0)), pvSnow);`,
       )
       .replace(
         '#include <roughnessmap_fragment>',

@@ -17,7 +17,7 @@ import { CAT } from '../sim/catalog';
 import { World } from '../sim/world';
 import { Weather } from '../sim/weather';
 import { hex, shade, hash2 } from './kit';
-import { Kit, Packed, Palette, sharedPalette, Frame, Hole, wallFace, obox, sashWindow, frontDoor, glassPane, chimney as brickChimney, TRIM, meshesFromParts } from '../gfx/architecture';
+import { Kit, Packed, Palette, sharedPalette, Frame, Hole, wallFace, obox, sashWindow, frontDoor, glassPane, chimney as brickChimney, TRIM, meshesFromParts, freeAfterUpload } from '../gfx/architecture';
 import * as TX from '../gfx/textures';
 import { TreeInstance, Species } from '../gfx/vegetation';
 
@@ -253,7 +253,9 @@ class Ctx implements Built {
     return j ? shade(h, j) : hex(h);
   }
   /** plot surface */
-  lot(color: string, inset = 0.15): this {
+  // (V2: almost to the plot's edge: a 15 cm inset left a strip of lawn between every shop's paving and the pavement,
+  // a green line down the high street that read as a mistake)
+  lot(color: string, inset = 0.02): this {
     this.body.box(-this.hw + inset, 0, -this.hd + inset, this.hw - inset, 0.1, this.hd - inset, this.c(color));
     return this;
   }
@@ -1526,10 +1528,8 @@ export class BuildingLayer {
     }
     const meshes = meshesFromParts(this.pal, all, this.group, true);
     // the merged copy lives on the GPU; drop its CPU arrays after upload
-    for (const m of meshes) {
-      for (const a of Object.values(m.geometry.attributes)) (a as THREE.BufferAttribute).onUpload(function (this: THREE.BufferAttribute) { (this as unknown as { array: unknown }).array = null; });
-      m.userData.chunk = ci;
-    }
+    freeAfterUpload(meshes);
+    for (const m of meshes) m.userData.chunk = ci;
     this.chunkMeshes.set(ci, meshes);
   }
 

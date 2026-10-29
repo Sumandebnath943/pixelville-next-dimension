@@ -399,6 +399,12 @@
       <button class="primary" id="au-play"><svg><use href="#i-home" /></svg>Play this village</button>
     </div>
     <button id="au-show" class="glass"><svg><use href="#i-sprout" /></svg>Auto village</button>
+    <!-- V2: the graphics card reset: say so (the picture used to just freeze) and offer the way back -->
+    <div id="gpu-lost" role="alertdialog" aria-labelledby="gpu-lost-title"><div class="glass">
+      <b id="gpu-lost-title">The graphics card needed a rest</b>
+      <p>It ran short of memory and reset, so the picture stopped. Your village is saved — reload to carry on (the next load uses lighter graphics).</p>
+      <button class="primary" id="gpu-reload">Reload</button>
+    </div></div>
     <div id="au-build"><div class="glass"><b id="au-build-title">Building an auto village</b><span id="au-build-text">Laying out the streets…</span></div></div>
     <div id="flash"></div>
     <div id="fade"></div>
@@ -453,6 +459,16 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.2 1.1 2V16h5v-.2c0-.8.4-1.5 1.1-2A6 6 0 0 0 12 3z" /></svg>
           <div><b>Did you know?</b><p id="loading-tip"></p></div>
         </aside>
+        <!-- V2: a village that didn't open last time: a way back in -->
+        <div class="ld-rescue" id="ld-rescue" role="alertdialog" aria-labelledby="ld-rescue-title">
+          <b id="ld-rescue-title">Your village didn't finish opening last time</b>
+          <p id="ld-rescue-text">The browser may have run short of memory, or the graphics card reset while it loaded.</p>
+          <div class="ld-rescue-btns">
+            <button class="primary" id="ld-again">Open it again</button>
+            <button id="ld-light">Open it with lighter graphics</button>
+            <button id="ld-fresh">Start a new village <small>(this one is kept: Menu → Load village)</small></button>
+          </div>
+        </div>
       </section>
       <p class="ld-foot">A living village, now in three dimensions</p>
     </div>

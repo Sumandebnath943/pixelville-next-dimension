@@ -11,7 +11,7 @@ import { Weather } from './sim/weather';
 import { Settings } from './sim/settings';
 import { CAT } from './sim/catalog';
 import { family } from './sim/core';
-import { Stage } from './render/stage';
+import { Stage, QUALITY_ONCE } from './render/stage';
 import { Terrain } from './render/terrain';
 import { BuildingLayer, yieldFrame } from './render/buildings';
 import { Actors } from './render/actors';
@@ -26,7 +26,7 @@ import { Panels } from './ui/panels';
 import { initTouch } from './ui/touch';
 import { Snd } from './audio/sounds';
 import { Soundscape } from './audio/scape';
-import { get, AUTO } from './save/store';
+import { get, put, AUTO, RESCUE } from './save/store';
 import { texturesReady } from './gfx/textures';
 import { Traffic } from './sim/traffic';
 import { Life } from './sim/life';
@@ -86,9 +86,15 @@ Input.loadBinds(); // (the player's own keys, now the settings are loaded)
 applyAccess();
 const stage = new Stage(canvas);
 const terrain = new Terrain(stage.scene, stage.profile);
-stage.waterUpdate = (r, s, c, ambient, reflect) => terrain.water.update(r, s, c, ambient, reflect, terrain.ice);
+stage.waterUpdate = (r, s, c, ambient, reflect) => terrain.water.update(r, s, c, ambient, reflect, stage.ice);
 stage.onResize = (w, h) => terrain.water.reflection.setSize(w, h);
 stage.resize();
+// V2: the graphics card reset: the village is saved and the player told (the picture used to freeze without a word)
+stage.onLost = () => {
+  if (World.buildings.length > 1) put(AUTO, Game.buildSaveString()).catch(() => {});
+  $('gpu-lost').classList.add('on');
+};
+$('gpu-reload').addEventListener('click', () => location.reload());
 const buildings = new BuildingLayer(stage.scene);
 const actors = new Actors(stage.scene, buildings);
 // V2: what the player can see (in front of the camera, within the range the actors are drawn in): traffic from out of
@@ -177,6 +183,7 @@ const panels = new Panels({
     endAuto(false); // (V2: a loaded or new village isn't watched: the Auto village's choices go with it)
     autoMade = false;
     buildings.clear(); terrain.update(true); buildings.sync(); errands.reset(); gps.clear(); wanted.reset();
+    stage.settleSeason();
     // Milestone 7: a brand-new village for someone who hasn't had the guide yet
     if (!Settings.get('tourDone') && World.buildings.length <= 2 && !tour.active) tour.start();
   },
@@ -826,7 +833,26 @@ function interactions(): void {
   showPrompt(prompt, text);
 }
 
+/** V2: one part of the frame failing (a bad record in an old save, a bug) must never freeze the whole game, as it did
+ *  (an exception anywhere stopped the frame loop for good: the picture froze while the page looked alive). The part
+ *  is reported (once, then now and again) and the rest of the frame goes on */
+const failed = new Map<string, number>();
+function guard(part: string, fn: () => void): void {
+  try { fn(); } catch (e) {
+    const n = (failed.get(part) || 0) + 1;
+    failed.set(part, n);
+    if (n === 1 || n % 900 === 0) console.error(`[frame] ${part} failed${n > 1 ? ` (${n} times)` : ''}`, e);
+  }
+}
 function frame(now: number): void {
+  if (bootClearAt && now > bootClearAt) { bootClearAt = 0; bootMark.set(false); } // (the village opens: no rescue next time)
+  try { runFrame(now); } catch (e) {
+    guard('frame', () => { throw e; });
+    try { Input.endFrame(); } catch { /* the next frame */ }
+    requestAnimationFrame(frame);
+  }
+}
+function runFrame(now: number): void {
   // Milestone 7: a 30 fps cap saves a phone's battery (the frame waits for its turn)
   const cap = Settings.get('fpsCap') || 0;
   if (cap && now - last < 1000 / cap - 3) { requestAnimationFrame(frame); return; }
@@ -911,10 +937,12 @@ function frame(now: number): void {
     if (planner.active && Input.keys.has(k)) Game.setSpeed(i);
 
   // the simulation
-  Game.tick(dt);
-  if (Game.mapVersion !== lastVersion) { lastVersion = Game.mapVersion; terrain.update(); }
-  buildings.sync();
-  if (buildings.treesVersion !== lastTrees) { lastTrees = buildings.treesVersion; terrain.setExtraTrees(buildings.trees()); }
+  guard('sim', () => Game.tick(dt));
+  guard('map', () => {
+    if (Game.mapVersion !== lastVersion) { lastVersion = Game.mapVersion; terrain.update(); }
+    buildings.sync();
+    if (buildings.treesVersion !== lastTrees) { lastTrees = buildings.treesVersion; terrain.setExtraTrees(buildings.trees()); }
+  });
   if (Sim.welcomeAt) { // the founding moment: fly over the first doorstep
     if (planner.active) planner.focus(Sim.welcomeAt.x * 0.5, Sim.welcomeAt.y * 0.5);
     Sim.welcomeAt = null;
@@ -959,7 +987,7 @@ function frame(now: number): void {
   gps.update(dt, fx, fz);
 
   // cameras: street, aerial, or a blend while rising/descending (indoors, the room's own)
-  stage.camera.fov = Settings.get('fov') || 70;
+  stage.camera.fov = Settings.get('fov') || 60;
   stage.camera.updateProjectionMatrix();
   if (inside) focus.copy(founder.pos);
   else if (planner.active) {
@@ -989,11 +1017,11 @@ function frame(now: number): void {
   stage.viewBoost = planner.active ? 1 + stage.night * Math.min(1, planner.dist / 160) * 0.9 : 1;
   // V2: god view clears the Planner's view of the weather (it comes back as the camera descends)
   stage.clearView = planner.active && !planner.leaving && !!Settings.get('godView');
-  stage.update(dt, focus, terrain.lampSpots);
+  guard('sky', () => stage.update(dt, focus, terrain.lampSpots));
   terrain.setPools(stage.lampK * (planner.active ? 0.075 : 0.05) / Math.max(0.6, stage.sky.exposure * 0.25));
   if (!inside) {
-    terrain.frame(stage.night, stage.camera.position);
-    actors.update(dt, focus.x, focus.z, range, now, stage.night);
+    guard('terrain', () => terrain.frame(stage.night, stage.camera.position));
+    guard('actors', () => actors.update(dt, focus.x, focus.z, range, now, stage.night));
   }
   if (gps.dest && street) arrows.update(dt, gps.route, fx, fz, (x, z) => founder.groundAt(x, z), stage.sky.exposure, stage.night);
   else arrows.hide();
@@ -1012,7 +1040,7 @@ function frame(now: number): void {
   // HUD
   if (now - lastHud > 400) {
     lastHud = now;
-    hud.update();
+    guard('hud', () => hud.update());
     shiftPanel.sync();
     tour.update();
     const w = planner.active ? planner.dist * 1.6 : 0;
@@ -1206,10 +1234,10 @@ function landingFrame(now: number, dt: number): void {
   focus.set(flyCentre.x + Math.cos(flyT + 1.2) * 30, 0, flyCentre.z + Math.sin(flyT + 1.2) * 30);
   stage.viewBoost = 1 + stage.night * 0.6;
   stage.moving = false;
-  stage.update(dt, focus, terrain.lampSpots);
+  guard('sky', () => stage.update(dt, focus, terrain.lampSpots));
   terrain.setPools(stage.lampK * 0.07 / Math.max(0.6, stage.sky.exposure * 0.25));
-  terrain.frame(stage.night, cam.position);
-  actors.update(dt, focus.x, focus.z, 420, now, stage.night);
+  guard('terrain', () => terrain.frame(stage.night, cam.position));
+  guard('actors', () => actors.update(dt, focus.x, focus.z, 420, now, stage.night));
   stage.render();
   cam.getWorldDirection(camDir);
   Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
@@ -1278,6 +1306,7 @@ async function buildAuto(): Promise<void> {
   ov.classList.add('on');
   await yieldFrame();
   const plan = AutoVillage.build();
+  stage.settleSeason();
   $('au-build-title').textContent = `Building ${plan.name}`;
   errands.reset(); gps.clear(); wanted.reset();
   terrain.update(true);
@@ -1363,10 +1392,12 @@ function autoFrame(now: number, dt: number): void {
   const a = auto!;
   if (Input.take('hide')) document.body.classList.toggle('auto-clean');
   if (Input.take('cancel') && !panels.closeAll()) document.body.classList.toggle('auto-clean');
-  Game.tick(dt);
-  if (Game.mapVersion !== lastVersion) { lastVersion = Game.mapVersion; terrain.update(); }
-  buildings.sync();
-  if (buildings.treesVersion !== lastTrees) { lastTrees = buildings.treesVersion; terrain.setExtraTrees(buildings.trees()); }
+  guard('sim', () => Game.tick(dt));
+  guard('map', () => {
+    if (Game.mapVersion !== lastVersion) { lastVersion = Game.mapVersion; terrain.update(); }
+    buildings.sync();
+    if (buildings.treesVersion !== lastTrees) { lastTrees = buildings.treesVersion; terrain.setExtraTrees(buildings.trees()); }
+  });
   // a drag turns the view, the wheel comes closer
   Input.dragLook = true;
   if (!panels.anyModalOpen()) {
@@ -1393,20 +1424,43 @@ function autoFrame(now: number, dt: number): void {
   stage.viewBoost = 1 + stage.night * 0.6;
   stage.moving = false;
   stage.clearView = false;
-  stage.update(dt, focus, terrain.lampSpots);
+  guard('sky', () => stage.update(dt, focus, terrain.lampSpots));
   terrain.setPools(stage.lampK * 0.07 / Math.max(0.6, stage.sky.exposure * 0.25));
-  terrain.frame(stage.night, cam.position);
-  actors.update(dt, focus.x, focus.z, 420, now, stage.night);
+  guard('terrain', () => terrain.frame(stage.night, cam.position));
+  guard('actors', () => actors.update(dt, focus.x, focus.z, 420, now, stage.night));
   stage.render();
   cam.getWorldDirection(camDir);
   Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
   scape.frame(dt, cam.position.x, cam.position.y, cam.position.z, { dark: stage.night });
   if (now - lastHud > 400) {
     lastHud = now;
-    hud.update();
+    guard('hud', () => hud.update());
     syncAutoPanel();
     hud.drawMinimap({ x: focus.x, z: focus.z, yaw: Math.atan2(camDir.x, camDir.z), planner: false, w: 0, h: 0 });
   }
+}
+
+/* V2: a village that won't open (it crashed the tab, or the graphics card gave up while it loaded) must never lock its
+   player out, as it could: every visit loaded the same autosave into the same crash, and only a private window (no
+   save) got in. Each boot leaves a mark until the village has run for half a minute (or the page is left normally);
+   a mark found at the next boot means the last one never got there */
+const BOOT_MARK = 'pixelville-nd-boot', RESCUED = 'pixelville-nd-rescued';
+const bootMark = {
+  get: (): boolean => { try { return !!localStorage.getItem(BOOT_MARK); } catch { return false; } },
+  set: (on: boolean): void => { try { if (on) localStorage.setItem(BOOT_MARK, String(Date.now())); else localStorage.removeItem(BOOT_MARK); } catch { /* private mode */ } },
+};
+let bootClearAt = 0;
+addEventListener('pagehide', () => bootMark.set(false));
+function askRescue(): Promise<'again' | 'light' | 'fresh'> {
+  const l = $('loading');
+  l.classList.add('rescue');
+  $('loading-text').textContent = 'How would you like to go on?';
+  return new Promise((res) => {
+    const pick = (v: 'again' | 'light' | 'fresh') => (): void => { l.classList.remove('rescue'); res(v); };
+    $('ld-again').addEventListener('click', pick('again'), { once: true });
+    $('ld-light').addEventListener('click', pick('light'), { once: true });
+    $('ld-fresh').addEventListener('click', pick('fresh'), { once: true });
+  });
 }
 
 /* boot: continue the last village if there is one, build it a slice at a time
@@ -1458,11 +1512,31 @@ async function boot(): Promise<void> {
   };
   step('Opening the village records…', 0.05);
   let resumed = false;
-  try {
-    const data = await get(AUTO);
-    if (data) resumed = Game.performLoad(data).ok;
-  } catch { /* a fresh village */ }
+  let data: string | null = null;
+  try { data = await get(AUTO); } catch { /* a fresh village */ }
+  // V2: the last boot never got as far as play (the tab crashed or hung while this village opened): ask how to go on,
+  // rather than walk into the same wall every time (once per choice: a lighter reload doesn't ask again)
+  let asked = false;
+  try { asked = !!sessionStorage.getItem(RESCUED); sessionStorage.removeItem(RESCUED); } catch { /* private mode */ }
+  if (data && bootMark.get() && !asked) {
+    clearInterval(tipTimer);
+    const pick = await askRescue();
+    try { sessionStorage.setItem(RESCUED, '1'); } catch { /* private mode */ }
+    if (pick === 'light') {
+      try { sessionStorage.setItem(QUALITY_ONCE, 'low'); } catch { /* private mode */ }
+      bootMark.set(false);
+      location.reload();
+      return;
+    }
+    if (pick === 'fresh') {
+      try { await put(RESCUE, data); await put(AUTO, ''); } catch { /* the save store is unavailable: start afresh anyway */ }
+      data = null;
+    }
+  }
+  bootMark.set(true);
+  try { if (data) resumed = Game.performLoad(data).ok; } catch { /* a fresh village */ }
   $('loading-village').textContent = resumed ? `Welcome back to ${World.name || 'your village'}` : 'Founding a new village';
+  stage.settleSeason();
   step('Laying out the land…', 0.12);
   await yieldFrame();
   terrain.update(true);
@@ -1485,6 +1559,7 @@ async function boot(): Promise<void> {
   showLanding(resumed);
   requestAnimationFrame((t) => {
     last = t;
+    bootClearAt = t + 30000;
     frame(t);
     const l = $('loading');
     l.style.opacity = '0';

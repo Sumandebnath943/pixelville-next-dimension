@@ -277,6 +277,7 @@ export class Hud {
     } else if (Gov.leader) leader = `Mayor ${Gov.leader.name} · ${Math.round(Gov.approval)}%`;
     else leader = 'Self-governing';
     set('stat-leader-text', leader);
+    this.fitTop();
     $('btn-planner').classList.toggle('on', this.api.isPlanner());
     $('btn-god').classList.toggle('on', this.api.godView());
     ($('rci-r') as HTMLElement).style.height = Math.round(s.demand.r * 100) + '%';
@@ -285,6 +286,22 @@ export class Hud {
     this.updateTV();
     this.badge();
     if (this.journalOpen) this.renderJournal();
+  }
+
+  /** V2: the top bar stays one tidy row: when its two halves don't fit side by side it gives up a little at a time
+   *  (shorter labels, icons alone, the two least-read figures), and only on a narrow screen does it go to two full
+   *  rows (it used to wrap its right half under the left one, half a row down, which looked broken) */
+  private fitSig = '';
+  private fitTop(): void {
+    const bar = $('topbar'), b = document.body.classList;
+    const sig = `${innerWidth}|${getComputedStyle(document.documentElement).getPropertyValue('--ui')}|${b.contains('planner')}|${b.contains('auto')}|${$('stat-leader-text').textContent}|${$('stat-wealth').textContent}|${$('stat-jobs').textContent}|${$('chip-weather').childElementCount}|${$('chip-tier').textContent}|${$('village-name').textContent}`;
+    if (sig === this.fitSig) return;
+    this.fitSig = sig;
+    const steps = ['tb-c1', 'tb-c2', 'tb-c3'];
+    bar.classList.remove(...steps, 'tb-rows');
+    const over = (): boolean => bar.scrollWidth > bar.clientWidth + 1;
+    for (let i = 0; i < steps.length && over(); i++) bar.classList.add(steps[i]);
+    if (over()) bar.classList.add('tb-rows');
   }
 
   private updateTV(): void {

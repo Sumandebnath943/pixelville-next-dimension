@@ -18,7 +18,7 @@ export const Settings: any = {
     quality: 'auto',      // auto | low | medium | high
     mouseSens: 1,         // look sensitivity multiplier
     invertY: false,
-    fov: 70,              // street-level field of view (degrees)
+    fov: 60,              // street-level field of view (degrees; V2: was 70, a wide angle that made the village look small and empty)
     firstPerson: false,   // start in first-person instead of third
     // V2 (Milestone 7): performance, controls and accessibility (this browser's, not the village's)
     resScale: 'auto',     // auto (dynamic) | 1 | 0.85 | 0.7 | 0.55
@@ -39,6 +39,16 @@ export const Settings: any = {
       const raw = localStorage.getItem('pixelville-nd-settings'); // V2: own key, never clashes with V1
       if (raw) Object.assign(this.data, JSON.parse(raw));
     } catch { /* corrupted settings fall back to defaults */ }
+    // V2: a graphics reset used to lower the quality for good (and the only thing that wrote it unasked), so a browser
+    // that had one ran every visit after on a lighter preset than a fresh one: back to auto, once. A reset now lowers
+    // it for the next load only (render/stage.ts)
+    if (!this.data.qualityFix) {
+      if (this.data.quality === 'low' || this.data.quality === 'medium') this.data.quality = 'auto';
+      // (and the old default field of view, saved with everything else, moves to the new one)
+      if (this.data.fov === 70) this.data.fov = 60;
+      this.data.qualityFix = 1;
+      this.save();
+    }
   },
   save() {
     try { localStorage.setItem('pixelville-nd-settings', JSON.stringify(this.data)); } catch { /* private mode: settings just won't persist */ }

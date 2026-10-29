@@ -246,8 +246,10 @@ async function main(): Promise<void> {
     const sunny = sky.sunAbove ? Math.max(0, ENV.sunDir.value.y) * (1 - st.overcast) : 0;
     if (st.rain > 0.15) ENV.wet.value = Math.min(1, ENV.wet.value + dt * 0.1 * st.rain);
     else ENV.wet.value = Math.max(ENV.snow.value > 0.3 ? 0.12 : 0, ENV.wet.value - dt * (0.006 + sunny * 0.03));
+    const was = ENV.snow.value;
     if (st.snowfall > 0.15) ENV.snow.value = Math.min(1, ENV.snow.value + dt * 0.022 * st.snowfall);
     else ENV.snow.value = Math.max(0, ENV.snow.value - dt * (0.004 + sunny * 0.01));
+    ENV.melt.value += ((ENV.snow.value < was ? 1 : ENV.snow.value > was ? 0 : ENV.melt.value) - ENV.melt.value) * Math.min(1, dt * 0.5);
     leaf += ((wx === 'snow' ? 1 : 0) - leaf) * Math.min(1, dt * 0.12);
     street.veg.setLeafFall(leaf < 0.002 ? 0 : leaf);
     doy += ((wx === 'snow' ? 355 : 172) - doy) * Math.min(1, dt * 0.2);

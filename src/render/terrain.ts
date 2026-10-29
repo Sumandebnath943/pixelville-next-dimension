@@ -7,20 +7,19 @@
    and woods to the horizon, and the sea to the south.
    ============================================================ */
 import * as THREE from 'three';
-import { GW, GH, G_WATER, G_SAND, G_ROCK, MSIZE, World } from '../sim/world';
+import { GW, GH, G_GRASS, G_WATER, G_SAND, G_ROCK, MSIZE, World } from '../sim/world';
 import { PAVEMENT_M, railBend } from '../sim/traffic';
 import { PEAK_R, Peak, peakHeight, peakTrail, peakTrailHeights, trailhead } from '../sim/peak';
 import { Approach, Gate } from '../sim/approach';
 import { Weather } from '../sim/weather';
 import { Calamity } from '../sim/calamity';
 import { MAT, hash2 } from './kit';
-import { Kit, Palette, sharedPalette } from '../gfx/architecture';
+import { Kit, Palette, sharedPalette, freeAfterUpload, NO_SHADOW } from '../gfx/architecture';
 import * as P from '../gfx/props';
 import { WaterSystem } from '../gfx/water';
 import { TreeLayer, TreeInstance, GrassStream, Species, BushInstance } from '../gfx/vegetation';
 import { fbm, hash } from '../gfx/textures';
 import { surface } from '../gfx/surface';
-import { ENV } from '../gfx/env';
 import { QualityProfile, PROFILES, LAYER_NO_REFLECT } from '../gfx/pipeline';
 
 const TM = 8; // metres per tile
@@ -227,13 +226,20 @@ export function postsNear(x: number, z: number, out: { x: number; z: number; r: 
   out.length = 0;
   const tx = Math.floor(x / TM), tz = Math.floor(z / TM);
   for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) for (const p of POSTS.get(World.idx(tx + i, tz + j)) || []) out.push(p);
+  trunksNear(x, z, out);
   return out;
 }
-function addPost(x: number, z: number, r: number): void {
+function addPost(x: number, z: number, r: number, map = POSTS): void {
   const k = World.idx(Math.floor(x / TM), Math.floor(z / TM));
-  let l = POSTS.get(k);
-  if (!l) POSTS.set(k, (l = []));
+  let l = map.get(k);
+  if (!l) map.set(k, (l = []));
   l.push({ x, z, r });
+}
+/** V2: the street trees' trunks, kept apart from the posts (each set is rebuilt on its own) and found with them */
+const TRUNKS = new Map<number, { x: number; z: number; r: number }[]>();
+export function trunksNear(x: number, z: number, out: { x: number; z: number; r: number }[]): void {
+  const tx = Math.floor(x / TM), tz = Math.floor(z / TM);
+  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) for (const p of TRUNKS.get(World.idx(tx + i, tz + j)) || []) out.push(p);
 }
 
 /** V2 (Milestone 8): is the tile under one of the big peaks? */
@@ -512,6 +518,7 @@ export class Terrain {
     for (const g of gs) this.edgeRoad(kit, g, gs);
     kit.base = new THREE.Matrix4();
     this.gateMeshes = kit.build(this.group, true);
+    freeAfterUpload(this.gateMeshes);
     for (const m of this.gateMeshes) m.castShadow = false;
   }
   /** one tile's width of a road beyond the edge: the carriageway to the horizon, the pavement carrying on a little way
@@ -572,6 +579,64 @@ export class Terrain {
     this.updateMountains();
     this.updateTrees();
     this.updateLamps();
+    this.updateStreetTrees();
+  }
+
+  /** V2: trees along the streets: one every other tile on the verge behind the pavement, both sides, wherever a road
+   *  runs past open grass, the same kind all along a street (a new street ran between bare lawns and the town looked
+   *  unfinished; the look lab's street, which the game was meant to match, was lined with them). They come and go
+   *  with the roads and buildings, and their trunks are solid */
+  private streetSig = '';
+  private streetTrees: TreeInstance[] = [];
+  private updateStreetTrees(): void {
+    let h = World.roadStamp | 0;
+    for (let i = 0; i < World.reserved.length; i++) if (World.reserved[i]) h = (Math.imul(h, 31) + i) | 0; // (festival stalls' ground)
+    for (const b of World.buildings as { x: number; y: number; w: number; h: number }[]) h = (Math.imul(h, 31) + b.x * 7 + b.y * 131 + b.w * 3 + b.h) | 0;
+    const sig = `${h}|${this.treeSig}|${World.railStamp}|${World.waterStamp}`;
+    if (sig === this.streetSig) return;
+    this.streetSig = sig;
+    TRUNKS.clear();
+    const list: TreeInstance[] = [];
+    const open = (x: number, y: number): boolean => {
+      if (!World.inB(x, y)) return false;
+      const i = World.idx(x, y);
+      return World.ground[i] === G_GRASS && !World.roadMap[i] && !World.railMap[i] && !World.bmap[i] && !World.tree[i] && !World.reserved[i] && !inShore(x, y) && !inMountain(x, y) && !inPeak(x, y);
+    };
+    const R = (x: number, y: number): boolean => World.isRoad(x, y);
+    const SPEC: Species[] = ['lime', 'lime', 'oak', 'lime', 'birch'];
+    const spring = this.season === 0;
+    const plant = (x: number, z: number, line: number, k: number): void => {
+      const hv = hash2(Math.floor(x * 3), Math.floor(z * 3));
+      const species = SPEC[hash2(line, 17) % SPEC.length];
+      const tint = spring && species !== 'birch' ? new THREE.Color(1.1, 1.15, 0.85) : undefined;
+      list.push({ x, z, y: heightAt(x, z), species, scale: 0.62 + ((hv >> 4) % 100) / 900 + k * 0.04, rot: (hv % 628) / 100, tint });
+      addPost(x, z, 0.32, TRUNKS);
+    };
+    const IN = 1.7; // metres in from the road tile's edge: the verge just behind the pavement
+    for (let y = 2; y < GH - 2; y++)
+      for (let x = 2; x < GW - 2; x++) {
+        const i = World.idx(x, y);
+        if (!World.roadMap[i] || World.ground[i] === G_WATER || World.railMap[i]) continue;
+        // a straight run (the road carries on a tile either way), and no side street joining beside the tree, so the
+        // corners keep their sightlines; on an avenue, the outer verge of each row
+        const ew = R(x - 1, y) && R(x + 1, y), ns = R(x, y - 1) && R(x, y + 1);
+        const j = ((hash2(x, y) % 100) / 100 - 0.5) * 1.2;
+        if (ew && !ns && !(x % 2)) {
+          for (const s of [-1, 1]) {
+            const sy = y + s;
+            if (!open(x, sy) || R(x - 1, sy) || R(x + 1, sy) || !R(x - 2, y) || !R(x + 2, y)) continue;
+            plant(x * TM + 4 + j * s, s < 0 ? y * TM - IN : y * TM + TM + IN, y * 2 + (s > 0 ? 1 : 0), (x >> 1) % 2);
+          }
+        } else if (ns && !ew && !(y % 2)) {
+          for (const s of [-1, 1]) {
+            const sx = x + s;
+            if (!open(sx, y) || R(sx, y - 1) || R(sx, y + 1) || !R(x, y - 2) || !R(x, y + 2)) continue;
+            plant(s < 0 ? x * TM - IN : x * TM + TM + IN, y * TM + 4 + j * s, 4096 + x * 2 + (s > 0 ? 1 : 0), (y >> 1) % 2);
+          }
+        }
+      }
+    this.streetTrees = list;
+    this.trees.setTrees(this.baseTrees.concat(this.extraTrees, this.streetTrees));
   }
 
   private chunkSig(cx: number, cy: number): string {
@@ -635,7 +700,8 @@ export class Terrain {
     }
     kit.base = new THREE.Matrix4();
     ch.meshes = kit.build(this.group, true);
-    for (const m of ch.meshes) m.castShadow = m.name !== 'grass' && m.name !== 'sand' && m.name !== 'soil' && m.name !== 'shingle';
+    freeAfterUpload(ch.meshes);
+    for (const m of ch.meshes) m.castShadow = !NO_SHADOW.has(m.name);
     this.buildWater(cx, cy, ch);
   }
 
@@ -744,6 +810,12 @@ export class Terrain {
         W.push(w);
         H.push(bankHeight(w));
       }
+    // (V2: a tile wholly under the water is one flat quad of bed, not 32 clipped triangles: the sea's and the lakes'
+    // beds alone came to hundreds of thousands of vertices)
+    if (W.every((w) => w >= 0.9)) {
+      kit.quad(beach ? 'sand' : 'soil', v3(x0, BED, z0 + TM), v3(x0 + TM, BED, z0 + TM), v3(x0 + TM, BED, z0), v3(x0, BED, z0), UP, beach ? sandC : bedC);
+      return;
+    }
     const e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
     const tri = (p: THREE.Vector3, q: THREE.Vector3, r: THREE.Vector3, wv: number[]): void => {
       const n = new THREE.Vector3().crossVectors(e1.subVectors(r, p), e2.subVectors(q, p)).normalize();
@@ -1082,6 +1154,7 @@ export class Terrain {
     }
     for (const pk of World.peaks as Peak[]) this.buildPeak(kit, pk);
     this.mtnMeshes = kit.build(this.group, true);
+    freeAfterUpload(this.mtnMeshes);
   }
 
   /** V2: a height field (n×n cells of `step` m from x0, z0) as smooth-shaded triangles: grass, bare rock and snow, as
@@ -1366,14 +1439,14 @@ export class Terrain {
         list.push({ x: sp.x, z: sp.z, y: heightAt(sp.x, sp.z), species, scale: sp.s * (s === 6 ? 0.7 : 0.85) * tall, sx: s === 3 ? 0.55 : undefined, rot: (hv % 628) / 100, tint });
       }
     this.baseTrees = list;
-    this.trees.setTrees(this.baseTrees.concat(this.extraTrees));
+    this.trees.setTrees(this.baseTrees.concat(this.extraTrees, this.streetTrees));
   }
   private baseTrees: TreeInstance[] = [];
   private extraTrees: TreeInstance[] = [];
   /** trees planted by buildings (parks, gardens) join the forest */
   setExtraTrees(list: TreeInstance[]): void {
     this.extraTrees = list;
-    this.trees.setTrees(this.baseTrees.concat(list));
+    this.trees.setTrees(this.baseTrees.concat(list, this.streetTrees));
   }
 
   /** V1's lamp rule: regular posts along the outer kerbs, alternating sides */
@@ -1382,7 +1455,15 @@ export class Terrain {
     if (sig === this.lampSig) return;
     this.lampSig = sig;
     for (const m of this.lampMeshes) { this.group.remove(m); m.geometry.dispose(); }
-    const kit = new Kit(this.pal);
+    // (V2: a kit per chunk of the map, so the posts off screen are culled with their chunk: as one mesh across the
+    // whole map every post was drawn, and drawn again into the shadows, every frame)
+    const kits = new Map<number, Kit>();
+    const kitAt = (x: number, z: number): Kit => {
+      const k = Math.floor(z / (CH * TM)) * NCX + Math.floor(x / (CH * TM));
+      let kit = kits.get(k);
+      if (!kit) kits.set(k, (kit = new Kit(this.pal)));
+      return kit;
+    };
     this.lampSpots = [];
     POSTS.clear();
     // the traffic signals' poles (where the actors draw them)
@@ -1403,13 +1484,17 @@ export class Terrain {
         else if (vert && !World.isRoad(x - 1, y) && y % 6 === 0) { px = x * TM + LAMP_IN; pz = y * TM + 4; }
         else if (vert && !World.isRoad(x + 1, y) && y % 6 === 3) { px = x * TM + TM - LAMP_IN; pz = y * TM + 4; }
         else continue;
-        const lantern = P.lampPost(kit, px, pz);
+        const lantern = P.lampPost(kitAt(px, pz), px, pz);
         this.lampSpots.push({ x: lantern.x, z: lantern.z });
         addPost(px, pz, 0.17);
       }
     // the posts stand on the pavement
-    kit.base = new THREE.Matrix4();
-    this.lampMeshes = kit.build(this.group, true);
+    this.lampMeshes = [];
+    for (const kit of kits.values()) {
+      kit.base = new THREE.Matrix4();
+      this.lampMeshes.push(...kit.build(this.group, true));
+    }
+    freeAfterUpload(this.lampMeshes);
     for (const m of this.lampMeshes) m.position.y = KERB_H;
     this.buildPools();
   }
@@ -1502,10 +1587,5 @@ export class Terrain {
         this.group.add(this.floodMesh);
       }
     }
-  }
-
-  /** frozen in deep winter */
-  get ice(): number {
-    return Weather.season === 3 ? Math.min(1, ENV.snow.value * 1.1) : 0;
   }
 }

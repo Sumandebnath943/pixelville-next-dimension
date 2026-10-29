@@ -14,6 +14,7 @@ import { waterNormals } from './textures';
 import { PlanarReflection } from './pipeline';
 
 const NW = 4;
+const _vp = new THREE.Matrix4(), _fr = new THREE.Frustum(), _c4 = new THREE.Vector4();
 export interface Wave { dir: THREE.Vector2; length: number; amp: number; steep: number }
 
 const VERT = /* glsl */ `
@@ -135,10 +136,18 @@ void main() {
   float fn = pvFbm(vWPos.xz * vec2(0.9, 1.4) - vFlow * uTime * 0.6 + vec2(0.0, uTime * 0.05));
   float foam = smoothstep(1.4, 0.0, vShore) * smoothstep(0.42, 0.72, fn + (0.12 + uWind * 0.3)) * (1.0 - uIce);
   col = mix(col, light * vec3(0.75, 0.78, 0.8) + uSunColor * sunUp * 0.06, foam * 0.6);
-  // winter: a skin of ice, white where snow has settled on it
+  // winter: a skin of ice, white where snow has settled on it (V2: it forms out from the banks and thaws back to them
+  // the other way, the open water opening along the shore first and the rest breaking into floes; thin, late ice
+  // goes dark and wet before it's gone)
   if (uIce > 0.01) {
-    vec3 ice = light * mix(vec3(0.55, 0.62, 0.66), vec3(0.88, 0.9, 0.94), smoothstep(0.35, 0.75, pvFbm(vWPos.xz * 0.12)) * uSnow);
-    col = mix(col, mix(ice, refl, F * 0.5), uIce);
+    float floe = pvFbm(vWPos.xz * 0.05 + 5.0) * 0.6 + pvNoise(vWPos.xz * 0.32 + 2.0) * 0.4;
+    float last = smoothstep(1.0, 14.0, vShore) * 0.5 + floe * 0.7;
+    float th = mix(1.12, -0.05, uIce);
+    float iceK = smoothstep(th - 0.012, th + 0.012, last);
+    float thin = 1.0 - smoothstep(th, th + 0.18, last);
+    vec3 ice = light * mix(vec3(0.55, 0.62, 0.66), vec3(0.88, 0.9, 0.94), smoothstep(0.35, 0.75, pvFbm(vWPos.xz * 0.12)) * smoothstep(0.1, 0.5, uSnow));
+    ice = mix(ice, light * vec3(0.3, 0.36, 0.38), thin * 0.7);
+    col = mix(col, mix(ice, refl, F * (0.5 + thin * 0.4)), iceK);
   }
   col = pvFog(col, vWPos);
   gl_FragColor = vec4(col, 1.0);
@@ -223,6 +232,25 @@ export class WaterSystem {
     this.waves.forEach((v, i) => this.wavesU[i].set(v.dir.x, v.dir.y, v.length, v.amp));
   }
 
+  private mirrorOn = true;
+  /** V2: about how much of the screen the water's boxes cover (0 … 1; all of it when one reaches behind the eye) */
+  private coverage(): number {
+    let sum = 0;
+    for (const b of this.bounds) {
+      if (!_fr.intersectsBox(b)) continue;
+      let x0 = 1, y0 = 1, x1 = -1, y1 = -1;
+      for (let i = 0; i < 8; i++) {
+        _c4.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z, 1).applyMatrix4(_vp);
+        if (_c4.w <= 0.01) return 1;
+        const x = _c4.x / _c4.w, y = _c4.y / _c4.w;
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      }
+      sum += (Math.max(0, Math.min(1, x1) - Math.max(-1, x0)) * Math.max(0, Math.min(1, y1) - Math.max(-1, y0))) / 4;
+      if (sum >= 1) return 1;
+    }
+    return sum;
+  }
+
   /** surface height at a point (CPU twin of the vertex shader, open water) */
   height(x: number, z: number): number {
     const t = ENV.time.value;
@@ -243,10 +271,17 @@ export class WaterSystem {
     u.uAmbient.value = (ambient / Math.PI) * 0.6;
     u.uReflOn.value = this.reflection.enabled ? 1 : 0;
     u.uIce.value = ice;
-    const fr = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
-    const vis = this.bounds.some((b) => fr.intersectsBox(b));
+    _vp.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    _fr.setFromProjectionMatrix(_vp);
+    const vis = this.bounds.some((b) => _fr.intersectsBox(b));
     for (const m of this.meshes) m.visible = vis;
     if (!vis) { this.mirrored = false; return; }
+    // V2: the mirror is a second drawing of the whole scene (up to half the frame from the Planner); a pond in a corner
+    // of the view, or the sea as a sliver on the horizon, gets the sky's colour instead (frozen water needs none)
+    const cover = ice > 0.98 ? 0 : this.coverage();
+    this.mirrorOn = cover > (this.mirrorOn ? 0.025 : 0.045);
+    u.uReflOn.value = this.reflection.enabled && this.mirrorOn ? 1 : 0;
+    if (!this.mirrorOn) { this.mirrored = false; return; }
     if (reflect || !this.mirrored) {
       this.mirrored = true;
       for (const m of this.meshes) m.visible = false;

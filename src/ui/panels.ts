@@ -19,7 +19,7 @@ import { Power, PLANT_CAP } from '../sim/power';
 import { Supply, GOODS, SELLS, MAKES, YARD } from '../sim/supply';
 import { Edu } from '../sim/education';
 import { Economy, COUNTY_GRANT } from '../sim/economy';
-import { SLOTS, AUTO, get, put, metaOf } from '../save/store';
+import { SLOTS, AUTO, RESCUE, get, put, metaOf } from '../save/store';
 import { Snd } from '../audio/sounds';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -535,12 +535,13 @@ export class Panels {
   /* ---------- saves ---------- */
   async openSaves(mode: 'save' | 'load'): Promise<void> {
     $('saveui-title').textContent = mode === 'save' ? 'Save village' : 'Load village';
-    const keys = mode === 'load' ? [...SLOTS, AUTO] : SLOTS;
+    const keys = mode === 'load' ? [...SLOTS, AUTO, RESCUE] : SLOTS;
     const wrap = $('saveui-slots');
     wrap.innerHTML = '';
     for (const [i, key] of keys.entries()) {
       const meta = metaOf(await get(key).catch(() => null));
-      const label = key === AUTO ? 'Autosave' : `Slot ${i + 1}`;
+      if (key === RESCUE && !meta) continue; // (V2: only there when a village that wouldn't open was put aside)
+      const label = key === AUTO ? 'Autosave' : key === RESCUE ? 'Kept safe' : `Slot ${i + 1}`;
       const desc = meta ? `<b>${esc(meta.name)}</b> · day ${meta.day} · ${meta.pop} villagers${meta.at ? '<br>' + new Date(meta.at).toLocaleString() : ''}` : 'Empty';
       const row = document.createElement('div');
       row.className = 'save-slot' + (meta ? '' : ' empty');

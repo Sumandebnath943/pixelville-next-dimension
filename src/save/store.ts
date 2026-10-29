@@ -7,6 +7,8 @@ const DB = 'pixelville-nd';
 const STORE = 'saves';
 export const SLOTS = ['slot1', 'slot2', 'slot3'];
 export const AUTO = 'auto';
+/** V2: a village that wouldn't open, put aside when the player started afresh (it stays loadable) */
+export const RESCUE = 'rescue';
 
 let dbp: Promise<IDBDatabase> | null = null;
 function db(): Promise<IDBDatabase> {

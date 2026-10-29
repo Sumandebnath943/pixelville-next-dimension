@@ -26,6 +26,9 @@ import { flushBeams, setGlare, VIEW } from '../gfx/car';
 import { snowUniform, MAT } from './kit';
 
 export type { Quality } from '../gfx/pipeline';
+/** V2: a lighter preset for the next load only (after a graphics reset, or the player's choice on a village that
+ *  wouldn't open) */
+export const QUALITY_ONCE = 'pixelville-nd-quality-once';
 
 /** 0 = full day, 1 = deep night: the sky's own darkness plus weather gloom */
 let lastNight = 0;
@@ -77,7 +80,7 @@ export class Stage {
 
   constructor(canvas: HTMLCanvasElement) {
     this.quality = Stage.pickQuality();
-    this.camera = new THREE.PerspectiveCamera(Settings.get('fov') || 70, 1, 0.25, 4000);
+    this.camera = new THREE.PerspectiveCamera(Settings.get('fov') || 60, 1, 0.25, 4000);
     this.camera.layers.enable(LAYER_NO_REFLECT);
     this.pipe = new Pipeline(canvas, this.quality, this.scene, this.camera);
     this.profile = this.pipe.profile;
@@ -86,6 +89,8 @@ export class Stage {
     this.sky = new SkySystem(this.renderer, this.scene, this.pipe.shadowSize);
     this.precip = new Precipitation(this.scene);
     this.groundRefl = new PlanarReflection(0.03, this.profile.reflScale || 0.25);
+    // (V2: wet streets mirror what's near: the far town was a second drawing of the whole map every other frame)
+    this.groundRefl.maxFar = 320;
     for (let i = 0; i < this.profile.pointLights; i++) {
       const l = new THREE.PointLight(0xffc68a, 0, 28, 2);
       this.scene.add(l);
@@ -112,15 +117,22 @@ export class Stage {
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
       this.lost = true;
-      // come back one preset lighter next time
-      if (Settings.get('quality') === 'auto' || Settings.get('quality') === this.quality) Settings.set('quality', this.quality === 'high' ? 'medium' : 'low');
-      console.error('[stage] WebGL context lost; quality lowered for the next load');
+      // come back one preset lighter on the next load (V2: that load only: it used to stick for good)
+      try { sessionStorage.setItem(QUALITY_ONCE, this.quality === 'high' ? 'medium' : 'low'); } catch { /* private mode */ }
+      console.error('[stage] WebGL context lost; the next load is one preset lighter');
+      this.onLost?.();
     });
     this.pipe.onResize = () => this.resize();
     this.resize();
   }
 
+  /** V2: the graphics card gave up (the client shows what happened and offers a reload) */
+  onLost?: () => void;
+
   static pickQuality(): Quality {
+    let once: string | null = null;
+    try { once = sessionStorage.getItem(QUALITY_ONCE); sessionStorage.removeItem(QUALITY_ONCE); } catch { /* private mode */ }
+    if (once === 'low' || once === 'medium') return once;
     const q = Settings.get('quality');
     if (q === 'low' || q === 'medium' || q === 'high') return q;
     return detectQuality();
@@ -243,6 +255,19 @@ export class Stage {
     g.contrast.value = 1.05 - st.overcast * 0.06;
   }
 
+  /** V2: how much of the water is frozen (0 … 1) */
+  ice = 0;
+  private lastSim = -1;
+  /** V2: a village loaded or begun: the snow, the ice and the grass as the season has them (no thaw played out) */
+  settleSeason(): void {
+    const winter = Weather.season === 3;
+    ENV.snow.value = snowUniform.value = winter ? 0.7 : 0;
+    this.ice = winter ? 1 : 0;
+    ENV.thaw.value = winter ? 1 : 0;
+    ENV.melt.value = 0;
+    this.lastSim = -1;
+  }
+
   /** V2: god view (the Planner, when the player asks for it): the view clears of rain, snow, mist and fog whatever the
    *  sim's weather is doing; the weather itself goes on (the streets still get wet, the snow still settles) */
   clearView = false;
@@ -275,11 +300,28 @@ export class Stage {
     if (rain > 0.15) ENV.wet.value = Math.min(1, ENV.wet.value + dt * 0.08 * rain);
     else ENV.wet.value = Math.max(ENV.snow.value > 0.3 ? 0.12 : 0, ENV.wet.value - dt * (0.004 + sunny * 0.02));
     // winter keeps its snow; it settles while it falls and melts once the season turns
+    // (V2: the thaw runs on the village's clock, most of a day and quicker in the afternoon sun: on the wall clock it
+    // took the same two minutes at any speed and rushed through its patchy middle; paused, nothing melts)
     const winter = Weather.season === 3;
+    const t = Sim.day * 1440 + Sim.clock;
+    const mins = this.lastSim < 0 || t < this.lastSim ? 0 : Math.min(1440, t - this.lastSim);
+    this.lastSim = t;
+    const was = ENV.snow.value;
     if (snowfall > 0.15) ENV.snow.value = Math.min(1, ENV.snow.value + dt * 0.02 * snowfall);
-    else if (!winter) ENV.snow.value = Math.max(0, ENV.snow.value - dt * (0.006 + sunny * 0.01));
-    else ENV.snow.value = Math.max(0.35, ENV.snow.value - dt * sunny * 0.002);
+    else if (!winter) ENV.snow.value = Math.max(0, ENV.snow.value - mins * (1 / 900 + sunny / 520));
+    // (a winter without a snowfall yet still whitens over a few hours, rather than all at once as the season turns)
+    else ENV.snow.value = ENV.snow.value < 0.55 ? Math.min(0.55, ENV.snow.value + mins / 360) : Math.max(0.55, ENV.snow.value - mins * sunny * 0.0003);
     snowUniform.value = ENV.snow.value;
+    // V2: thawing (drifts and wet ground) while the cover shrinks; the grass it leaves is flattened and pale, and greens
+    // again over a day and a half
+    const thawing = ENV.snow.value < was ? 1 : ENV.snow.value > was ? 0 : ENV.melt.value;
+    ENV.melt.value += (thawing - ENV.melt.value) * Math.min(1, dt * 0.5);
+    if (ENV.snow.value > 0.3) ENV.thaw.value = Math.min(1, ENV.thaw.value + mins / 240);
+    else if (ENV.snow.value <= 0.02) ENV.thaw.value = Math.max(0, ENV.thaw.value - mins / 2160);
+    // V2: lakes and rivers freeze over in the cold and thaw a day or so after the snow, from the banks out, in floes
+    // (the ice used to vanish at once the moment spring began)
+    if (winter && ENV.snow.value > 0.3) this.ice = Math.min(1, this.ice + mins / 900);
+    else if (!winter) this.ice = Math.max(0, this.ice - mins * (ENV.snow.value > 0.05 ? 0.00025 : 1 / 1100 + sunny / 1400));
     // leaves colour through autumn and are gone by winter; spring brings them back
     const within = ((Sim.day - 1) % 7) / 7;
     const fallTarget = Weather.season === 2 ? 0.15 + within * 0.75 : winter ? 1 : 0;
@@ -356,7 +398,9 @@ export class Stage {
     ENV.reflOn.value = 0;
     ENV.reflTex.value = null;
     this.waterUpdate?.(this.renderer, this.scene, this.camera, this.sky.ambient, doWater);
-    if (ENV.wet.value > 0.04 && P.reflScale > 0) {
+    // (V2: and not from high above, where a wet street at that steep an angle shows the sky's light, which the
+    // environment map already gives it)
+    if (ENV.wet.value > 0.04 && P.reflScale > 0 && this.camera.position.y < 90) {
       if (doGround || !this.groundReady) {
         this.groundRefl.update(this.renderer, this.scene, this.camera);
         ENV.reflMat.value.copy(this.groundRefl.textureMatrix);
@@ -372,7 +416,7 @@ export class Stage {
   private ftEma = 1 / 60;
   private resT = 3;
   /** the resolution setting: a fixed fraction, or 'auto', which steps down while frames run long (under ~30 fps)
-   *  and back up when there's room again, never below 70% */
+   *  and back up when there's room again, never below 80% */
   autoRes(dt: number): void {
     const want = Settings.get('resScale');
     if (want !== 'auto' && want !== undefined) { this.pipe.setResScale(Number(want) || 1); return; }
@@ -381,7 +425,9 @@ export class Stage {
     this.ftEma += (dt - this.ftEma) * 0.04;
     this.resT -= dt;
     if (this.resT > 0) return;
-    if (this.ftEma > 1 / 28 && this.pipe.resScale > 0.7) { this.pipe.setResScale(this.pipe.resScale - 0.1); this.resT = 3; }
+    // (V2: never below 80%: at 70% the whole picture went soft, and was most of why the game looked blurrier than the
+    // look lab, which never scales)
+    if (this.ftEma > 1 / 28 && this.pipe.resScale > 0.8) { this.pipe.setResScale(Math.max(0.8, this.pipe.resScale - 0.1)); this.resT = 3; }
     else if (this.ftEma < 1 / 50 && this.pipe.resScale < 1) { this.pipe.setResScale(this.pipe.resScale + 0.05); this.resT = 6; }
   }
 

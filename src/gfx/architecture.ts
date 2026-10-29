@@ -325,31 +325,31 @@ export class Palette {
     add('pot', surface(std({ color: 0x9a5a3a, roughness: 0.75 }), { snow: 1, wet: 0.8 }, 'pot'));
     add('lead', surface(std({ color: 0x5a6068, roughness: 0.5, metalness: 0.4 }), { snow: 1.2 }, 'lead'));
     const pv = TX.paving();
-    add('paving', surface(texd(pv, { vertexColors: true }), { snow: 1, wet: 1, puddles: true, wear: true, antiTile: 0.12 }, 'paving'), pv.metres);
+    add('paving', surface(texd(pv, { vertexColors: true }), { snow: 1, wet: 1, puddles: true, wear: true, plough: 0.45, antiTile: 0.12 }, 'paving'), pv.metres);
     const gr = TX.granite();
-    add('granite', surface(texd(gr, { vertexColors: true }), { snow: 1, wet: 0.8, wear: true }, 'granite'), gr.metres);
+    add('granite', surface(texd(gr, { vertexColors: true }), { snow: 1, wet: 0.8, wear: true, plough: 0.3 }, 'granite'), gr.metres);
     const asp = TX.asphalt();
-    add('asphalt', surface(texd(asp, { vertexColors: true }), { snow: 1, wet: 1, puddles: true, wear: true, antiTile: 0.25 }, 'asphalt'), asp.metres);
+    add('asphalt', surface(texd(asp, { vertexColors: true }), { snow: 1, wet: 1, puddles: true, wear: true, plough: 0.85, antiTile: 0.25, antiTex: true }, 'asphalt'), asp.metres);
     const gg = TX.grassGround();
-    add('grass', surface(texd(gg, { vertexColors: true }), { snow: 1, wet: 0.5, antiTile: 0.3 }, 'grassG'), gg.metres);
+    add('grass', surface(texd(gg, { vertexColors: true }), { snow: 1, wet: 0.5, antiTile: 0.3, antiTex: true, thaw: 1 }, 'grassG'), gg.metres);
     const sd = TX.sand();
-    add('sand', surface(texd(sd, { vertexColors: true }), { snow: 1, wet: 0.8, antiTile: 0.15 }, 'sand'), sd.metres);
+    add('sand', surface(texd(sd, { vertexColors: true }), { snow: 1, wet: 0.8, antiTile: 0.15, antiTex: true }, 'sand'), sd.metres);
     const rk = TX.rock();
-    add('rock', surface(texd(rk, { vertexColors: true }), { snow: 1.2, wet: 0.7, antiTile: 0.25 }, 'rock'), rk.metres);
+    add('rock', surface(texd(rk, { vertexColors: true }), { snow: 1.2, wet: 0.7, antiTile: 0.25, antiTex: true }, 'rock'), rk.metres);
     const gv = TX.gravel();
-    add('gravel', surface(texd(gv, { vertexColors: true }), { snow: 1, wet: 0.9, puddles: true, wear: true }, 'gravel'), gv.metres);
+    add('gravel', surface(texd(gv, { vertexColors: true }), { snow: 1, wet: 0.9, puddles: true, wear: true, plough: 0.3 }, 'gravel'), gv.metres);
     // V2: the shingle along a river's or a lake's edge (the ballast's stones, washed and spread flat)
-    add('shingle', surface(texd(gv, { vertexColors: true }), { snow: 1, wet: 1, antiTile: 0.2 }, 'shingle'), gv.metres);
+    add('shingle', surface(texd(gv, { vertexColors: true }), { snow: 1, wet: 1, antiTile: 0.2, antiTex: true }, 'shingle'), gv.metres);
     // V2: a mountain trail's packed gravel: drawn just in front of the ground it lies on, so the slope never shows
     // through it in patches
     add('trail', surface(texd(gv, { vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), { snow: 1, wet: 0.8, antiTile: 0.3 }, 'trail'), gv.metres * 0.7);
     const so = TX.soil();
-    add('soil', surface(texd(so, { vertexColors: true }), { snow: 1, wet: 1 }, 'soil'), so.metres);
+    add('soil', surface(texd(so, { vertexColors: true }), { snow: 1, wet: 1, antiTex: true }, 'soil'), so.metres);
     const pl = TX.planks();
     add('timber', surface(texd(pl, { vertexColors: true }), { snow: 1, wet: 0.9 }, 'timber'), pl.metres);
     const paintTex = TX.roadPaint();
     const rp = std({ map: paintTex, transparent: true, roughness: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-    add('roadPaint', surface(rp, { snow: 1, wet: 0.5, puddles: true, wear: true }, 'rpaint'), 1.5);
+    add('roadPaint', surface(rp, { snow: 1, wet: 0.5, puddles: true, wear: true, plough: 0.85 }, 'rpaint'), 1.5);
 
     // window glass: reflective, with the room behind it as emitted light
     const glass = std({ color: 0x000000, roughness: 0.04, metalness: 0 });
@@ -662,6 +662,21 @@ export class Kit {
   }
 }
 
+/** V2: static geometry lives on the GPU once it has been drawn: its copy in the page is let go after upload (a big
+ *  village's ground, banks, mountains and lamp posts held well over 100 MB of it in memory for nothing). Nothing may
+ *  read or rebuild these attributes afterwards */
+export function freeAfterUpload(meshes: THREE.Mesh[]): void {
+  for (const m of meshes) for (const a of Object.values(m.geometry.attributes)) (a as THREE.BufferAttribute).onUpload(dropArray);
+}
+function dropArray(this: THREE.BufferAttribute): void {
+  (this as unknown as { array: unknown }).array = null;
+}
+
+/** V2: what never casts a shadow worth drawing: flat ground (roads, pavements, lawns, lots: it lies on what it would
+ *  shade) and the smallest details (sashes, door brass, lead, pots). Each was a draw call more in every shadow pass,
+ *  and with them the pass was the heaviest part of a frame over a big village */
+export const NO_SHADOW = new Set(['glass', 'roadPaint', 'asphalt', 'paving', 'granite', 'gravel', 'grass', 'sand', 'soil', 'shingle', 'trail', 'brass', 'lead', 'pot', 'sash', 'sashBar']);
+
 /** join packed lists per material into meshes (glass joins glass with the same attributes) */
 export function meshesFromParts(pal: Palette, parts: Map<string, Packed[]>, parent: THREE.Object3D, shadows = true): THREE.Mesh[] {
   const out: THREE.Mesh[] = [];
@@ -688,7 +703,7 @@ export function meshesFromParts(pal: Palette, parts: Map<string, Packed[]>, pare
       }
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, pal.mat(key));
-      mesh.castShadow = shadows && key !== 'glass' && key !== 'roadPaint' && !key.startsWith('sign');
+      mesh.castShadow = shadows && !NO_SHADOW.has(key) && !key.startsWith('sign');
       mesh.receiveShadow = true;
       mesh.name = key;
       parent.add(mesh);

@@ -876,8 +876,9 @@ const GRASS_DISPLACE = /* glsl */ `
   #endif
   origin = (modelMatrix * vec4(origin, 1.0)).xyz;
   vec3 s2 = max(vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2])), vec3(1e-4));
-  // settled snow buries the blades
-  transformed.y *= 1.0 - uSnow * 0.88;
+  // settled snow buries the blades (V2: where its drifts lie, so they stand again round a thawing drift), and they come
+  // out of a winter's snow flattened
+  transformed.y *= (1.0 - pvSnowCover(origin.xz, uSnow) * 0.9) * (1.0 - uThaw * 0.4);
   vec2 wp = origin.xz + transformed.xz;
   float g = pvGust(wp);
   float ph = wp.x * 1.7 + wp.y * 1.3;
@@ -938,7 +939,7 @@ let GRASS_MAT: THREE.MeshStandardMaterial | null = null;
 function grassMaterial(): THREE.MeshStandardMaterial {
   if (GRASS_MAT) return GRASS_MAT;
   GRASS_MAT = surface(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, side: THREE.DoubleSide }), {
-    snow: 1, wet: 0.4, keepNormals: true, softBeam: true,
+    snow: 1, wet: 0.4, thaw: 1, keepNormals: true, softBeam: true,
     vDecl: GRASS_DECL, vDisplace: GRASS_DISPLACE,
     fDecl: 'varying float vBlade;',
     fEmissive: `

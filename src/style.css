@@ -88,10 +88,25 @@ kbd {
 #hud > * { pointer-events: auto; }
 
 /* ---------- top bar: the village on the left, the dashboard on the right ---------- */
-#topbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; pointer-events: none; }
+#topbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: nowrap; gap: 8px; align-items: flex-start; pointer-events: none; }
 #topbar > * { pointer-events: auto; }
-#tb-left, #tb-right { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 46px; padding: 5px 8px 5px 14px; }
+#tb-left, #tb-right { display: flex; flex-wrap: nowrap; flex-shrink: 0; align-items: center; gap: 8px; min-height: 46px; padding: 5px 8px 5px 14px; }
 #tb-right { margin-left: auto; padding: 5px 6px 5px 8px; }
+#stat-leader-text { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* V2: fitting the bar to the screen a step at a time (hud.ts fitTop): shorter labels, then icons alone, then the
+   two least-read figures go; only then two full rows */
+#topbar.tb-c1 #tb-left, #topbar.tb-c1 #tb-right { gap: 4px; }
+#topbar.tb-c1 .stat { padding: 5px 4px; }
+#topbar.tb-c1 #stat-leader-text { max-width: 120px; }
+#topbar.tb-c1 #chip-weather .sub, #topbar.tb-c1 #chip-weather .sub ~ svg { display: none; }
+#topbar.tb-c2 #chip-tier span, #topbar.tb-c2 #chip-weather span, #topbar.tb-c2 #stat-leader-text { display: none; }
+#topbar.tb-c2 .chip { padding: 5px 8px; }
+#topbar.tb-c2 #speed button { padding: 5px 6px; min-width: 27px; }
+#topbar.tb-c2 #filebtns .ib { width: 31px; }
+#topbar.tb-c3 .stats .stat:nth-child(4), #topbar.tb-c3 .stats .stat:nth-child(5), #topbar.tb-c3 .tb-sep, #topbar.tb-c3 #clock { display: none; }
+#topbar.tb-rows { flex-wrap: wrap; }
+#topbar.tb-rows > #tb-left, #topbar.tb-rows > #tb-right { flex: 1 1 100%; flex-wrap: wrap; }
+#topbar.tb-rows > #tb-right { margin-left: 0; justify-content: space-between; }
 .tb-id { display: flex; flex-direction: column; line-height: 1.2; margin-right: 2px; }
 #village-name { font-weight: 650; font-size: 14px; letter-spacing: 0.01em; }
 #clock { color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -103,7 +118,7 @@ kbd {
 }
 .chip svg { color: var(--accent); }
 .chip .sub { color: var(--ink-3); }
-.stats { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.stats { display: flex; align-items: center; gap: 2px; flex-wrap: nowrap; }
 .stat { display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; border-radius: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stat svg { color: var(--ink-3); }
 .stat b { font-weight: 600; }
@@ -626,6 +641,23 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
 .ld-tip b { display: block; margin-bottom: 2px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(244, 234, 216, 0.58); }
 #loading-tip { margin: 0; min-height: 2.9em; font-size: 13.5px; line-height: 1.45; color: #f1e8d8; transition: opacity 0.4s ease, transform 0.4s ease; }
 #loading-tip.out { opacity: 0; transform: translateY(4px); }
+/* V2: a village that didn't open last time: the choices take the tip's place */
+.ld-rescue {
+  grid-area: tip; display: none; flex-direction: column; gap: 6px; max-width: 660px; padding: 14px 16px; border-radius: 14px;
+  background: rgba(14, 16, 24, 0.72); backdrop-filter: blur(12px) saturate(130%); -webkit-backdrop-filter: blur(12px) saturate(130%); border: 1px solid rgba(240, 194, 122, 0.3);
+}
+#loading.rescue .ld-rescue { display: flex; }
+#loading.rescue .ld-tip, #loading.rescue .ld-stages, #loading.rescue .ld-pct { visibility: hidden; }
+.ld-rescue b { font-size: 15px; color: #fff3dc; }
+.ld-rescue p { margin: 0 0 4px; color: #f1e8d8; font-size: 13px; line-height: 1.45; }
+.ld-rescue-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.ld-rescue-btns small { color: var(--ink-3); font-weight: 400; }
+/* V2: the graphics card reset */
+#gpu-lost { position: fixed; inset: 0; z-index: 70; display: none; align-items: center; justify-content: center; background: rgba(5, 7, 10, 0.55); }
+#gpu-lost.on { display: flex; }
+#gpu-lost > div { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px 22px; max-width: 420px; }
+#gpu-lost b { font-size: 16px; }
+#gpu-lost p { margin: 0 0 4px; color: var(--ink-2); line-height: 1.5; }
 .ld-foot { position: absolute; bottom: 12px; left: 0; right: 0; margin: 0; text-align: center; font-size: 10.5px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(244, 234, 216, 0.4); }
 @media (max-width: 640px) {
   .ld-panel { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'pct' 'status' 'bar' 'tip'; gap: 10px; }
