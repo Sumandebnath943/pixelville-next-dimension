@@ -6,6 +6,7 @@
    public/icon.svg (the app icon: a pixel-block house).
    Run: node scripts/logo.mjs
    ============================================================ */
+/* global console, URL */
 import { writeFileSync } from 'node:fs';
 
 const FONT = {

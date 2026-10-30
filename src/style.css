@@ -224,6 +224,21 @@ body.alert #alert-pill { display: inline-flex !important; }
 
 /* ---------- the showroom ---------- */
 .sr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 10px 0 6px; }
+/* V2 (Milestone 9): the credits for the models */
+.credits { max-height: min(62vh, 640px); overflow-y: auto; padding-right: 6px; }
+.credits h2 { font-size: 14px; margin: 14px 0 6px; color: var(--accent); }
+.credits ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+.credits li { font-size: 13px; line-height: 1.45; color: var(--ink); }
+.credits li span, .credits li small { color: var(--ink-2); }
+.credits a { color: inherit; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.3); text-underline-offset: 2px; }
+.credits a:hover { text-decoration-color: var(--accent); }
+.cr-contact { padding: 10px 12px; border-radius: 10px; background: rgba(255, 196, 90, 0.08); border: 1px solid rgba(255, 196, 90, 0.22); font-size: 13px; }
+/* V2 (Milestone 9): who the Founder is: six faces to pick from */
+.fig-faces { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 4px 0 10px; }
+.fig-face { padding: 0; border-radius: 12px; overflow: hidden; aspect-ratio: 6 / 7; background: radial-gradient(ellipse at 50% 30%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 75%); border: 2px solid transparent; }
+.fig-face img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.fig-face.on { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 196, 90, 0.18); }
+@media (max-width: 520px) { .fig-faces { grid-template-columns: repeat(3, 1fr); } }
 .sr-card { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); }
 .sr-art { border-radius: 10px; background: radial-gradient(ellipse at 50% 80%, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02) 70%); padding: 6px 10px 0; }
 .sr-art svg { width: 100%; height: auto; display: block; fill: initial; stroke: none; }

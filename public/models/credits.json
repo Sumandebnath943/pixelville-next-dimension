@@ -1,0 +1,605 @@
+{
+ "contact": "Missed a credit, or got one wrong? Made one of these models and want it changed or taken out? Please open an issue at https://github.com/Sumandebnath943/pixelville-next-dimension/issues and we'll put it right.",
+ "issues": "https://github.com/Sumandebnath943/pixelville-next-dimension/issues",
+ "groups": [
+  {
+   "name": "People",
+   "items": [
+    {
+     "use": "The villagers and the Founder (45 characters)",
+     "title": "Microsoft Rocketbox Avatar Library",
+     "author": "Microsoft",
+     "url": "https://github.com/microsoft/Microsoft-Rocketbox",
+     "license": "MIT",
+     "licenseUrl": "people/LICENSE-Rocketbox.md",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton, fewer triangles in three levels of detail, textures resized, clothes made recolourable; weapons left out."
+    }
+   ]
+  },
+  {
+   "name": "Vehicles",
+   "items": [
+    {
+     "use": "Hatchback",
+     "title": "Ace '11 - Low Poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/ace-11-low-poly-model-055ff8a21b8d4d279debca089e2fafcd",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Hatchback",
+     "title": "Sigil '07 - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/sigil-07-low-poly-model-22abe5284d4c4b55920b8462eb24a8c1",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "City car",
+     "title": "Compact '07 - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/compact-07-low-poly-model-25c6874d173a4f6ca63e150bbd505686",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Saloon",
+     "title": "Kiri '10 - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/kiri-10-low-poly-model-7fd6e15785fa4aa9bfd6e31eb7c97ba6",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Saloon",
+     "title": "Trinity '03 - Low Poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/trinity-03-low-poly-model-32ac065960334899afc8ff6fbb2d79ee",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Older saloon",
+     "title": "Carter '98 - Low Poly Model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/carter-98-low-poly-model-3af773617c7f481da2ba5d307412ce35",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Older hatchback",
+     "title": "Milano '95 - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/milano-95-low-poly-model-122a22d210234596ad23623588d0d166",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Small SUV",
+     "title": "Urban '10 - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/urban-10-low-poly-model-2866efdfa943484391ef8313768e074d",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Estate",
+     "title": "Fairheaven SW '84 - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/fairheaven-sw-84-low-poly-model-aa0becb6e854422596cac6b21bf79787",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Pickup",
+     "title": "Conquer '89 Pickup - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/conquer-89-pickup-low-poly-model-6c48c94be8974dc7a5932f697c0ba68f",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Police car",
+     "title": "Urban '10 Cop Enforcer - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/urban-10-cop-enforcer-low-poly-model-745830362bb342128ef6509345606ffe",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Taxi",
+     "title": "Illinois '90 Taxi #1 - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/illinois-90-taxi-1-low-poly-model-72d91f4bce814818b3cd1f2de60f8ef2",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Ambulance",
+     "title": "Shvan '92 Ambulance - Low Poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/shvan-92-ambulance-low-poly-model-2856dd3c61f940909dced9a5c0379484",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Van",
+     "title": "Shvan '92 - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/shvan-92-low-poly-model-09d718c9cf72401b8534d265a06a803f",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Works van",
+     "title": "Lightbody '90 MD Utility - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/lightbody-90-md-utility-low-poly-model-d3aca50a8f2b4917bb9f4ce2bf1ccfe5",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Tow truck",
+     "title": "Lightbody '90 MD Tow Truck - Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/lightbody-90-md-tow-truck-low-poly-model-5cba208001c64e8ea164f89e4dde91e7",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Delivery truck",
+     "title": "LCT 3000 '07- Low poly model",
+     "author": "Daniel Zhabotinsky",
+     "user": "DanielZhabotinsky",
+     "url": "https://sketchfab.com/3d-models/lct-3000-07-low-poly-model-3be03b6a43aa41898c9ca806b8787052",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/DanielZhabotinsky"
+    },
+    {
+     "use": "Bus",
+     "title": "City Bus - rigged | РоАЗ-5236",
+     "author": "Yo.Ri",
+     "user": "grox777",
+     "url": "https://sketchfab.com/3d-models/city-bus-rigged-5236-36646fcf41da498ca24a02f4b6fb1d95",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable. Its shadow plane left out.",
+     "profile": "https://sketchfab.com/grox777"
+    },
+    {
+     "use": "Fire engine",
+     "title": "Firetruck",
+     "author": "OzerGokmen",
+     "user": "OzerGokmen",
+     "url": "https://sketchfab.com/3d-models/firetruck-27a6b95f768d415282e2f5de48ba6d99",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/OzerGokmen"
+    },
+    {
+     "use": "Tractor",
+     "title": "Tractor sgw3",
+     "author": "Ford mondeo",
+     "user": "tnikita",
+     "was": "mamont nikita (sketchfab.com/mamontnikita62)",
+     "url": "https://sketchfab.com/3d-models/tractor-sgw3-38625f3e0fd0465bb7cc99de89590071",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/tnikita"
+    },
+    {
+     "use": "Moped",
+     "title": "Piaggio SI Scooter",
+     "author": "Tomaso",
+     "user": "Tomasoo",
+     "url": "https://sketchfab.com/3d-models/piaggio-si-scooter-fe75689a108744b7acf5003d677d4c8e",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/Tomasoo"
+    },
+    {
+     "use": "Bicycle",
+     "title": "Classic Bicycle | LowPoly | Game ready",
+     "author": "by__Rx",
+     "user": "by__Rx",
+     "url": "https://sketchfab.com/3d-models/classic-bicycle-lowpoly-game-ready-da6507928c0c4a5c8776008cdb9f747e",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/by__Rx"
+    },
+    {
+     "use": "Locomotive",
+     "title": "Metrolink EMD F59PH Diesel Locomotive",
+     "author": "Trashbulldogproductions",
+     "user": "Trashbulldogproductions",
+     "url": "https://sketchfab.com/3d-models/metrolink-emd-f59ph-diesel-locomotive-be80b30df3294bd2acee4f219b36d378",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable. Repainted plain (blurred and greyed), so the railway's livery and name no longer show; its front logo left out.",
+     "profile": "https://sketchfab.com/Trashbulldogproductions"
+    },
+    {
+     "use": "Passenger railcar",
+     "title": "Simple Italian Train 3D model",
+     "author": "maryssoul24",
+     "user": "maryssoul24",
+     "was": "pasticcia (sketchfab.com/pasticciona)",
+     "url": "https://sketchfab.com/3d-models/simple-italian-train-3d-model-2ce6f009744b4807a25ef5f7b4e36b8b",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/maryssoul24"
+    },
+    {
+     "use": "Freight wagon",
+     "title": "Railway Boxcar Freight Wagon | Detailed 3D Model",
+     "author": "saadthedesigner314",
+     "user": "saadthedesigner314",
+     "url": "https://sketchfab.com/3d-models/railway-boxcar-freight-wagon-detailed-3d-model-6cede42e50cc4042addfbedac1311551",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/saadthedesigner314"
+    },
+    {
+     "use": "Airliner",
+     "title": "A320",
+     "author": "manilov.ap",
+     "user": "manilov.ap",
+     "url": "https://sketchfab.com/3d-models/a320-ec28bdee6c944688a19bef31ea33437f",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable. Repainted plain (blurred and greyed), so the airline's livery and registration no longer show.",
+     "profile": "https://sketchfab.com/manilov.ap"
+    },
+    {
+     "use": "Helicopter",
+     "title": "Cedric-EC135- Waving-190 Rotor",
+     "author": "PatrickBiani",
+     "user": "PatrickBiani",
+     "url": "https://sketchfab.com/3d-models/cedric-ec135-waving-190-rotor-09fbae3edc0a44bea7dbb7ed7644df6b",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable. The rotor spun by the game; the figure in the cabin left out.",
+     "profile": "https://sketchfab.com/PatrickBiani"
+    },
+    {
+     "use": "Rowing boat",
+     "title": "Victorian Row Boat",
+     "author": "Ashley Aslett",
+     "user": "AshleyAslett",
+     "url": "https://sketchfab.com/3d-models/victorian-row-boat-3e9093b6f0ce474da4d8cfea7e01f420",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/AshleyAslett"
+    },
+    {
+     "use": "Motorboat",
+     "title": "Small Motorboat",
+     "author": "Tijmen Matthys",
+     "user": "tijmenmatthys",
+     "was": "Timon Matthews (sketchfab.com/timonmatthews)",
+     "url": "https://sketchfab.com/3d-models/small-motorboat-b488d632a4804cd783e9ef009976bcd4",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "profile": "https://sketchfab.com/tijmenmatthys"
+    },
+    {
+     "use": "Yacht (the ferry)",
+     "title": "Free Low Poly Yacth",
+     "author": "GameAssetsFin",
+     "user": "MarkoJantti",
+     "was": "MarkoJantti",
+     "url": "https://sketchfab.com/3d-models/free-low-poly-yacth-fafb7f55aeae460a8dbac92968a9a141",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: fewer triangles in three levels of detail, textures resized and packed into one, the body paint made recolourable.",
+     "note": "Its creator describes it as their version of a free yacht model by SDC PERFORMANCE™️ (https://sketchfab.com/Lambo_SC04).",
+     "profile": "https://sketchfab.com/MarkoJantti"
+    }
+   ]
+  },
+  {
+   "name": "Animals",
+   "items": [
+    {
+     "use": "Dog: Labrador",
+     "title": "Labrador Dog",
+     "author": "kenchoo",
+     "user": "kenchoo",
+     "url": "https://sketchfab.com/3d-models/labrador-dog-1f56cfbab07e4fe49b5d9e521c82073a",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "original": {
+      "title": "Dog",
+      "url": "https://skfb.ly/oHLVz",
+      "author": "all of life",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+     },
+     "profile": "https://sketchfab.com/kenchoo"
+    },
+    {
+     "use": "Dog: golden retriever",
+     "title": "Golden Retriever Dog",
+     "author": "TriSams",
+     "user": "trisams_",
+     "url": "https://sketchfab.com/3d-models/golden-retriever-dog-996d7f56b3e64a4cbeca0434b5811632",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/trisams_"
+    },
+    {
+     "use": "Dog: chihuahua",
+     "title": "Chihuahua",
+     "author": "kenchoo",
+     "user": "kenchoo",
+     "url": "https://sketchfab.com/3d-models/chihuahua-63d89ce1b00f445b926668d19f559a76",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "original": {
+      "title": "Dog",
+      "url": "https://skfb.ly/oHVIu",
+      "author": "Stephengury",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+     },
+     "profile": "https://sketchfab.com/kenchoo"
+    },
+    {
+     "use": "Dog: bulldog puppy",
+     "title": "Bullpuppy",
+     "author": "kenchoo",
+     "user": "kenchoo",
+     "url": "https://sketchfab.com/3d-models/bullpuppy-50d66326f5d9458cbda747071dd61233",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "original": {
+      "title": "Bulldog Mum & Puppy",
+      "url": "https://skfb.ly/oQYDq",
+      "author": "MightyGangsta13",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+     },
+     "profile": "https://sketchfab.com/kenchoo"
+    },
+    {
+     "use": "Cat",
+     "title": "Bicolor Cat",
+     "author": "kenchoo",
+     "user": "kenchoo",
+     "url": "https://sketchfab.com/3d-models/bicolor-cat-e623a618ca344a8393d7ba4d63ec23cf",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "original": {
+      "title": "3d modelling my cat: Fripouille",
+      "url": "https://skfb.ly/6TKqH",
+      "author": "guillaume bolis",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+     },
+     "profile": "https://sketchfab.com/kenchoo"
+    },
+    {
+     "use": "Cow",
+     "title": "Cow frame test",
+     "author": "Nyilonelycompany",
+     "user": "Nyilonelycompany",
+     "url": "https://sketchfab.com/3d-models/cow-frame-test-c5782e43dcf442718a25b49bed00f582",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/Nyilonelycompany"
+    },
+    {
+     "use": "Sheep",
+     "title": "Sheep",
+     "author": "kenchoo",
+     "user": "kenchoo",
+     "url": "https://sketchfab.com/3d-models/sheep-08b05ae799d947f1a68c49b2d661eb53",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "original": {
+      "title": "Nz Inbred Sheep",
+      "url": "https://skfb.ly/oMADr",
+      "author": "MightyGangsta13",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+     },
+     "profile": "https://sketchfab.com/kenchoo"
+    },
+    {
+     "use": "Horse",
+     "title": "Horse Rigged(Game Ready)",
+     "author": "abhayexe",
+     "user": "abhayexe",
+     "url": "https://sketchfab.com/3d-models/horse-riggedgame-ready-bc64f4ff7966474ca9bacd42fa73a754",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/abhayexe"
+    },
+    {
+     "use": "Donkey",
+     "title": "Realistic Animated Donkey 3D Model",
+     "author": "WildMesh 3D",
+     "user": "WildMesh_3D",
+     "url": "https://sketchfab.com/3d-models/realistic-animated-donkey-3d-model-2b4086035df94d9e88fd0f18d34b3872",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one. Its saddle left off.",
+     "profile": "https://sketchfab.com/WildMesh_3D"
+    },
+    {
+     "use": "Deer",
+     "title": "Realistic Animated Doe 3D Model",
+     "author": "WildMesh 3D",
+     "user": "WildMesh_3D",
+     "url": "https://sketchfab.com/3d-models/realistic-animated-doe-3d-model-b6172618aa304473a4cf7b9246c0a218",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/WildMesh_3D"
+    },
+    {
+     "use": "Hare",
+     "title": "Hare (animated)",
+     "author": "bluekiwi.dog",
+     "user": "bluekiwi.dog",
+     "url": "https://sketchfab.com/3d-models/hare-animated-948938cd237d49a9868662213fa05543",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/bluekiwi.dog"
+    },
+    {
+     "use": "Lion",
+     "title": "realistic Lion 3d model",
+     "author": "Tarun.Teja",
+     "user": "Tarun.Teja",
+     "url": "https://sketchfab.com/3d-models/realistic-lion-3d-model-6da45f5d5a9f4733b195c6f03c92d33c",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/Tarun.Teja"
+    },
+    {
+     "use": "Elephant",
+     "title": "African Elephant",
+     "author": "jimmyho905",
+     "user": "jimmyho905",
+     "url": "https://sketchfab.com/3d-models/african-elephant-b960467b14f34cfc84feeb3361a21f54",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/jimmyho905"
+    },
+    {
+     "use": "Zebra",
+     "title": "Zebra - Rigged",
+     "author": "Noa Seller",
+     "user": "NoaSeller",
+     "url": "https://sketchfab.com/3d-models/zebra-rigged-5d6ff2749afc438b9989f91ecb242574",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/NoaSeller"
+    },
+    {
+     "use": "Pigeon",
+     "title": "Pigeon",
+     "author": "kenchoo",
+     "user": "kenchoo",
+     "url": "https://sketchfab.com/3d-models/pigeon-ddd5ef4a94eb4159937a9de25c45697c",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "original": {
+      "title": "Pigeon #1",
+      "url": "https://skfb.ly/oQsJv",
+      "author": "₦₥₵ ฿₵",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+     },
+     "profile": "https://sketchfab.com/kenchoo"
+    },
+    {
+     "use": "Duck",
+     "title": "Mallard Duck (Male)",
+     "author": "ucdavisterc",
+     "user": "ucdavisterc",
+     "url": "https://sketchfab.com/3d-models/mallard-duck-male-16c14682b3414f34b26bf4d558d40a0f",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/ucdavisterc"
+    },
+    {
+     "use": "Penguin",
+     "title": "African penguin (Spheniscus demersus) Low poly",
+     "author": "Major",
+     "user": "majorgalah",
+     "url": "https://sketchfab.com/3d-models/african-penguin-spheniscus-demersus-low-poly-9e59070815fe451d93398e2ebdb9bb92",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/majorgalah"
+    },
+    {
+     "use": "Butterfly",
+     "title": "Animated Flying Fluttering Butterfly Loop",
+     "author": "LasquetiSpice",
+     "user": "LasquetiSpice",
+     "url": "https://sketchfab.com/3d-models/animated-flying-fluttering-butterfly-loop-80f8d9a6dadc411e89ca366cb0cfb0d9",
+     "license": "CC BY 4.0",
+     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+     "changes": "Converted for the game: re-rigged onto the game's own skeleton and animated by the game, fewer triangles in three levels of detail, textures resized and packed into one.",
+     "profile": "https://sketchfab.com/LasquetiSpice"
+    }
+   ]
+  }
+ ]
+}

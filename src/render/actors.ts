@@ -25,6 +25,10 @@ import { heightAt } from './terrain';
 import type { BuildingLayer } from './buildings';
 import { Person, Look, randomLook, Pose } from '../gfx/person';
 import { Car as CarModel } from '../gfx/car';
+import { FarFleet, pickModel, seedOf, type VehicleModel } from '../gfx/vehicle';
+import { Crowd, castLoaded, outfitFor, rigFor } from '../gfx/people';
+import { Animal, Herd, beast, dogBreed, zooLoaded, type BeastPose } from '../gfx/animals';
+import { Fauna } from './fauna';
 import { drivewayCars, DrivewayCar, CAR_COLORS as PARKED_COLORS, styleForPaint } from './parked';
 import { baySpot, carDrawPose } from '../sim/parking';
 import { trailhead } from '../sim/peak';
@@ -39,8 +43,15 @@ import { STAGE_DECK } from '../sim/hustings';
    nearest cars are full models; everything farther stays light instanced figures */
 const NEAR_PEOPLE = 32, NEAR_PEOPLE_R = 48;
 const NEAR_CARS = 22, NEAR_CARS_R = 80;
+/* V2 (Milestone 9): the nearest animals are skinned and walk; farther, the big ones stand as instanced herds */
+const NEAR_BEASTS = 24, NEAR_BEASTS_R = 60, HERD_R = 250;
+interface BeastWant { id: string; key: string; x: number; y: number; z: number; yaw: number; pose: BeastPose | 'auto'; speed: number }
 interface CarWant { type: string; x: number; y: number; z: number; yaw: number; paint: THREE.Color; siren: boolean; pitch: number; roll: number; parked: boolean }
 interface CarSlot { car: CarModel; kind: string; x: number; z: number; yaw: number; v: number; a: number; used: boolean; seen: number }
+
+/* V2 (Milestone 9): which downloaded model draws each vehicle type, and how many of each model can be on screen */
+const TYPE_KIND: Record<string, string> = { car: 'car', taxi: 'taxi', police: 'police', fire: 'fire', ambulance: 'ambulance', truck: 'truck', van: 'utility', tractor: 'tractor', bus: 'bus', moto: 'moto', bicycle: 'bicycle', loco: 'loco', coach: 'coach', wagon: 'wagon', boat: 'boat', ferry: 'ferry', heli: 'heli', plane: 'plane' };
+const FLEET_CAPS: Record<string, number> = { car: 140, taxi: 40, police: 30, fire: 12, ambulance: 8, truck: 24, utility: 9, van: 9, tow: 6, tractor: 6, bus: 24, moto: 80, bicycle: 40, loco: 16, coach: 60, wagon: 50, boat: 30, ferry: 3, heli: 6, plane: 6 };
 
 const PX = 0.5;
 const TM = 8;
@@ -52,12 +63,14 @@ const JET = hex('#dfeaf2'), SPLASH = hex('#f2f6f8');
 const BOOTH = hex('#d6d4cc');
 /* the far (instanced) vehicles' lamps: lit, or dark on a parked car */
 const LIGHTS_ON = new THREE.Color(1, 1, 1), LIGHTS_OFF = new THREE.Color(0.16, 0.16, 0.17);
-interface VehOpts { siren?: boolean; beacon?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number; parked?: boolean }
+interface VehOpts { siren?: boolean; beacon?: boolean; pitch?: number; roll?: number; rotor?: number; scale?: number; parked?: boolean; seed?: number }
 
 export type Mode = 'walk' | 'run' | 'stand' | 'lie' | 'sit' | 'work' | 'carry' | 'speak' | 'cheer';
 interface PersonDraw {
   x: number; y: number; z: number; yaw: number; kind: string; seed: number; mode: Mode; phase: number;
   shirt?: THREE.Color; pants?: THREE.Color; hair?: THREE.Color; scale?: number;
+  /** V2 (Milestone 9): the uniform they wear (police, fire, medical, construction, chef, pilot, delivery, gardener, business) */
+  job?: string;
 }
 
 /* per-entity smoothing state keyed by the sim object itself */
@@ -249,8 +262,20 @@ export class Actors {
     }
     // V2: traffic-signal lenses, full-bright and coloured per instance (red, amber, green, or out)
     this.lenses = new InstancedPool(new MeshBuilder().box(-0.09, -0.09, -0.015, 0.09, 0.09, 0.015, hex('#ffffff')).build(), this.sirenMat, 720, g, false);
+    this.fleet = new FarFleet(g, (m) => FLEET_CAPS[m.kind] ?? 40);
+    this.crowd = new Crowd(g);
+    this.herd = new Herd(g);
   }
   private lenses: InstancedPool;
+  /** V2 (Milestone 9): distant traffic drawn from the downloaded models, and far crowds from the modelled villagers */
+  private fleet: FarFleet;
+  private crowd: Crowd;
+  /** V2 (Milestone 9): the animals: those wanted this frame, the near ones' skinned bodies (kept by key), far herds,
+   *  and the farm, zoo, park and street animals that aren't the sim's */
+  private beastWant: BeastWant[] = [];
+  private nearBeasts = new Map<string, { a: Animal; seen: number; x: number; z: number; v: number }>();
+  private herd: Herd;
+  private fauna = new Fauna();
 
   private near(x: number, z: number, extra = 0): boolean {
     return Math.abs(x - this.camX) < this.range + extra && Math.abs(z - this.camZ) < this.range + extra;
@@ -265,6 +290,14 @@ export class Actors {
     if (this.people.length >= PEOPLE_CAP) return;
     this.people.push(p);
   }
+  /** V2 (Milestone 9): an animal this frame, by model and a key of its own (so the same one keeps its body and its
+   *  step from frame to frame); 'auto' walks it while it moves. False when the model isn't loaded (the caller draws
+   *  its old figure) */
+  animal(id: string, key: string, x: number, y: number, z: number, yaw: number, pose: BeastPose | 'auto', speed = 0): boolean {
+    if (!beast(id)) return false;
+    if (this.beastWant.length < 400) this.beastWant.push({ id, key, x, y, z, yaw, pose, speed });
+    return true;
+  }
   /** a vehicle this frame; `parked` ones stand with their lights off */
   vehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: VehOpts = {}): void {
     // nearby cars, cabs and patrol cars are drawn as full models
@@ -277,7 +310,20 @@ export class Actors {
     }
     this.instancedVehicle(type, x, y, z, yaw, paint, opts);
   }
+  /** V2 (Milestone 9): the downloaded model for a vehicle type (a car's by its paint's style; the same paint, the same model) */
+  private modelFor(type: string, paint: THREE.Color, seed?: number): VehicleModel | undefined {
+    const kind = TYPE_KIND[type];
+    if (!kind) return undefined;
+    return pickModel(kind, type === 'car' ? styleForPaint(paint) : null, seed ?? seedOf(paint));
+  }
   private instancedVehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: VehOpts = {}): void {
+    const m = this.modelFor(type, paint, opts.seed);
+    if (m) {
+      const lit = opts.parked ? 0 : this.night > 0.2 || Weather.isRaining() ? 1 : 0;
+      const flash = opts.siren || opts.beacon ? Math.floor(this.t * 6) % 2 : 0;
+      this.fleet.add(m, x, y, z, yaw, paint, lit, flash, opts.pitch || 0, opts.roll || 0, opts.scale || 1, opts.rotor || 0);
+      return;
+    }
     const v = this.veh[type];
     if (!v) return;
     const s = opts.scale || 1;
@@ -341,6 +387,10 @@ export class Actors {
     }
     for (const p of Object.values(this.props)) p.begin();
     this.lenses.begin();
+    this.fleet.begin();
+    this.crowd.begin();
+    this.herd.begin();
+    this.beastWant.length = 0;
     this.lightsMat.color.setScalar(0.5 + night * 0.9);
     // festive bulbs, diyas and torches: bright enough to bloom after dark
     this.glowTint.color.setScalar(0.3 + night * 0.5);
@@ -356,9 +406,11 @@ export class Actors {
     this.collectFestive(night);
     this.collectFires(night);
     this.collectSky();
+    this.collectFauna();
     this.extra?.(this);
     this.drawPeople();
     this.drawCars();
+    this.drawAnimals();
     this.drawBubbles(now);
     this.drawSparks();
 
@@ -368,6 +420,9 @@ export class Actors {
     }
     for (const p of Object.values(this.props)) p.end();
     this.lenses.end();
+    this.fleet.end();
+    this.crowd.end();
+    this.herd.end();
   }
 
   private groundY(x: number, z: number, onStreet: boolean): number {
@@ -439,8 +494,10 @@ export class Actors {
         this.prop('placard', x, y + (cv.cheer ? 0.22 : 0), z, sm.yaw, 1, hex(Life.rally.color));
       if (raining && p.kind !== 'kid') this.prop('handUmbrella', x, y, z, sm.yaw, p.kind === 'kid' ? 0.7 : 1, SHIRT[(p.seed >> 3) % SHIRT.length]);
       if (t.dog !== undefined) {
+        // (V2 (Milestone 9): the walker's own dog, one of the modelled breeds, at their side and at their pace)
         const ox = Math.cos(sm.yaw) * 0.7, oz = -Math.sin(sm.yaw) * 0.7;
-        this.prop('dog', x + ox, y, z + oz, sm.yaw + Math.sin(sm.phase) * 0.1, 1, hex(t.dog ? '#8a6a42' : '#e8e0d0'));
+        if (!this.animal(dogBreed(p.seed), `dog:${p.seed}`, x + ox, y, z + oz, sm.yaw, mode === 'walk' ? 'walk' : 'idle', 1.35))
+          this.prop('dog', x + ox, y, z + oz, sm.yaw + Math.sin(sm.phase) * 0.1, 1, hex(t.dog ? '#8a6a42' : '#e8e0d0'));
       }
       if (p.bubble && p.bubbleUntil > now) this.wantBubble(x, y + 2.4 * (p.kind === 'kid' ? 0.65 : 1), z, p.bubble);
     }
@@ -511,7 +568,7 @@ export class Actors {
       if (b.construction > 0 && b.stalled) {
         for (let k = 0; k < 2; k++) {
           const [x, z] = toWorld(-W / 2 + 1.2 + k * 1.1, D / 2 + 0.6);
-          this.person({ x, y: 0.1, z, yaw: yaw + (k ? 0.6 : -0.4), kind: 'man', seed: b.id * 7 + k, mode: 'stand', phase: 0, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+          this.person({ x, y: 0.1, z, yaw: yaw + (k ? 0.6 : -0.4), kind: 'man', seed: b.id * 7 + k, mode: 'stand', phase: 0, job: 'construction', shirt: hex('#f26a1a'), hair: hex('#f2c230') });
           if (k === 0 && Math.floor(this.t / 4 + b.id) % 3 === 0) this.wantBubble(x, 2.5, z, '⏳');
         }
       } else if (b.construction > 0 || b.upgrading > 0) this.siteCrew(b, f, W, D, toWorld);
@@ -565,7 +622,7 @@ export class Actors {
       const [x, z] = toWorld(lx, lz);
       const along = Math.sign(u1 - u0) || 1;
       const yaw = walking ? yawOf((bx2 - ax) * along, (bz2 - az) * along) : yawOf(fx, fz);
-      this.person({ x, y: lift + 0.05, z, yaw, kind: 'man', seed: b.id * 7 + k, mode: walking ? 'walk' : 'work', phase: this.t * 4 + k, shirt: hi, hair: hat });
+      this.person({ x, y: lift + 0.05, z, yaw, kind: 'man', seed: b.id * 7 + k, mode: walking ? 'walk' : 'work', phase: this.t * 4 + k, job: 'construction', shirt: hi, hair: hat });
     }
     // the labourer: a load from the pallets at the front corner to the foot of the scaffold, and back for more
     const cyc = (this.t / 14 + b.id * 0.13) % 1;
@@ -574,11 +631,11 @@ export class Actors {
     const k = out ? cyc / 0.42 : back ? 1 - (cyc - 0.5) / 0.42 : cyc <= 0.5 ? 1 : 0;
     const lx = from[0] + (to[0] - from[0]) * k, lz = from[1] + (to[1] - from[1]) * k;
     const yaw = out ? Math.atan2(to[0] - from[0], to[1] - from[1]) : Math.atan2(from[0] - to[0], from[1] - to[1]);
-    this.person({ x: lx, y: 0.1, z: lz, yaw, kind: 'man', seed: b.id * 7 + 9, mode: out ? 'carry' : back ? 'walk' : 'work', phase: this.t * 4, shirt: hi, hair: hat });
+    this.person({ x: lx, y: 0.1, z: lz, yaw, kind: 'man', seed: b.id * 7 + 9, mode: out ? 'carry' : back ? 'walk' : 'work', phase: this.t * 4, job: 'construction', shirt: hi, hair: hat });
     if (out) this.prop('crate', lx + Math.sin(yaw) * 0.45, 0.95, lz + Math.cos(yaw) * 0.45, yaw, 0.55);
     // the foreman, by the front with the plans
     const [fx2, fz2] = toWorld(-W / 2 + 1.3, D / 2 + 0.9);
-    this.person({ x: fx2, y: 0.1, z: fz2, yaw: yawOf(0.3, -1), kind: 'man', seed: b.id * 7 + 13, mode: 'stand', phase: 0, shirt: hex('#f4f4f0'), hair: hex('#f4f4f4') });
+    this.person({ x: fx2, y: 0.1, z: fz2, yaw: yawOf(0.3, -1), kind: 'man', seed: b.id * 7 + 13, mode: 'stand', phase: 0, job: 'construction', shirt: hex('#f4f4f0'), hair: hex('#f4f4f4') });
   }
 
   /* police, fire brigade, burglars, crashes, disputes, road works, reporters */
@@ -601,7 +658,7 @@ export class Actors {
         const yaw = Math.atan2(tx - x, tz - z);
         for (let k = 0; k < 2; k++) {
           const px = x + Math.sin(yaw) * (3 + k) + Math.cos(yaw) * (k ? 1 : -1), pz = z + Math.cos(yaw) * (3 + k) - Math.sin(yaw) * (k ? 1 : -1);
-          this.person({ x: px, y: 0.2, z: pz, yaw, kind: 'man', seed: u.target.id + k, mode: 'stand', phase: 0, shirt: hex('#2a2a2a'), hair: hex('#f2c230') });
+          this.person({ x: px, y: 0.2, z: pz, yaw, kind: 'man', seed: u.target.id + k, mode: 'stand', phase: 0, job: 'fire', shirt: hex('#2a2a2a'), hair: hex('#f2c230') });
         }
         for (let i = 0; i < 18; i++) {
           const f = ((this.t * 2 + i / 18) % 1);
@@ -642,7 +699,7 @@ export class Actors {
       this.prop('barrier', x - hx * (L / 2), 0.03, z - hz * (L / 2), yaw, 0.82);
       for (const k of [-0.25, 0.1, 0.45]) this.prop('cone', x + hx * L * k + side.x * 0.75, 0.03, z + hz * L * k + side.z * 0.75);
       const w = Math.sin(this.t * 0.4 + rw.x) * 0.9;
-      this.person({ x: x + hx * w - side.x * 0.2, y: 0.03, z: z + hz * w - side.z * 0.2, yaw: yaw + Math.PI / 2 + Math.sin(this.t * 0.7) * 0.6, kind: 'man', seed: rw.x * 13 + rw.y, mode: 'work', phase: this.t * 4, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+      this.person({ x: x + hx * w - side.x * 0.2, y: 0.03, z: z + hz * w - side.z * 0.2, yaw: yaw + Math.PI / 2 + Math.sin(this.t * 0.7) * 0.6, kind: 'man', seed: rw.x * 13 + rw.y, mode: 'work', phase: this.t * 4, job: 'construction', shirt: hex('#f26a1a'), hair: hex('#f2c230') });
     }
     for (const r of Life.reporters) this.lerpPerson(r, 'stand', { camera: true, shirt: hex('#3a5ad0') });
   }
@@ -660,7 +717,7 @@ export class Actors {
         for (let k = 0; k < 2; k++) {
           const ang = k * Math.PI + (p.seed % 7) * 0.3;
           const mx = px + Math.cos(ang) * 1.0, mz = pz + Math.sin(ang) * 1.0;
-          this.person({ x: mx, y: py, z: mz, yaw: Math.atan2(px - mx, pz - mz), kind: k ? 'woman' : 'man', seed: a.from.id * 13 + k, mode: 'stand', phase: 0, shirt: hex('#2e8a4e'), pants: hex('#24603a') });
+          this.person({ x: mx, y: py, z: mz, yaw: Math.atan2(px - mx, pz - mz), kind: k ? 'woman' : 'man', seed: a.from.id * 13 + k, mode: 'stand', phase: 0, job: 'medical', shirt: hex('#2e8a4e'), pants: hex('#24603a') });
         }
         this.prop('medbag', px + 0.6, py, pz + 0.7, 0.4);
         void now;
@@ -674,7 +731,7 @@ export class Actors {
       if (t.phase === 'drop') {
         // the driver wheels the load in
         const bx = x - Math.sin(sm.yaw) * 4.2, bz = z - Math.cos(sm.yaw) * 4.2;
-        this.person({ x: bx + Math.cos(sm.yaw) * 1.4, y: this.groundY(bx, bz, false), z: bz - Math.sin(sm.yaw) * 1.4, yaw: sm.yaw + Math.PI / 2, kind: 'man', seed: t.seed, mode: 'stand', phase: 0, shirt: hex('#3a4a5a') });
+        this.person({ x: bx + Math.cos(sm.yaw) * 1.4, y: this.groundY(bx, bz, false), z: bz - Math.sin(sm.yaw) * 1.4, yaw: sm.yaw + Math.PI / 2, kind: 'man', seed: t.seed, mode: 'stand', phase: 0, job: 'delivery', shirt: hex('#3a4a5a') });
         this.prop('crate', bx + Math.cos(sm.yaw) * 2, 0.05, bz - Math.sin(sm.yaw) * 2, sm.yaw);
       }
     }
@@ -689,7 +746,7 @@ export class Actors {
         for (let k = 0; k < 2; k++) {
           const ox = Math.cos(sm.yaw) * (2.2 + k * 0.8), oz = -Math.sin(sm.yaw) * (2.2 + k * 0.8);
           const px = x + ox - Math.sin(sm.yaw) * (k ? 1.5 : -1), pz = z + oz - Math.cos(sm.yaw) * (k ? 1.5 : -1);
-          this.person({ x: px, y: this.groundY(px, pz, false) + (k ? 1.4 : 0), z: pz, yaw: sm.yaw - Math.PI / 2, kind: 'man', seed: c.seed + k, mode: 'stand', phase: 0, shirt: hex('#f2c230'), hair: hex('#f2f2f2') });
+          this.person({ x: px, y: this.groundY(px, pz, false) + (k ? 1.4 : 0), z: pz, yaw: sm.yaw - Math.PI / 2, kind: 'man', seed: c.seed + k, mode: 'stand', phase: 0, job: 'construction', shirt: hex('#f2c230'), hair: hex('#f2f2f2') });
         }
       }
     }
@@ -772,8 +829,14 @@ export class Actors {
       if (tr.hidden || !tr.route) continue;
       const lane = (tr.lane || 0) * PX;
       const n = (tr.cars || 3) + 1;
+      // V2 (Milestone 9): each car spaced by its model's real length (a locomotive, the railcars or wagons behind)
+      let off = 0, prevLen = 0;
       for (let k = 0; k < n; k++) {
-        const prog = tr.prog - tr.dir * k * 1.2;
+        const kt = k === 0 ? 'loco' : tr.type === 'freight' ? 'wagon' : 'coach';
+        const len = (this.modelFor(kt, hex('#ffffff'))?.dims.L ?? 9.0) + 0.5;
+        if (k > 0) off += (prevLen + len) / 2 / TM;
+        prevLen = len;
+        const prog = tr.prog - tr.dir * off;
         if (prog < -0.4 || prog > tr.route.length - 0.6) continue;
         // V2 (Milestone 8): every car round the curve on the train's own track (it used to swap tracks at a bend)
         const pt = railPose(tr.route, Math.max(0, Math.min(tr.route.length - 1, prog)), lane / PX);
@@ -787,7 +850,7 @@ export class Actors {
         this.vehicle(type, x, y, z, yaw, paint);
       }
     }
-    for (const b of Life.boats) this.boat(b, 'boat', hex('#f4f0e4'));
+    Life.boats.forEach((b: any, i: number) => this.boat(b, 'boat', hex('#f4f0e4'), i));
     if (Life.ferry) this.boat(Life.ferry, 'ferry', hex('#2a5a8a'));
     for (const r of Calamity.rafts) {
       const x = r.x * PX, z = r.y * PX;
@@ -798,11 +861,11 @@ export class Actors {
       }
     }
   }
-  private boat(b: any, type: string, col: THREE.Color): void {
+  private boat(b: any, type: string, col: THREE.Color, seed = 0): void {
     const x = b.x * PX, z = b.y * PX;
     if (!this.near(x, z, 60)) return;
     const sm = smooth(b, x, z, b.dirx !== undefined ? dirYaw(b.dirx, b.diry) : b.flip ? (b.flip > 0 ? Math.PI / 2 : -Math.PI / 2) : null);
-    this.vehicle(type, x, -0.35 + Math.sin((b.ph || 0) * 2) * 0.08, z, sm.yaw, col);
+    this.vehicle(type, x, -0.35 + Math.sin((b.ph || 0) * 2) * 0.08, z, sm.yaw, col, { seed });
   }
 
   /* crowds: gawkers, bucket brigades, rubble-clearers, rallies, riots, queues, beach days, hikers */
@@ -916,12 +979,22 @@ export class Actors {
 
   /* ducks, birds, butterflies, puddles, the tornado */
   private collectNature(): void {
-    for (const d of Life.ducks) {
+    Life.ducks.forEach((d: any, i: number) => {
       const x = d.x * PX, z = d.y * PX;
-      if (!this.near(x, z)) continue;
+      if (!this.near(x, z)) return;
       const sm = smooth(d, x, z, null);
-      this.prop('duck', x, -0.38, z, sm.yaw);
-    }
+      // (V2 (Milestone 9): the mallard rides the water, its body a third under)
+      if (!this.animal('duck', `duck:${i}`, x, -0.58, z, sm.yaw, 'swim')) this.prop('duck', x, -0.38, z, sm.yaw);
+    });
+    // V2 (Milestone 9): butterflies, at last drawn: each flits about its flowers in loose loops
+    Life.butterflies.forEach((b: any, i: number) => {
+      const ax = b.ax * PX, az = b.ay * PX;
+      if (!this.near(ax, az, -this.range + 40)) return;
+      const k = 0.7 + b.v * 0.15;
+      const x = ax + Math.sin(b.ph * k) * 1.4, z = az + Math.cos(b.ph * k * 0.77) * 1.4;
+      const yaw = Math.atan2(Math.cos(b.ph * k) * k, -Math.sin(b.ph * k * 0.77) * k * 0.77);
+      this.animal('butterfly', `fly:${i}`, x, this.groundY(x, z, false) + 0.55 + Math.sin(b.ph * 1.3) * 0.3, z, yaw, 'fly');
+    });
     for (const b of Life.birds) {
       const x = b.x * PX, z = b.y * PX;
       if (!this.near(x, z, 120)) continue;
@@ -1060,7 +1133,7 @@ export class Actors {
       sc.crane = { x: road.x + Math.cos(road.yaw) * 5, z: road.z - Math.sin(road.yaw) * 5, hx: src.x, hy: 14, hz: src.z };
       for (let k = 0; k < 3; k++) {
         const a = k * 2.1 + 0.4;
-        this.person({ x: src.x + Math.cos(a) * 1.2, y: 0.05, z: src.z + Math.sin(a) * 1.2, yaw: Math.atan2(-Math.cos(a), -Math.sin(a)), kind: 'man', seed: 777 + k, mode: 'work', phase: T2 * 3 + k, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+        this.person({ x: src.x + Math.cos(a) * 1.2, y: 0.05, z: src.z + Math.sin(a) * 1.2, yaw: Math.atan2(-Math.cos(a), -Math.sin(a)), kind: 'man', seed: 777 + k, mode: 'work', phase: T2 * 3 + k, job: 'construction', shirt: hex('#f26a1a'), hair: hex('#f2c230') });
       }
     }
     if (ph === 'loaded' && road) {
@@ -1103,7 +1176,7 @@ export class Actors {
           const lv = Math.min(6, Math.floor(tree.prog * 7)), y = 1 + lv * 3, r = Math.max(0.3, (1 - y / H) * H * 0.3 * 0.92) + 1.1;
           for (let k = 0; k < 5; k++) {
             const a = k * 1.256 + T2 * 0.02;
-            this.person({ x: px + Math.cos(a) * r, y: y + 0.06, z: pz + Math.sin(a) * r, yaw: Math.atan2(-Math.cos(a), -Math.sin(a)), kind: 'man', seed: 900 + k, mode: 'work', phase: T2 * 3 + k, shirt: hex('#f26a1a'), hair: hex('#f2c230') });
+            this.person({ x: px + Math.cos(a) * r, y: y + 0.06, z: pz + Math.sin(a) * r, yaw: Math.atan2(-Math.cos(a), -Math.sin(a)), kind: 'man', seed: 900 + k, mode: 'work', phase: T2 * 3 + k, job: 'construction', shirt: hex('#f26a1a'), hair: hex('#f2c230') });
           }
         }
       }
@@ -1211,11 +1284,15 @@ export class Actors {
     let near = 0, created = 0;
     for (const { p, d } of sorted) {
       if (near >= NEAR_PEOPLE || d > NEAR_PEOPLE_R * NEAR_PEOPLE_R) { far.push(p); continue; }
-      const key = `${p.kind}|${p.seed}`;
+      const rig = rigFor(p.seed, p.kind, p.job);
+      // (a key of its own once the characters have loaded, so a code-built body gives way to the modelled one)
+      const key = `${p.kind}|${p.seed}|${p.job || ''}${rig ? '|' + rig.id : ''}`;
       let e = this.nearPeople.get(key);
       if (!e) {
         if (created >= 3) { far.push(p); continue; } // spread new bodies over frames
-        e = { person: new Person(this.lookFor(p)), seen: this.t };
+        const look = this.lookFor(p);
+        if (rig) { look.height = rig.height; look.female = rig.female; }
+        e = { person: new Person(look, rig, rig ? outfitFor(p.seed, rig, p.shirt, p.pants) : undefined), seen: this.t };
         this.group.add(e.person.root);
         this.nearPeople.set(key, e);
         created++;
@@ -1224,6 +1301,8 @@ export class Actors {
       e.seen = this.t;
       const r = e.person.root;
       r.visible = true;
+      r.scale.setScalar(p.scale || 1);
+      e.person.setLod(d < 400 ? 0 : 1);
       const pose: Pose = p.mode === 'walk' || p.mode === 'run' ? 'walk' : p.mode === 'sit' ? 'sit' : p.mode === 'lie' ? 'lie' : p.mode === 'work' ? 'work' : p.mode === 'carry' ? 'carry' : p.mode === 'speak' ? 'speak' : p.mode === 'cheer' ? 'cheer' : 'idle';
       r.position.set(p.x, p.y + (p.mode === 'lie' ? 0.14 : 0), p.z);
       r.rotation.set(p.mode === 'lie' ? -Math.PI / 2 : 0, p.yaw, 0, 'YXZ');
@@ -1235,7 +1314,8 @@ export class Actors {
       e.person.root.visible = false;
       if (this.t - e.seen > 20) {
         this.group.remove(e.person.root);
-        e.person.mesh.geometry.dispose();
+        // (a modelled character's geometry is shared with everyone wearing it: only a code-built body is its own)
+        if (!e.person.rig) e.person.mesh.geometry.dispose();
         e.person.mesh.skeleton.dispose();
         this.nearPeople.delete(k);
       }
@@ -1252,7 +1332,8 @@ export class Actors {
     for (const { w } of wants) {
       if (shown >= NEAR_CARS) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, pitch: w.pitch, roll: w.roll, parked: w.parked }); continue; }
       const style = w.type === 'taxi' ? 'sedan' : w.type === 'police' ? 'estate' : styleForPaint(w.paint);
-      const kind = `${w.type}:${style}`;
+      const model = this.modelFor(w.type, w.paint);
+      const kind = `${w.type}:${model ? model.id : style}`;
       // the same car as last frame: the nearest slot of this kind within a few metres
       let best: CarSlot | null = null, bd = 36;
       for (const s of this.carSlots) {
@@ -1263,7 +1344,7 @@ export class Actors {
       if (!best) best = this.carSlots.find((s) => !s.used && s.kind === kind && this.t - s.seen > 0.4) || null;
       if (!best) {
         if (this.carSlots.length >= NEAR_CARS + 8) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, parked: w.parked }); continue; }
-        const car = new CarModel(style, w.paint, w.type !== 'taxi', w.type === 'taxi' ? 'taxi' : w.type === 'police' ? 'police' : undefined);
+        const car = new CarModel(style, w.paint, w.type !== 'taxi', w.type === 'taxi' ? 'taxi' : w.type === 'police' ? 'police' : undefined, model?.id);
         this.group.add(car.root);
         best = { car, kind, x: w.x, z: w.z, yaw: w.yaw, v: 0, a: 0, used: false, seen: this.t };
         this.carSlots.push(best);
@@ -1282,6 +1363,7 @@ export class Actors {
       best.x = w.x; best.z = w.z; best.yaw = w.yaw; best.seen = this.t;
       best.car.root.visible = true;
       best.car.drive(dt, w.x, w.z, w.yaw, vs, best.a, dy / dt, w.y);
+      best.car.setLod((w.x - this.camX) ** 2 + (w.z - this.camZ) ** 2 < 900 ? 0 : 1);
       // (a parked car stands dark: no headlamps, no tail lamps, no brake lights)
       best.car.lights(!w.parked && (this.night > 0.2 || Weather.isRaining() || Weather.isSnowing()), this.night, w.parked);
       best.car.setSiren(w.siren, this.t);
@@ -1289,9 +1371,73 @@ export class Actors {
     for (const s of this.carSlots) if (!s.used) s.car.root.visible = false;
   }
 
+  /* V2 (Milestone 9): the farm, zoo, park and street animals round the camera (render/fauna.ts) */
+  private collectFauna(): void {
+    if (!zooLoaded().length) return;
+    this.fauna.collect(this.dt, this.camX, this.camZ, this.range, (d) => this.animal(d.id, d.key, d.x, this.groundY(d.x, d.z, false), d.z, d.yaw, d.pose, d.speed));
+  }
+
+  /** the nearest animals skinned and moving (each keeps its body by its key), the big ones farther off as herds */
+  private drawAnimals(): void {
+    const dt = Math.max(1e-3, this.dt);
+    const list = this.beastWant.map((w) => ({ w, d: (w.x - this.camX) ** 2 + (w.z - this.camZ) ** 2 })).sort((a, b) => a.d - b.d);
+    let near = 0, created = 0;
+    for (const { w, d } of list) {
+      const b = beast(w.id);
+      if (!b) continue;
+      const big = b.entry.height > 0.9;
+      if (near >= NEAR_BEASTS || d > NEAR_BEASTS_R * NEAR_BEASTS_R) {
+        if (big && d < HERD_R * HERD_R) this.herd.add(b, w.x, w.y, w.z, w.yaw);
+        continue;
+      }
+      let e = this.nearBeasts.get(w.key);
+      if (e && e.a.beast !== b) { this.dropBeast(w.key); e = undefined; }
+      if (!e) {
+        // (new bodies spread over frames)
+        if (created >= 2) { if (big) this.herd.add(b, w.x, w.y, w.z, w.yaw); continue; }
+        e = { a: new Animal(b), seen: this.t, x: w.x, z: w.z, v: 0 };
+        this.group.add(e.a.root);
+        this.nearBeasts.set(w.key, e);
+        created++;
+      }
+      near++;
+      // its pace from how far it came since last frame (unless the caller says)
+      const moved = Math.hypot(w.x - e.x, w.z - e.z);
+      e.v += ((moved < 5 ? moved / dt : 0) - e.v) * Math.min(1, dt * 5);
+      e.x = w.x; e.z = w.z; e.seen = this.t;
+      const r = e.a.root;
+      r.visible = true;
+      r.position.set(w.x, w.y, w.z);
+      r.rotation.y = w.yaw;
+      e.a.setLod(d < 144 ? 0 : d < 900 ? 1 : 2);
+      e.a.animate(this.dt, w.pose === 'auto' ? (e.v > 0.15 ? 'walk' : 'idle') : w.pose, w.speed > 0 ? w.speed : e.v);
+    }
+    for (const [k, e] of this.nearBeasts) {
+      if (e.seen === this.t) continue;
+      e.a.root.visible = false;
+      if (this.t - e.seen > 20) this.dropBeast(k);
+    }
+  }
+  private dropBeast(k: string): void {
+    const e = this.nearBeasts.get(k);
+    if (!e) return;
+    // (the model's geometry is shared: only this one's skeleton goes)
+    this.group.remove(e.a.root);
+    e.a.mesh.skeleton.dispose();
+    this.nearBeasts.delete(k);
+  }
+
   private drawFarPeople(list: PersonDraw[]): void {
     const tmpC = new THREE.Color();
+    const modelled = castLoaded().length > 0;
     for (const p of list) {
+      const rig = modelled ? rigFor(p.seed, p.kind, p.job) : undefined;
+      if (rig) {
+        const o = outfitFor(p.seed, rig, p.shirt, p.pants);
+        if (p.mode === 'lie') this.crowd.add(rig, p.x, p.y + 0.15, p.z, p.yaw, p.scale || 1, o, -Math.PI / 2);
+        else this.crowd.add(rig, p.x, p.y - (p.mode === 'sit' ? 0.4 : 0), p.z, p.yaw, p.scale || 1, o);
+        continue;
+      }
       const kid = p.kind === 'kid';
       const s = (p.scale || 1) * (kid ? 0.64 : p.kind === 'woman' ? 0.95 : 1);
       const seed = p.seed >>> 0;
@@ -1335,6 +1481,42 @@ export class Actors {
     const d = Math.hypot(x - this.camX, z - this.camZ);
     if (d < 60) this.bubbleWant.push({ x, y, z, e, d });
   }
+  /** V2 (Milestone 9): one of each modelled thing (a villager in their own clothes and one in changed ones, a far
+   *  figure, a car with its wheels and glass, a distant car), under the ground by `at` while the stage compiles, so
+   *  none of their shaders is first compiled in play */
+  private warm: THREE.Group | null = null;
+  prewarmModels(on: boolean, at: THREE.Vector3): void {
+    const rig = castLoaded()[0], model = pickModel('car', null, 0);
+    if (on && !this.warm) {
+      this.warm = new THREE.Group();
+      if (rig) {
+        for (const o of [null, { top: new THREE.Color('#884422') }]) {
+          const p = new Person({ ...randomLook(Math.random), height: rig.height, female: rig.female }, rig, o);
+          p.animate(1 / 60, 'idle', 0, 0);
+          this.warm.add(p.root);
+        }
+      }
+      if (model) this.warm.add(new CarModel('hatch', new THREE.Color('#556677'), true, undefined, model.id).root);
+      // (an animal of each material: the coat, and the butterfly's two-sided wings)
+      for (const b of [beast('cow'), beast('butterfly')]) {
+        if (!b) continue;
+        const a = new Animal(b);
+        a.animate(1 / 60, 'idle', 0);
+        this.warm.add(a.root);
+      }
+      this.group.add(this.warm);
+    }
+    if (!this.warm) return;
+    this.warm.visible = on;
+    this.warm.position.set(at.x, at.y - 30, at.z);
+    this.crowd.begin(); this.fleet.begin(); this.herd.begin();
+    if (on && rig) this.crowd.add(rig, at.x, at.y - 30, at.z, 0, 1, { top: new THREE.Color('#884422') });
+    if (on && model) this.fleet.add(model, at.x + 4, at.y - 30, at.z, 0, new THREE.Color('#556677'), 1);
+    const cow = beast('cow');
+    if (on && cow) this.herd.add(cow, at.x - 4, at.y - 30, at.z, 0);
+    this.crowd.end(); this.fleet.end(); this.herd.end();
+  }
+
   /** V2 (Milestone 7): the thought bubbles' shader is compiled with everything else before the first frame
    *  (one bubble, textured, out of sight, while the stage warms up), not the first time someone has a thought */
   prewarm(on: boolean): void {

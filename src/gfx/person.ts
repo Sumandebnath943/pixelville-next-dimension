@@ -12,6 +12,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { surface } from './surface';
+import { outfitMaterial, type Outfit } from './people';
 
 export interface Look {
   height: number;
@@ -28,7 +29,20 @@ export interface Look {
   coat?: THREE.Color;
 }
 
-type BoneName = 'root' | 'hips' | 'spine' | 'chest' | 'neck' | 'head' | 'shL' | 'uaL' | 'faL' | 'handL' | 'shR' | 'uaR' | 'faR' | 'handR' | 'thL' | 'shinL' | 'footL' | 'thR' | 'shinR' | 'footR';
+export type BoneName = 'root' | 'hips' | 'spine' | 'chest' | 'neck' | 'head' | 'shL' | 'uaL' | 'faL' | 'handL' | 'shR' | 'uaR' | 'faR' | 'handR' | 'thL' | 'shinL' | 'footL' | 'thR' | 'shinR' | 'footR';
+
+/** V2 (Milestone 9): a modelled character (gfx/people.ts) on the same joints: its levels of detail, where its joints
+ *  stand, and its one material */
+export interface Rig {
+  id: string;
+  lods: THREE.BufferGeometry[];
+  joints: Record<BoneName, THREE.Vector3>;
+  material: THREE.Material;
+  height: number;
+  female: boolean;
+  child: boolean;
+  job: string | null;
+}
 
 /* ---------- joints in bind pose (for a 1.75 m adult; scaled per person) ---------- */
 function joints(l: Look): Record<BoneName, THREE.Vector3> {
@@ -52,6 +66,8 @@ const PARENT: Record<BoneName, BoneName | null> = {
   thL: 'hips', shinL: 'thL', footL: 'shinL', thR: 'hips', shinR: 'thR', footR: 'shinR',
 };
 const ORDER: BoneName[] = ['root', 'hips', 'spine', 'chest', 'neck', 'head', 'shL', 'uaL', 'faL', 'handL', 'shR', 'uaR', 'faR', 'handR', 'thL', 'shinL', 'footL', 'thR', 'shinR', 'footR'];
+/** the joints in skinning order (a modelled character's file uses the same order) */
+export const BONES: readonly BoneName[] = ORDER;
 const BI = Object.fromEntries(ORDER.map((b, i) => [b, i])) as Record<BoneName, number>;
 
 /* ---------- mesh builder with skin weights ---------- */
@@ -342,10 +358,18 @@ export class Person {
   stride: number;
   /** wants an umbrella when it rains */
   carriesUmbrella: boolean;
+  /** V2 (Milestone 9): the modelled character worn, if any, and the hips' height standing */
+  rig: Rig | null;
+  private hipY: number;
+  private lod = 0;
 
-  constructor(look: Look) {
+  private outfitSet: ((o: Outfit | null) => void) | null = null;
+
+  /** `outfit`: a modelled character's clothes recoloured (its own material then, the same program) */
+  constructor(look: Look, rig?: Rig, outfit?: Outfit | null) {
     this.look = look;
-    const J = joints(look);
+    this.rig = rig ?? null;
+    const J = rig ? rig.joints : joints(look);
     for (const n of ORDER) {
       const b = new THREE.Bone();
       b.name = n;
@@ -354,8 +378,15 @@ export class Person {
       this.bones[n] = b;
       if (p) this.bones[p].add(b);
     }
-    const geo = buildBody(look);
-    this.mesh = new THREE.SkinnedMesh(geo, materials());
+    this.hipY = J.hips.y;
+    const geo = rig ? rig.lods[0] : buildBody(look);
+    let mat: THREE.Material | THREE.Material[] = rig ? rig.material : materials();
+    if (rig && outfit) {
+      const o = outfitMaterial(rig, outfit);
+      mat = o.material;
+      this.outfitSet = o.set;
+    }
+    this.mesh = new THREE.SkinnedMesh(geo, mat);
     this.mesh.add(this.bones.root);
     this.mesh.bind(new THREE.Skeleton(ORDER.map((n) => this.bones[n])));
     this.mesh.castShadow = true;
@@ -368,6 +399,25 @@ export class Person {
     this.umb.visible = false;
     this.bones.handR.add(this.umb);
     this.umb.position.set(0, -0.06, 0.02);
+  }
+
+  /** V2 (Milestone 9): a modelled character's clothes recoloured (top, legs, shoes; null keeps their own) */
+  setOutfit(o: Outfit | null): void {
+    if (!this.rig) return;
+    if (!this.outfitSet) {
+      const m = outfitMaterial(this.rig, o);
+      this.mesh.material = m.material;
+      this.outfitSet = m.set;
+      return;
+    }
+    this.outfitSet(o);
+  }
+
+  /** V2 (Milestone 9): a modelled character's level of detail (0 nearest … 2 crowd); the code-built body has one */
+  setLod(k: number): void {
+    if (!this.rig || k === this.lod) return;
+    this.lod = k;
+    this.mesh.geometry = this.rig.lods[Math.min(k, this.rig.lods.length - 1)];
   }
 
   /** advance the animation. `speed` m/s; `lookAt` (radians, body-relative) when waiting at a kerb */
@@ -397,7 +447,7 @@ export class Person {
         B[`fa${side}`].rotation.x = -(12 + Math.max(0, swing) * 0.8) * D2R;
       }
       const tw = Math.PI * 2 * p;
-      B.hips.position.y = 0.95 * h + Math.cos(tw * 2) * 0.022 * amp - 0.012;
+      B.hips.position.y = this.hipY + Math.cos(tw * 2) * 0.022 * amp - 0.012;
       B.hips.position.x = Math.sin(tw) * 0.022 * amp;
       B.hips.rotation.y = Math.sin(tw) * 0.08 * amp;
       B.hips.rotation.z = Math.sin(tw) * 0.035 * amp;
@@ -408,7 +458,7 @@ export class Person {
     } else {
       // idle: breathing, a slow weight shift, hands relaxed
       const br = Math.sin(this.t * 1.6);
-      B.hips.position.y = 0.95 * h;
+      B.hips.position.y = this.hipY;
       B.hips.position.x = Math.sin(this.t * 0.35) * 0.025;
       B.hips.rotation.z = Math.sin(this.t * 0.35) * 0.04;
       B.spine.rotation.z = -Math.sin(this.t * 0.35) * 0.03;
@@ -433,7 +483,7 @@ export class Person {
       // down in a steady beat, the left steadying the work
       const beat = (this.t * 1.35 + this.phase) % 1;
       const swing = beat < 0.55 ? THREE.MathUtils.smoothstep(beat / 0.55, 0, 1) : 1 - THREE.MathUtils.smoothstep((beat - 0.55) / 0.12, 0, 1);
-      B.hips.position.y = 0.92 * h;
+      B.hips.position.y = this.hipY - 0.03 * h;
       B.spine.rotation.x = 0.28;
       B.chest.rotation.x = 0.08;
       B.head.rotation.x = 0.25;
@@ -498,7 +548,7 @@ export class Person {
       B.spine.rotation.x = -0.05;
     } else if (pose === 'lie') {
       // stretched out (the caller tips the whole body flat)
-      B.hips.position.y = 0.95 * h;
+      B.hips.position.y = this.hipY;
       for (const [side, sgn] of [['L', 1], ['R', -1]] as const) {
         B[`ua${side}`].rotation.z = sgn * 0.5;
         B[`fa${side}`].rotation.x = -0.2;

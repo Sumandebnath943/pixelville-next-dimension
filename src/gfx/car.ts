@@ -10,6 +10,10 @@ import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { surface } from './surface';
 import { ENV, MAX_BEAMS } from './env';
+import { ModelCar, pickModel, seedOf, vehicleModel } from './vehicle';
+
+/** (the old lamp materials a modelled car leaves unused) */
+const DARK = new THREE.MeshStandardMaterial({ color: 0x000000 });
 
 export type CarStyle = 'hatch' | 'sedan' | 'suv' | 'estate';
 interface Dim { L: number; WB: number; W: number; H: number; belt: number; hood: number; deck: number; hoodLen: number; screen: number; rear: 'notch' | 'hatch' | 'estate'; wheelR: number; clearance: number }
@@ -95,7 +99,7 @@ const boxAt = (sx: number, sy: number, sz: number, x: number, y: number, z: numb
   return g.translate(x, y, z);
 };
 /** a lamp lens: a rounded rectangle w × h, `depth` deep, its face towards +z, turned `ry` about y and tipped `rx`, at (x, y, z) */
-function lamp(w: number, h: number, depth: number, r: number, x: number, y: number, z: number, ry: number, rx: number): THREE.BufferGeometry {
+export function lamp(w: number, h: number, depth: number, r: number, x: number, y: number, z: number, ry: number, rx: number): THREE.BufferGeometry {
   const s = new THREE.Shape();
   r = Math.min(r, h / 2, w / 2);
   s.moveTo(-w / 2 + r, -h / 2);
@@ -119,9 +123,9 @@ function lamp(w: number, h: number, depth: number, r: number, x: number, y: numb
    bevelled panels stand proud of the side profile), so only scraps of lens and half-buried bulbs showed through
    the paint. Now the front of the body is found by looking straight back at it (-z), and each part of the lamp
    follows the paint (its curve, the bevel round the corner, the bonnet's droop) a few millimetres proud. */
-type Nose = (x: number, y: number) => { z: number; n: THREE.Vector3 };
+export type Nose = (x: number, y: number) => { z: number; n: THREE.Vector3 };
 /** where the body's front is at (x, y) seen from ahead, and which way it faces there (between heights y0 and y1) */
-function noseOf(body: THREE.BufferGeometry, zMin: number, y0: number, y1: number): Nose {
+export function noseOf(body: THREE.BufferGeometry, zMin: number, y0: number, y1: number): Nose {
   const p = body.attributes.position.array, nr = body.attributes.normal.array;
   const tris: number[] = [];
   for (let i = 0; i < p.length; i += 9) {
@@ -156,7 +160,7 @@ function noseOf(body: THREE.BufferGeometry, zMin: number, y0: number, y1: number
   };
 }
 /** flat shapes drawn in front view (x, y), laid on the nose `lift` metres proud of the paint */
-class NoseLayer {
+export class NoseLayer {
   private pos: number[] = [];
   private nor: number[] = [];
   constructor(private nose: Nose, private lift: number) {}
@@ -207,7 +211,7 @@ class NoseLayer {
 }
 /** a headlamp's outline: u runs from the grille end (-a) to the wing end (+a), v up. A rounded slot, slimmer at
  *  the grille end and swept up towards the wing, as an even ring of points (anticlockwise) */
-function lampSlot(a: number, b: number, n = 72): THREE.Vector2[] {
+export function lampSlot(a: number, b: number, n = 72): THREE.Vector2[] {
   const dense: THREE.Vector2[] = [];
   for (let i = 0; i < 480; i++) {
     const t = (i / 480) * Math.PI * 2, c = Math.cos(t), s = Math.sin(t);
@@ -225,11 +229,11 @@ function lampSlot(a: number, b: number, n = 72): THREE.Vector2[] {
   return out;
 }
 /** the slot's shape at (u, v): slimmer towards the grille end, swept up towards the wing */
-function sweep(a: number, u: number, v: number): THREE.Vector2 {
+export function sweep(a: number, u: number, v: number): THREE.Vector2 {
   return new THREE.Vector2(u, v * (0.78 + 0.11 * (u / a + 1)) + 0.022 * (u / a));
 }
 /** an anticlockwise outline moved `d` metres outwards (inwards when negative), square to its smoothed edge */
-function grow(ring: THREE.Vector2[], d: number): THREE.Vector2[] {
+export function grow(ring: THREE.Vector2[], d: number): THREE.Vector2[] {
   const n = ring.length;
   return ring.map((q, i) => {
     const t = ring[(i + 3) % n].clone().sub(ring[(i - 3 + n) % n]).normalize();
@@ -237,7 +241,7 @@ function grow(ring: THREE.Vector2[], d: number): THREE.Vector2[] {
   });
 }
 /** a circle of radius r round (u, v), anticlockwise */
-function circle(u: number, v: number, r: number, n = 24): THREE.Vector2[] {
+export function circle(u: number, v: number, r: number, n = 24): THREE.Vector2[] {
   return Array.from({ length: n }, (_, i) => new THREE.Vector2(u + Math.cos((i / n) * Math.PI * 2) * r, v + Math.sin((i / n) * Math.PI * 2) * r));
 }
 
@@ -449,7 +453,7 @@ function shown(o: THREE.Object3D): boolean {
 
 /* ---------- V2 (Milestone 8): the glare of a lit headlamp, brightest seen from in front ---------- */
 let GLARE: THREE.SpriteMaterial | null = null;
-function glare(): THREE.SpriteMaterial {
+export function glare(): THREE.SpriteMaterial {
   if (GLARE) return GLARE;
   // a tight hot core in a halo that fades all the way out: at night's exposure the old one burnt out into a flat white
   // disc a metre across. (Half floats, so the long faint tail doesn't band into rings.)
@@ -499,8 +503,24 @@ export class Car {
   headOn = false;
   braking = false;
   private siren: { red: THREE.MeshStandardMaterial; blue: THREE.MeshStandardMaterial } | null = null;
+  /** V2 (Milestone 9): the downloaded model this car is drawn with, when the fleet has loaded */
+  model: ModelCar | null = null;
 
-  constructor(style: CarStyle, color: THREE.Color, metallic = true, extra?: 'taxi' | 'police') {
+  /** `modelId`: a particular model from the fleet (else one of the style's, the same one for the same paint) */
+  constructor(style: CarStyle, color: THREE.Color, metallic = true, extra?: 'taxi' | 'police', modelId?: string) {
+    const fm = modelId ? vehicleModel(modelId) : pickModel(extra ?? 'car', extra ? null : style, seedOf(color));
+    if (fm) {
+      // (the old materials stay unused; everything below is the model's)
+      this.model = new ModelCar(fm, color, metallic);
+      this.root = this.model.root;
+      this.body = this.model.body;
+      this.paint = this.model.paint;
+      this.dims = { ...DIMS[style], ...this.model.dims };
+      this.head = this.bulb = this.drl = this.tail = DARK;
+      this.headAt = [];
+      this.beamAt = [0, 0, 0];
+      return;
+    }
     const m = models(style), s = shared();
     this.dims = m.dims;
     this.headAt = m.headAt;
@@ -572,8 +592,14 @@ export class Car {
     }
   }
 
+  /** V2 (Milestone 9): the model's nearer (0) or lighter (1) level of detail */
+  setLod(k: number): void {
+    this.model?.setLod(k);
+  }
+
   /** pose for this frame; `accel` m/s² along travel, `turn` = yaw rate (rad/s) */
   drive(dt: number, x: number, z: number, yaw: number, speed: number, accel: number, turn: number, y = 0): void {
+    if (this.model) { this.model.drive(dt, x, z, yaw, speed, accel, turn, y); this.braking = this.model.braking; return; }
     this.root.position.set(x, y, z);
     this.root.rotation.y = yaw;
     this.spin += (speed * dt) / this.dims.wheelR;
@@ -596,12 +622,14 @@ export class Car {
 
   /** flash the light bar (police only) */
   setSiren(on: boolean, t: number): void {
+    if (this.model) { this.model.setSiren(on, t); return; }
     if (!this.siren) return;
     const ph = Math.floor(t * 6) % 2;
     this.siren.red.emissiveIntensity = on && ph ? 18 : 0;
     this.siren.blue.emissiveIntensity = on && !ph ? 18 : 0;
   }
   setPaint(c: THREE.Color): void {
+    if (this.model) { this.model.setPaint(c); return; }
     this.paint.color.copy(c);
   }
 
@@ -609,6 +637,7 @@ export class Car {
    *  (V2 (Milestone 8): it used to keep its lamps lit and its brake lights on in the drive) */
   lights(on: boolean, night: number, parked = false): void {
     this.headOn = on;
+    if (this.model) { this.model.braking = this.braking; this.model.lights(on, night, parked); return; }
     // how squarely the eye faces each lamp, from in front of it (in the body's own frame, which follows the Founder's
     // car inside its group too): a lamp throws its light forward, so it dazzles head-on, shows its shape from the
     // side, and from behind, or from the driver's seat, has no glare at all

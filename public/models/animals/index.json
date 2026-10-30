@@ -1,0 +1,275 @@
+{
+ "source": "see public/models/CREDITS.md",
+ "zoo": [
+  {
+   "id": "labrador",
+   "body": "quad",
+   "species": "dog",
+   "height": 0.78,
+   "length": 1.527,
+   "wings": false,
+   "tris": [
+    4967,
+    1492,
+    699
+   ],
+   "file": "labrador.glb",
+   "bytes": 145764
+  },
+  {
+   "id": "retriever",
+   "body": "quad",
+   "species": "dog",
+   "height": 0.8,
+   "length": 0.958,
+   "wings": false,
+   "tris": [
+    4999,
+    1500,
+    699
+   ],
+   "file": "retriever.glb",
+   "bytes": 117808
+  },
+  {
+   "id": "chihuahua",
+   "body": "quad",
+   "species": "dog",
+   "height": 0.32,
+   "length": 0.339,
+   "wings": false,
+   "tris": [
+    4999,
+    1482,
+    698
+   ],
+   "file": "chihuahua.glb",
+   "bytes": 151036
+  },
+  {
+   "id": "bulldog",
+   "body": "quad",
+   "species": "dog",
+   "height": 0.42,
+   "length": 0.57,
+   "wings": false,
+   "tris": [
+    4999,
+    1499,
+    692
+   ],
+   "file": "bulldog.glb",
+   "bytes": 122028
+  },
+  {
+   "id": "cat",
+   "body": "quad",
+   "species": "cat",
+   "height": 0.34,
+   "length": 0.652,
+   "wings": false,
+   "tris": [
+    4999,
+    1498,
+    700
+   ],
+   "file": "cat.glb",
+   "bytes": 134912
+  },
+  {
+   "id": "cow",
+   "body": "quad",
+   "species": "cow",
+   "height": 1.55,
+   "length": 2.731,
+   "wings": false,
+   "tris": [
+    6999,
+    2100,
+    697
+   ],
+   "file": "cow.glb",
+   "bytes": 139572
+  },
+  {
+   "id": "sheep",
+   "body": "quad",
+   "species": "sheep",
+   "height": 0.95,
+   "length": 1.28,
+   "wings": false,
+   "tris": [
+    2290,
+    1499,
+    700
+   ],
+   "file": "sheep.glb",
+   "bytes": 143560
+  },
+  {
+   "id": "horse",
+   "body": "quad",
+   "species": "horse",
+   "height": 2.1,
+   "length": 2.553,
+   "wings": false,
+   "tris": [
+    2914,
+    2100,
+    700
+   ],
+   "file": "horse.glb",
+   "bytes": 118016
+  },
+  {
+   "id": "donkey",
+   "body": "quad",
+   "species": "horse",
+   "height": 1.6,
+   "length": 2.108,
+   "wings": false,
+   "tris": [
+    7000,
+    2099,
+    700
+   ],
+   "file": "donkey.glb",
+   "bytes": 226376
+  },
+  {
+   "id": "deer",
+   "body": "quad",
+   "species": "deer",
+   "height": 1.45,
+   "length": 2.038,
+   "wings": false,
+   "tris": [
+    5000,
+    1499,
+    700
+   ],
+   "file": "deer.glb",
+   "bytes": 114676
+  },
+  {
+   "id": "hare",
+   "body": "quad",
+   "species": "hare",
+   "height": 0.42,
+   "length": 0.362,
+   "wings": false,
+   "tris": [
+    4999,
+    1500,
+    700
+   ],
+   "file": "hare.glb",
+   "bytes": 100664
+  },
+  {
+   "id": "lion",
+   "body": "quad",
+   "species": "cat",
+   "height": 1.2,
+   "length": 2.335,
+   "wings": false,
+   "tris": [
+    8963,
+    2066,
+    688
+   ],
+   "file": "lion.glb",
+   "bytes": 201588
+  },
+  {
+   "id": "elephant",
+   "body": "quad",
+   "species": "elephant",
+   "height": 3.3,
+   "length": 4.64,
+   "wings": false,
+   "tris": [
+    4806,
+    2099,
+    700
+   ],
+   "file": "elephant.glb",
+   "bytes": 153460
+  },
+  {
+   "id": "zebra",
+   "body": "quad",
+   "species": "horse",
+   "height": 1.85,
+   "length": 3.221,
+   "wings": false,
+   "tris": [
+    7000,
+    2098,
+    700
+   ],
+   "file": "zebra.glb",
+   "bytes": 203332
+  },
+  {
+   "id": "pigeon",
+   "body": "bird",
+   "species": "pigeon",
+   "height": 0.232,
+   "length": 0.32,
+   "wings": false,
+   "tris": [
+    3000,
+    900,
+    300
+   ],
+   "file": "pigeon.glb",
+   "bytes": 82440
+  },
+  {
+   "id": "duck",
+   "body": "bird",
+   "species": "duck",
+   "height": 0.576,
+   "length": 0.58,
+   "wings": false,
+   "tris": [
+    3000,
+    900,
+    300
+   ],
+   "file": "duck.glb",
+   "bytes": 89992
+  },
+  {
+   "id": "penguin",
+   "body": "bird",
+   "species": "penguin",
+   "height": 0.62,
+   "length": 0.533,
+   "wings": true,
+   "tris": [
+    2999,
+    899,
+    299
+   ],
+   "file": "penguin.glb",
+   "bytes": 102972
+  },
+  {
+   "id": "butterfly",
+   "body": "bird",
+   "species": "butterfly",
+   "height": 0.046,
+   "length": 0.08,
+   "wings": true,
+   "tris": [
+    2999,
+    892,
+    298
+   ],
+   "file": "butterfly.glb",
+   "bytes": 42520
+  }
+ ]
+}

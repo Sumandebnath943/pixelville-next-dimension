@@ -4,7 +4,7 @@ The 3D sequel to [PixelVille](https://github.com/Sumandebnath943/pixelville): th
 
 Walk and drive through your village in first or third person, and rise into the sky to build, just like before. Villagers commute, gossip, fall in love, vote, open businesses and remember what happened to them.
 
-> **Status:** live at **[pixelvillenextdimension.houseofnamus.com](https://pixelvillenextdimension.houseofnamus.com/)** (every push to `main` deploys). Milestones 1–8 are done (the living town, the semi-realistic look, street life, interiors and villager chat, the deeper village, going places, work shifts, launch polish, the owner's polish list), and Milestone 9's fixes from live play are on `main`: junction boxes and gridlock relief, a closed economy with tills, budgets and debts, god view, the Auto village, street trees, the spring thaw, saves that always open, a lighter frame and an Ultra graphics preset. See [the milestone plan](docs/MILESTONES.md), [the handoff](docs/HANDOFF.md) and [the game info](docs/GAME_INFO.md). The look lab, a single street block for trying the graphics, is at `/slice.html`.
+> **Status:** live at **[pixelvillenextdimension.houseofnamus.com](https://pixelvillenextdimension.houseofnamus.com/)** (every push to `main` deploys). Milestones 1–8 are done (the living town, the semi-realistic look, street life, interiors and villager chat, the deeper village, going places, work shifts, launch polish, the owner's polish list), and Milestone 9's fixes from live play are on `main`: junction boxes and gridlock relief, a closed economy with tills, budgets and debts, god view, the Auto village, street trees, the spring thaw, saves that always open, a lighter frame, an Ultra graphics preset, and real models for the villagers, vehicles and animals with a choice of who the Founder is. See [the milestone plan](docs/MILESTONES.md), [the handoff](docs/HANDOFF.md) and [the game info](docs/GAME_INFO.md). The look lab, a single street block for trying the graphics, is at `/slice.html`.
 
 ## Run it
 
@@ -55,4 +55,8 @@ Then open the address Vite prints (usually http://localhost:5173). Other scripts
 
 ## Stack
 
-TypeScript · Vite · Three.js · Vitest · Vercel. There are no image or model files: the world, buildings, people and vehicles are generated in code, as in V1.
+TypeScript · Vite · Three.js · Vitest · Vercel. The world and buildings are generated in code, as in V1. The villagers (Microsoft Rocketbox, MIT), vehicles and animals (CC BY 4.0, from Sketchfab) are downloaded models, made small for the game by the scripts in `scripts/people`, `scripts/vehicles` and `scripts/animals` (sources in [docs/MODEL_SOURCES.md](docs/MODEL_SOURCES.md)).
+
+## Credits
+
+Every model's creator is credited in [public/models/CREDITS.md](public/models/CREDITS.md) and on the game's Credits screen. Missed a credit, or want one of your models changed or taken out? Please [open an issue](https://github.com/Sumandebnath943/pixelville-next-dimension/issues) and we'll put it right.

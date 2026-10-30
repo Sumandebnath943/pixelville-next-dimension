@@ -18,6 +18,10 @@ import { Precipitation } from '../gfx/precip';
 import { flushBeams, setGlare, VIEW } from '../gfx/car';
 import { buildStreet, farForest, groundAt, Street } from './street';
 import { StreetLife } from './traffic';
+import { loadCast } from '../gfx/people';
+import { loadFleet } from '../gfx/vehicle';
+import { loadZoo } from '../gfx/animals';
+import { Lineup } from './lineup';
 
 type Wx = 'clear' | 'cloudy' | 'rain' | 'snow';
 interface WxState { overcast: number; clouds: number; rain: number; snowfall: number; fog: number }
@@ -34,6 +38,7 @@ const VIEWS: Record<string, View> = {
   junction: { pos: [-15, 4.2, 15.5], look: [4, 1.2, -8], walk: false },
   river: { pos: [-8, 0, 32.4], look: [40, 0.5, 47], walk: true },
   aerial: { pos: [75, 62, 95], look: [0, 0, -4], walk: false },
+  lineup: { pos: [-27, 0, 23.4], look: [-27, 1.0, 31], walk: true },
 };
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -87,7 +92,15 @@ async function main(): Promise<void> {
   await progress('Planting the far woods…');
   if (!off.has('forest')) farForest(scene);
   await progress('Waking the villagers…');
-  const life = new StreetLife(scene, 3, off.has('people') ? 0 : 28);
+  // V2 (Milestone 9): the modelled villagers (?people=old: the code-built bodies, to compare)
+  const rigs = params.get('people') === 'old' || off.has('people') ? [] : await loadCast().catch((e) => { console.error('[look] villager models', e); return []; });
+  // and the downloaded vehicles (?cars=old: the code-built cars)
+  if (params.get('cars') !== 'old') await loadFleet();
+  // and the downloaded animals
+  const beasts = await loadZoo().catch((e) => { console.error('[look] animal models', e); return []; });
+  const life = new StreetLife(scene, 3, off.has('people') ? 0 : 28, rigs);
+  // and the old figures beside the new on the quay
+  const lineup = new Lineup(scene, rigs, beasts);
   if (off.has('cars')) life.carCount = 0;
   if (off.has('lights')) { P.pointLights = 0; P.spotLights = 0; }
   if (off.has('refl')) { P.reflScale = 0; }
@@ -96,6 +109,7 @@ async function main(): Promise<void> {
     // keep reflection passes cheap: people and cars stay out of the mirrors
     for (const c of life.cars) c.root.traverse((o) => o.layers.set(LAYER_NO_REFLECT));
     for (const p of life.people) p.root.traverse((o) => o.layers.set(LAYER_NO_REFLECT));
+    lineup.group.traverse((o) => o.layers.set(LAYER_NO_REFLECT));
   }
   const precip = new Precipitation(scene);
   const groundRefl = new PlanarReflection(0.03, P.reflScale || 0.25);
@@ -306,6 +320,7 @@ async function main(): Promise<void> {
     // street life
     life.update(dt);
     life.animate(dt, st.rain, camera.position);
+    lineup.update(dt, st.rain);
     const sigK = Math.max(3, 2.2 / sky.exposure);
     life.showSignals(street.signals, sigK, ENV.time.value);
     street.beacons.emissiveIntensity = Math.floor(ENV.time.value * 1.4) % 2 ? sigK * 0.7 : 0.05;
@@ -375,7 +390,7 @@ async function main(): Promise<void> {
 
   // debug handle (the in-app browser pauses rAF while hidden; `step` advances by hand)
   (window as unknown as Record<string, unknown>).LOOK = {
-    scene, camera, ENV, sky, life, street, renderer, pipe, dbg,
+    scene, camera, ENV, sky, life, street, renderer, pipe, dbg, lineup,
     step: (n = 1, dt = 1 / 30) => { for (let i = 0; i < n; i++) frame(dt); },
     /** a fixed camera for close-ups: position, look-at, field of view */
     shot: (p: [number, number, number], l: [number, number, number], fov = 35) => {

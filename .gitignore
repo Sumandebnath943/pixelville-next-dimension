@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# raw downloaded models (big); the build turns them into public/models/
+assets-src/
 .vercel/
 .env
 .env.local

@@ -15,7 +15,11 @@ import { CAT } from '../sim/catalog';
 import type { BuildingLayer } from '../render/buildings';
 import { emit, on } from '../sim/core';
 import type { FounderSave } from '../sim/game';
-import { Person } from '../gfx/person';
+import { Person, type Rig } from '../gfx/person';
+import { castLoaded, setFounderRig } from '../gfx/people';
+
+/** V2 (Milestone 9): who the Founder is when nobody has chosen (a new village picks; old saves get this man) */
+export const DEFAULT_FIGURE = 'm01';
 import { Car as CarModel, Moto, Bike, Ride, CarStyle, addBeam } from '../gfx/car';
 import { Fleet, Vehicle, specOf } from './fleet';
 import type { BagItem } from './shopping';
@@ -196,6 +200,23 @@ export class Founder {
     if (part === 'scarf') { (this.scarfMesh?.material as THREE.MeshStandardMaterial | undefined)?.color.set(colour); return; }
     this.dressBody();
   }
+  /** V2 (Milestone 9): who the Founder is: one of the modelled villagers' characters, chosen when the village is
+   *  founded (or since, in Settings); null: the code-built figure (until the characters have loaded) */
+  figure: string | null = DEFAULT_FIGURE;
+  /** wear another character (the clothes, hat and scarf carry over) */
+  setFigure(id: string | null): void {
+    this.figure = id;
+    setFounderRig(id);
+    this.dressBody();
+  }
+  /** the characters have loaded: put on the chosen one, if the code-built figure was standing in */
+  refreshFigure(): void {
+    setFounderRig(this.figure);
+    if (this.person && (this.person.rig?.id ?? null) !== this.figureRig()?.id) this.dressBody();
+  }
+  private figureRig(): Rig | undefined {
+    return this.figure ? castLoaded().find((r) => r.id === this.figure) : undefined;
+  }
   /** the Founder's figure in the clothes they wear, with the hat and the scarf on */
   private dressBody(): void {
     const c = (h: string): THREE.Color => new THREE.Color(h);
@@ -205,11 +226,16 @@ export class Founder {
       if (this.hat) this.person.bones.head.remove(this.hat);
       if (this.scarfMesh) this.person.bones.neck.remove(this.scarfMesh);
     }
-    this.person = new Person({
+    const look = {
       height: 1.83, build: 1.04, female: false, skin: c('#e0ac85'), hair: c('#3a2618'),
       top: c(st.top ?? st.coat ?? '#4a2a6a'), legs: c(st.legs ?? '#2a2238'), shoes: c(st.shoes ?? '#16121a'), longHair: false, longSleeves: true, skirt: false,
       coat: c(st.coat ?? st.top ?? '#4a2a6a'),
-    });
+    };
+    // (a modelled character wears the same colours over its own clothes)
+    const rig = this.figureRig();
+    this.person = rig
+      ? new Person({ ...look, height: rig.height, female: rig.female }, rig, { top: look.coat, legs: look.legs, shoes: look.shoes })
+      : new Person(look);
     this.person.carriesUmbrella = false;
     this.mesh.add(this.person.root);
     if (this.hat) this.person.bones.head.add(this.hat);
@@ -356,6 +382,9 @@ export class Founder {
     }
     this.fleet.restore(save?.fleet as any);
     this.bag = (save?.bag || []).slice(-16);
+    // V2 (Milestone 9): as who they chose to be (a save from before the choice: the default man; a new village keeps
+    // whoever was picked for it)
+    if (save) { this.figure = save.figure === undefined ? DEFAULT_FIGURE : save.figure; setFounderRig(this.figure); this.dressBody(); }
     // V2: in the clothes they last bought
     const st = save?.style || {};
     if (JSON.stringify(st) !== JSON.stringify(this.style)) { this.style = { ...st }; this.dressBody(); if (this.scarfMesh) (this.scarfMesh.material as THREE.MeshStandardMaterial).color.set(st.scarf ?? '#b8902e'); }
@@ -446,7 +475,7 @@ export class Founder {
     return {
       x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, car: at ? { x: at.x, z: at.z, yaw: at.yaw } : null,
       wallet: Math.round(this.wallet), ledger: this.purse.ledger.slice(-80), bills: this.purse.bills.map((b) => ({ ...b })), damage: Math.round(this.fleet.cur?.damage ?? 0),
-      fleet: this.fleet.serialize(), returnCars, bag: this.bag.slice(), style: { ...this.style },
+      fleet: this.fleet.serialize(), returnCars, bag: this.bag.slice(), style: { ...this.style }, figure: this.figure,
     };
   }
 

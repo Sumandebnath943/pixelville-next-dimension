@@ -3,6 +3,9 @@
    Sim (headless, src/sim) → 3D layers (src/render) → the
    Founder & Planner (src/player) → HUD & panels (src/ui).
    ============================================================ */
+import { loadFleet } from './gfx/vehicle';
+import { loadCast } from './gfx/people';
+import { dogBreed, loadZoo } from './gfx/animals';
 import * as THREE from 'three';
 import { Game } from './sim/game';
 import { Sim } from './sim/agents';
@@ -190,6 +193,8 @@ const panels = new Panels({
   isPlanner: inPlanner,
   settingsChanged: () => applyAccess(),
   startTour: () => { Settings.set('tourDone', false); tour.start(); },
+  figure: () => founder.figure,
+  setFigure: (id) => founder.setFigure(id),
 });
 // (hud.toast's third argument means "already logged": personal moments stay out of the village news)
 const personalToast = (m: string, at?: { x: number; y: number }, news?: boolean): void => hud.toast(m, at, !news);
@@ -642,7 +647,10 @@ founder.purse.onChange = (e) => {
   $('wallet').textContent = `$${Math.round(founder.wallet)}`;
 };
 actors.extra = (a) => {
-  errands.draw((k, x, y, z, yaw, s, col) => a.prop(k, x, y, z, yaw, s, new THREE.Color(col)), (x, z) => founder.groundAt(x, z));
+  // (the runaway dog: one of the modelled breeds, by its family's house, else the old figure)
+  errands.draw((k, x, y, z, yaw, s, col, home) => {
+    if (!a.animal(dogBreed(home), 'errand-dog', x, y, z, yaw, 'auto')) a.prop(k, x, y, z, yaw, s, new THREE.Color(col));
+  }, (x, z) => founder.groundAt(x, z));
   wanted.draw(a);
   // Milestone 5: the sightseeing helicopter, the steamer, the air taxi
   const draw = (type: string, x: number, y: number, z: number, yaw: number, paint: string, rotor: number): void => a.vehicle(type, x, y, z, yaw, new THREE.Color(paint), { rotor });
@@ -1218,6 +1226,7 @@ $('la-new').addEventListener('click', () => leaveLanding(() => $('btn-new').clic
 $('la-load').addEventListener('click', () => leaveLanding(() => $('btn-load').click()));
 $('la-controls').addEventListener('click', () => panels.show('help'));
 $('la-settings').addEventListener('click', () => panels.openSettings());
+$('la-credits').addEventListener('click', () => void panels.openCredits());
 window.addEventListener('keydown', (e) => { if (landing && e.key === 'Enter' && !panels.anyModalOpen()) { e.preventDefault(); leaveLanding(); } });
 /** a frame of the landing screen: the world goes on, the camera circles high over the village */
 function landingFrame(now: number, dt: number): void {
@@ -1534,6 +1543,8 @@ async function boot(): Promise<void> {
     }
   }
   bootMark.set(true);
+  // V2 (Milestone 9): start fetching the downloaded models now; the loading screen waits for them after the buildings
+  const models = Promise.all([loadFleet(), loadCast(), loadZoo()]).catch((e) => console.warn('[models]', e));
   try { if (data) resumed = Game.performLoad(data).ok; } catch { /* a fresh village */ }
   $('loading-village').textContent = resumed ? `Welcome back to ${World.name || 'your village'}` : 'Founding a new village';
   stage.settleSeason();
@@ -1544,14 +1555,20 @@ async function boot(): Promise<void> {
   await buildings.buildAll((done, total) => step(`Raising the buildings… ${done} of ${total}`, 0.15 + 0.6 * (done / Math.max(1, total))));
   step('Painting textures…', 0.78);
   await texturesReady();
+  // V2 (Milestone 9): the villagers' characters and the vehicles (loading since the start, alongside the buildings)
+  step('Dressing the villagers…', 0.82);
+  await models;
+  founder.refreshFigure();
   step('Lighting the village…', 0.85);
   await yieldFrame();
   actors.prewarm(true);
+  actors.prewarmModels(true, founder.pos);
   // (Milestone 8: the landing camera flies too high for grass or near trees: grow them round the Founder first, so
   // their shaders compile now with everything else rather than the moment the player steps in)
   terrain.frame(stage.night, founder.pos);
   try { await stage.warmUp(); } catch { /* draw anyway */ }
   actors.prewarm(false);
+  actors.prewarmModels(false, founder.pos);
   step('Ready', 1);
   clearInterval(tipTimer);
   // Milestone 8: the landing screen first, over a flight across the village; the guide, the controls or a

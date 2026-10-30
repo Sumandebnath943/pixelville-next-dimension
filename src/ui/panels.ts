@@ -21,6 +21,7 @@ import { Edu } from '../sim/education';
 import { Economy, COUNTY_GRANT } from '../sim/economy';
 import { SLOTS, AUTO, RESCUE, get, put, metaOf } from '../save/store';
 import { Snd } from '../audio/sounds';
+import { FigurePicker } from './figure';
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: unknown) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -59,21 +60,37 @@ export interface PanelApi {
   settingsChanged?(): void;
   /** Milestone 7: run the first-day guide again */
   startTour?(): void;
+  /** V2 (Milestone 9): who the Founder is (a character's id), and choosing another */
+  figure?(): string | null;
+  setFigure?(id: string): void;
 }
 
 export class Panels {
   selected: any = null;
   selectedPerson: any = null;
   mayorOpen = false;
+  /** who the Founder will be in the village about to be founded */
+  private nmFigure: string | null = null;
 
   constructor(private api: PanelApi) {
     document.querySelectorAll<HTMLElement>('[data-close]').forEach((b) => b.addEventListener('click', () => this.close(b.dataset.close!)));
     $('btn-settings').addEventListener('click', () => this.openSettings());
     $('btn-save').addEventListener('click', () => this.openSaves('save'));
     $('btn-load').addEventListener('click', () => this.openSaves('load'));
-    $('btn-new').addEventListener('click', () => { ($('nm-name') as HTMLInputElement).value = 'PixelVille'; this.show('newmap'); });
+    // V2 (Milestone 9): who the Founder will be in the new village (whoever they are now, to start with), and who
+    // they are from Settings (at once)
+    const nmPick = new FigurePicker($('nm-sex'), $('nm-faces'), (id) => (this.nmFigure = id), () => this.nmFigure);
+    const fgPick = new FigurePicker($('fg-sex'), $('fg-faces'), (id) => this.api.setFigure?.(id), () => this.api.figure?.() ?? null);
+    $('set-figure').addEventListener('click', () => { this.show('figureui'); fgPick.open(); });
+    $('btn-new').addEventListener('click', () => {
+      ($('nm-name') as HTMLInputElement).value = 'PixelVille';
+      this.nmFigure = this.api.figure?.() ?? null;
+      this.show('newmap');
+      nmPick.open();
+    });
     $('btn-stats').addEventListener('click', () => { this.show('statsui'); this.drawStats(); });
     $('btn-help').addEventListener('click', () => this.show('help'));
+    $('btn-credits').addEventListener('click', () => this.openCredits());
     this.wireSettings();
     const sound = (on: boolean): void => { $('btn-sound').innerHTML = `${icon(on ? 'sound' : 'mute')}<span>${on ? 'Sound on' : 'Sound off'}</span>`; };
     $('btn-sound').addEventListener('click', () => sound(Snd.toggle()));
@@ -84,6 +101,7 @@ export class Panels {
       this.close('newmap');
       this.hideInfo();
       Game.newMap(nm, mode);
+      if (this.nmFigure) this.api.setFigure?.(this.nmFigure);
       this.api.afterLoad();
     });
     $('saveui-export').addEventListener('click', () => this.exportSave());
@@ -450,6 +468,30 @@ export class Panels {
   }
 
   /* ---------- settings ---------- */
+  /** V2 (Milestone 9): who made the people, vehicles and animals (public/models/credits.json, written by
+   *  scripts/credits.mjs), and how to reach us about a credit */
+  async openCredits(): Promise<void> {
+    this.show('creditsui');
+    const body = $('cr-body');
+    if (body.dataset.done) return;
+    type Item = { use: string; title: string; author: string; profile?: string; url: string; license: string; licenseUrl: string; changes: string; was?: string; note?: string; original?: { title: string; author: string; url: string; license: string; licenseUrl: string } };
+    try {
+      const base = import.meta.env.BASE_URL + 'models/';
+      const c = (await (await fetch(base + 'credits.json')).json()) as { contact: string; issues: string; groups: { name: string; items: Item[] }[] };
+      const esc = (s: string): string => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
+      const a = (href: string, text: string): string => `<a href="${esc(href.startsWith('http') ? href : base + href)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
+      const contact = esc(c.contact).replace(esc(c.issues), a(c.issues, c.issues));
+      body.innerHTML = `<p class="note">PixelVille's people, vehicles and animals are built from models their creators shared for anyone to use. Thank you to every one of them. Each was changed to fit the game, as its entry says; none of their creators endorses PixelVille.</p>
+        <p class="cr-contact">${contact}</p>` + c.groups.map((g) => `<h2>${esc(g.name)}</h2><ul>` + g.items.map((it) => `<li><b>${esc(it.use)}</b>: “${a(it.url, it.title)}” by ${it.profile ? a(it.profile, it.author) : esc(it.author)}${it.was ? ` <span class="cr-was">(named ${esc(it.was)} in the file)</span>` : ''}, ${a(it.licenseUrl, it.license)}.`
+        + (it.original ? `<br><span>Built on “${a(it.original.url, it.original.title)}” by ${esc(it.original.author)}, ${a(it.original.licenseUrl, it.original.license)}.</span>` : '')
+        + (it.note ? `<br><span>${esc(it.note)}</span>` : '')
+        + `<br><small>${esc(it.changes)}</small></li>`).join('') + '</ul>').join('');
+      body.dataset.done = '1';
+    } catch {
+      body.innerHTML = '<p class="note">The credits couldn\'t be loaded just now. They\'re also in public/models/CREDITS.md in the game\'s files.</p>';
+    }
+  }
+
   openSettings(): void {
     ($('set-name') as HTMLInputElement).value = World.name;
     ($('set-pace') as HTMLSelectElement).value = Settings.get('growthPace');

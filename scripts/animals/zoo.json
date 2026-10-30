@@ -1,0 +1,21 @@
+[
+  { "id": "labrador", "src": "labrador_dog.glb", "body": "quad", "species": "dog", "height": 0.78 },
+  { "id": "retriever", "src": "golden_retriever_dog.glb", "body": "quad", "species": "dog", "height": 0.8 },
+  { "id": "chihuahua", "src": "chihuahua.glb", "body": "quad", "species": "dog", "height": 0.32 },
+  { "id": "bulldog", "src": "bullpuppy.glb", "body": "quad", "species": "dog", "height": 0.42 },
+  { "id": "cat", "src": "bicolor_cat.glb", "body": "quad", "species": "cat", "height": 0.34 },
+  { "id": "cow", "src": "cow_frame_test.glb", "body": "quad", "species": "cow", "height": 1.55, "tris": 7000,
+    "map": { "spine.010": "neck", "spine.011": "head", "spine.003": "tail0", "spine.002": "tail1", "spine.001": "tail2", "spine": "tail2" } },
+  { "id": "sheep", "src": "sheep.glb", "body": "quad", "species": "sheep", "height": 0.95 },
+  { "id": "horse", "src": "horse_riggedgame_ready.glb", "body": "quad", "species": "horse", "height": 2.1, "tris": 7000 },
+  { "id": "donkey", "src": "realistic_animated_donkey_3d_model.glb", "body": "quad", "species": "horse", "height": 1.6, "tris": 7000, "pose": "H_Idle_01", "dropMat": "^Saddle" },
+  { "id": "deer", "src": "realistic_animated_doe_3d_model.glb", "body": "quad", "species": "deer", "height": 1.45 },
+  { "id": "hare", "src": "hare_animated.glb", "body": "quad", "species": "hare", "height": 0.42 },
+  { "id": "lion", "src": "realistic_lion_3d_model.glb", "body": "quad", "species": "cat", "height": 1.2, "tris": 7000 },
+  { "id": "elephant", "src": "african_elephant.glb", "body": "quad", "species": "elephant", "height": 3.3, "tris": 7000 },
+  { "id": "zebra", "src": "zebra_-_rigged.glb", "body": "quad", "species": "horse", "height": 1.85, "tris": 7000 },
+  { "id": "pigeon", "src": "pigeon.glb", "body": "bird", "species": "pigeon", "length": 0.32 },
+  { "id": "duck", "src": "mallard_duck_male.glb", "body": "bird", "species": "duck", "length": 0.58 },
+  { "id": "penguin", "src": "african_penguin_spheniscus_demersus_low_poly.glb", "body": "bird", "species": "penguin", "height": 0.62 },
+  { "id": "butterfly", "src": "animated_flying_fluttering_butterfly_loop.glb", "body": "bird", "species": "butterfly", "length": 0.08, "rigidWings": true, "doubleSided": true }
+]

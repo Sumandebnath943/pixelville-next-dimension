@@ -14,7 +14,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { Car, CarStyle } from '../gfx/car';
-import { Person, randomLook } from '../gfx/person';
+import { Person, randomLook, type Rig } from '../gfx/person';
 import { SignalHead } from '../gfx/props';
 import { KERB } from './street';
 
@@ -224,7 +224,8 @@ export class StreetLife {
   private waiting: Record<string, Set<Walker>> = { sigW: new Set(), sigE: new Set(), sigX: new Set(), zebra: new Set() };
   carCount = 16;
 
-  constructor(private scene: THREE.Scene, seed = 3, people = 28) {
+  /** V2 (Milestone 9): `rigs`: modelled characters for the walkers to wear (none: the code-built bodies) */
+  constructor(private scene: THREE.Scene, seed = 3, people = 28, private rigs: Rig[] = []) {
     let st = seed;
     this.rand = () => { st = (Math.imul(st, 1664525) + 1013904223) >>> 0; return st / 4294967296; };
     // start the street already busy: cars spread along routes, people along the pavements
@@ -262,7 +263,8 @@ export class StreetLife {
     if (dead) { car = dead.car; this.drivers.splice(this.drivers.indexOf(dead), 1); }
     else {
       const style = STYLES[Math.floor(this.rand() * STYLES.length)];
-      car = new Car(style, new THREE.Color(PAINTS[Math.floor(this.rand() * PAINTS.length)]), this.rand() > 0.25);
+      const paint = new THREE.Color(PAINTS[Math.floor(this.rand() * PAINTS.length)]), metal = this.rand() > 0.25;
+      car = new Car(style, paint, metal);
       this.scene.add(car.root);
     }
     car.root.visible = true;
@@ -272,7 +274,13 @@ export class StreetLife {
 
   private spawnWalker(): void {
     const look = randomLook(this.rand);
-    const p = new Person(look);
+    let rig: Rig | undefined;
+    if (this.rigs.length) {
+      rig = this.rigs[Math.floor(this.rand() * this.rigs.length)];
+      look.height = rig.height;
+      look.female = rig.female;
+    }
+    const p = new Person(look, rig);
     this.scene.add(p.root);
     const edge = this.edges[Math.floor(this.rand() * this.edges.length)];
     const forward = this.rand() < 0.5;
@@ -506,9 +514,15 @@ export class StreetLife {
   /** advance the animation of every visible person */
   animate(dt: number, rain: number, cam: THREE.Vector3): void {
     for (const w of this.walkers) {
-      const far = Math.hypot(w.x - cam.x, w.z - cam.z) > 140;
+      const d = Math.hypot(w.x - cam.x, w.z - cam.z), far = d > 140;
       w.p.root.visible = !far;
+      w.p.setLod(d < 20 ? 0 : d < 48 ? 1 : 2);
       if (!far) w.p.animate(dt, w.pose === 'wait' ? 'wait' : w.v > 0.15 ? 'walk' : 'idle', w.v, rain);
+    }
+    // (V2 (Milestone 9): modelled cars drop to their lighter model past 30 m)
+    for (const dr of this.drivers) {
+      const p = dr.car.root.position;
+      dr.car.setLod(Math.hypot(p.x - cam.x, p.z - cam.z) < 30 ? 0 : 1);
     }
   }
 

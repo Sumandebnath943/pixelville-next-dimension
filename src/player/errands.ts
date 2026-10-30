@@ -249,9 +249,9 @@ export class Errands {
   }
 
   /** the dog, for the renderer */
-  draw(prop: (k: string, x: number, y: number, z: number, yaw: number, scale: number, color: string) => void, ground: (x: number, z: number) => number): void {
+  draw(prop: (k: string, x: number, y: number, z: number, yaw: number, scale: number, color: string, home: number) => void, ground: (x: number, z: number) => number): void {
     const d = this.dog;
     if (!d || (d.following && this.founder.driving)) return;
-    prop('dog', d.x, ground(d.x, d.z), d.z, d.yaw, 1, d.color);
+    prop('dog', d.x, ground(d.x, d.z), d.z, d.yaw, 1, d.color, d.home.id);
   }
 }

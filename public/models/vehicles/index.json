@@ -1,0 +1,1440 @@
+{
+ "source": "see public/models/CREDITS.md",
+ "fleet": [
+  {
+   "id": "ace",
+   "kind": "car",
+   "style": "hatch",
+   "tint": true,
+   "dims": {
+    "L": 3.843,
+    "W": 1.826,
+    "H": 1.445,
+    "WB": 2.405
+   },
+   "wheelR": 0.298,
+   "wheelsAt": [
+    [
+     0.705,
+     0.299,
+     1.102
+    ],
+    [
+     -0.705,
+     0.298,
+     1.102
+    ],
+    [
+     0.705,
+     0.299,
+     -1.303
+    ],
+    [
+     -0.705,
+     0.298,
+     -1.303
+    ]
+   ],
+   "headAt": [
+    [
+     0.516,
+     0.684,
+     1.773
+    ],
+    [
+     -0.515,
+     0.683,
+     1.773
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.683,
+    1.803
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 2916,
+    "kit0": 6081,
+    "glass0": 216,
+    "wheel0": 899,
+    "paint1": 1175,
+    "kit1": 1753,
+    "glass1": 63,
+    "wheel1": 159,
+    "far": 893
+   },
+   "file": "ace.glb",
+   "bytes": 289600
+  },
+  {
+   "id": "sigil",
+   "kind": "car",
+   "style": "hatch",
+   "tint": true,
+   "dims": {
+    "L": 4.326,
+    "W": 1.784,
+    "H": 1.38,
+    "WB": 2.559
+   },
+   "wheelR": 0.322,
+   "wheelsAt": [
+    [
+     0.745,
+     0.322,
+     1.314
+    ],
+    [
+     -0.747,
+     0.322,
+     1.314
+    ],
+    [
+     0.745,
+     0.322,
+     -1.245
+    ],
+    [
+     -0.747,
+     0.322,
+     -1.245
+    ]
+   ],
+   "headAt": [
+    [
+     0.565,
+     0.654,
+     2.069
+    ],
+    [
+     -0.565,
+     0.654,
+     2.069
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.654,
+    2.099
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 4035,
+    "kit0": 4963,
+    "glass0": 326,
+    "wheel0": 900,
+    "paint1": 1252,
+    "kit1": 1107,
+    "glass1": 97,
+    "wheel1": 265,
+    "far": 863
+   },
+   "file": "sigil.glb",
+   "bytes": 265076
+  },
+  {
+   "id": "milano",
+   "kind": "car",
+   "style": "hatch",
+   "tint": true,
+   "dims": {
+    "L": 3.853,
+    "W": 1.93,
+    "H": 1.437,
+    "WB": 2.423
+   },
+   "wheelR": 0.277,
+   "wheelsAt": [
+    [
+     0.709,
+     0.286,
+     1.145
+    ],
+    [
+     -0.701,
+     0.277,
+     1.145
+    ],
+    [
+     0.709,
+     0.286,
+     -1.278
+    ],
+    [
+     -0.701,
+     0.277,
+     -1.278
+    ]
+   ],
+   "headAt": [
+    [
+     0.506,
+     0.638,
+     1.853
+    ],
+    [
+     -0.502,
+     0.632,
+     1.853
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.635,
+    1.883
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 2905,
+    "kit0": 6094,
+    "glass0": 304,
+    "wheel0": 899,
+    "paint1": 1121,
+    "kit1": 1689,
+    "glass1": 90,
+    "wheel1": 158,
+    "far": 858
+   },
+   "file": "milano.glb",
+   "bytes": 271816
+  },
+  {
+   "id": "compact",
+   "kind": "car",
+   "style": "hatch",
+   "tint": true,
+   "dims": {
+    "L": 2.693,
+    "W": 1.737,
+    "H": 1.528,
+    "WB": 1.861
+   },
+   "wheelR": 0.282,
+   "wheelsAt": [
+    [
+     0.604,
+     0.282,
+     0.914
+    ],
+    [
+     -0.604,
+     0.282,
+     0.914
+    ],
+    [
+     0.654,
+     0.282,
+     -0.947
+    ],
+    [
+     -0.654,
+     0.282,
+     -0.947
+    ]
+   ],
+   "headAt": [
+    [
+     0.481,
+     0.766,
+     1.281
+    ],
+    [
+     -0.481,
+     0.767,
+     1.281
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.766,
+    1.311
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 3045,
+    "kit0": 5953,
+    "glass0": 190,
+    "wheel0": 900,
+    "paint1": 810,
+    "kit1": 1142,
+    "glass1": 56,
+    "wheel1": 250,
+    "far": 1311
+   },
+   "file": "compact.glb",
+   "bytes": 292088
+  },
+  {
+   "id": "kiri",
+   "kind": "car",
+   "style": "sedan",
+   "tint": true,
+   "dims": {
+    "L": 4.358,
+    "W": 1.707,
+    "H": 1.48,
+    "WB": 2.698
+   },
+   "wheelR": 0.298,
+   "wheelsAt": [
+    [
+     0.699,
+     0.298,
+     1.417
+    ],
+    [
+     -0.699,
+     0.298,
+     1.417
+    ],
+    [
+     0.699,
+     0.298,
+     -1.281
+    ],
+    [
+     -0.699,
+     0.298,
+     -1.281
+    ]
+   ],
+   "headAt": [
+    [
+     0.553,
+     0.667,
+     2.109
+    ],
+    [
+     -0.553,
+     0.667,
+     2.109
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.667,
+    2.139
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 3192,
+    "kit0": 5807,
+    "glass0": 136,
+    "wheel0": 899,
+    "paint1": 807,
+    "kit1": 1059,
+    "glass1": 50,
+    "wheel1": 160,
+    "far": 911
+   },
+   "file": "kiri.glb",
+   "bytes": 268412
+  },
+  {
+   "id": "trinity",
+   "kind": "car",
+   "style": "sedan",
+   "tint": true,
+   "dims": {
+    "L": 4.434,
+    "W": 1.897,
+    "H": 1.315,
+    "WB": 2.644
+   },
+   "wheelR": 0.303,
+   "wheelsAt": [
+    [
+     0.711,
+     0.303,
+     1.426
+    ],
+    [
+     -0.707,
+     0.303,
+     1.426
+    ],
+    [
+     0.711,
+     0.303,
+     -1.218
+    ],
+    [
+     -0.707,
+     0.303,
+     -1.218
+    ]
+   ],
+   "headAt": [
+    [
+     0.644,
+     0.621,
+     1.975
+    ],
+    [
+     -0.644,
+     0.621,
+     1.975
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.621,
+    2.005
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 5471,
+    "kit0": 3527,
+    "glass0": 354,
+    "wheel0": 900,
+    "paint1": 2188,
+    "kit1": 1015,
+    "glass1": 105,
+    "wheel1": 172,
+    "far": 792
+   },
+   "file": "trinity.glb",
+   "bytes": 275424
+  },
+  {
+   "id": "carter",
+   "kind": "car",
+   "style": "sedan",
+   "tint": false,
+   "dims": {
+    "L": 5.023,
+    "W": 2.09,
+    "H": 1.422,
+    "WB": 2.807
+   },
+   "wheelR": 0.334,
+   "wheelsAt": [
+    [
+     0.781,
+     0.334,
+     1.395
+    ],
+    [
+     -0.781,
+     0.334,
+     1.395
+    ],
+    [
+     0.781,
+     0.334,
+     -1.412
+    ],
+    [
+     -0.781,
+     0.334,
+     -1.412
+    ]
+   ],
+   "headAt": [
+    [
+     0.679,
+     0.644,
+     2.363
+    ],
+    [
+     -0.679,
+     0.644,
+     2.363
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.644,
+    2.393
+   ],
+   "rotorAt": null,
+   "tris": {
+    "kit0": 9000,
+    "glass0": 366,
+    "wheel0": 899,
+    "kit1": 2326,
+    "glass1": 109,
+    "wheel1": 326,
+    "far": 970
+   },
+   "file": "carter.glb",
+   "bytes": 268996
+  },
+  {
+   "id": "urban",
+   "kind": "car",
+   "style": "suv",
+   "tint": true,
+   "dims": {
+    "L": 4.292,
+    "W": 1.883,
+    "H": 1.52,
+    "WB": 2.674
+   },
+   "wheelR": 0.326,
+   "wheelsAt": [
+    [
+     0.718,
+     0.326,
+     1.36
+    ],
+    [
+     -0.718,
+     0.326,
+     1.36
+    ],
+    [
+     0.718,
+     0.326,
+     -1.314
+    ],
+    [
+     -0.718,
+     0.326,
+     -1.314
+    ]
+   ],
+   "headAt": [
+    [
+     0.544,
+     0.768,
+     2.027
+    ],
+    [
+     -0.542,
+     0.769,
+     2.027
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.768,
+    2.057
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 3925,
+    "kit0": 5072,
+    "glass0": 332,
+    "wheel0": 899,
+    "paint1": 1320,
+    "kit1": 1226,
+    "glass1": 99,
+    "wheel1": 160,
+    "far": 924
+   },
+   "file": "urban.glb",
+   "bytes": 270196
+  },
+  {
+   "id": "fairheaven",
+   "kind": "car",
+   "style": "estate",
+   "tint": true,
+   "dims": {
+    "L": 5.028,
+    "W": 1.855,
+    "H": 1.398,
+    "WB": 2.652
+   },
+   "wheelR": 0.303,
+   "wheelsAt": [
+    [
+     0.731,
+     0.304,
+     1.442
+    ],
+    [
+     -0.733,
+     0.303,
+     1.442
+    ],
+    [
+     0.731,
+     0.304,
+     -1.21
+    ],
+    [
+     -0.733,
+     0.303,
+     -1.21
+    ]
+   ],
+   "headAt": [
+    [
+     0.6,
+     0.677,
+     2.224
+    ],
+    [
+     -0.599,
+     0.677,
+     2.224
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.677,
+    2.254
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 3515,
+    "kit0": 5482,
+    "glass0": 200,
+    "wheel0": 720,
+    "paint1": 1588,
+    "kit1": 1776,
+    "glass1": 60,
+    "wheel1": 159,
+    "far": 874
+   },
+   "file": "fairheaven.glb",
+   "bytes": 284448
+  },
+  {
+   "id": "pickup",
+   "kind": "car",
+   "style": "pickup",
+   "tint": true,
+   "dims": {
+    "L": 5.218,
+    "W": 2.099,
+    "H": 1.85,
+    "WB": 3.014
+   },
+   "wheelR": 0.351,
+   "wheelsAt": [
+    [
+     0.713,
+     0.361,
+     1.743
+    ],
+    [
+     -0.699,
+     0.351,
+     1.743
+    ],
+    [
+     0.713,
+     0.361,
+     -1.271
+    ],
+    [
+     -0.699,
+     0.351,
+     -1.271
+    ]
+   ],
+   "headAt": [
+    [
+     0.592,
+     0.842,
+     2.515
+    ],
+    [
+     -0.585,
+     0.833,
+     2.515
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.837,
+    2.545
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 3290,
+    "kit0": 5707,
+    "glass0": 160,
+    "wheel0": 866,
+    "paint1": 1565,
+    "kit1": 1942,
+    "glass1": 50,
+    "wheel1": 160,
+    "far": 989
+   },
+   "file": "pickup.glb",
+   "bytes": 295028
+  },
+  {
+   "id": "police",
+   "kind": "police",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 4.362,
+    "W": 1.883,
+    "H": 1.699,
+    "WB": 2.675
+   },
+   "wheelR": 0.348,
+   "wheelsAt": [
+    [
+     0.73,
+     0.348,
+     1.326
+    ],
+    [
+     -0.73,
+     0.348,
+     1.326
+    ],
+    [
+     0.73,
+     0.348,
+     -1.349
+    ],
+    [
+     -0.73,
+     0.348,
+     -1.349
+    ]
+   ],
+   "headAt": [
+    [
+     0.544,
+     0.79,
+     1.992
+    ],
+    [
+     -0.542,
+     0.791,
+     1.992
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.79,
+    2.022
+   ],
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8999,
+    "glass0": 332,
+    "wheel0": 900,
+    "kit1": 2648,
+    "glass1": 99,
+    "wheel1": 160,
+    "far": 995
+   },
+   "file": "police.glb",
+   "bytes": 302320
+  },
+  {
+   "id": "taxi",
+   "kind": "taxi",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 5.213,
+    "W": 2.094,
+    "H": 1.529,
+    "WB": 2.855
+   },
+   "wheelR": 0.319,
+   "wheelsAt": [
+    [
+     0.773,
+     0.319,
+     1.495
+    ],
+    [
+     -0.773,
+     0.319,
+     1.495
+    ],
+    [
+     0.773,
+     0.319,
+     -1.36
+    ],
+    [
+     -0.773,
+     0.319,
+     -1.36
+    ]
+   ],
+   "headAt": [
+    [
+     0.585,
+     0.659,
+     2.424
+    ],
+    [
+     -0.585,
+     0.659,
+     2.424
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.659,
+    2.454
+   ],
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8999,
+    "glass0": 284,
+    "wheel0": 862,
+    "kit1": 2847,
+    "glass1": 85,
+    "wheel1": 160,
+    "far": 992
+   },
+   "file": "taxi.glb",
+   "bytes": 317856
+  },
+  {
+   "id": "ambulance",
+   "kind": "ambulance",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 5.019,
+    "W": 2.349,
+    "H": 2.262,
+    "WB": 3.135
+   },
+   "wheelR": 0.35,
+   "wheelsAt": [
+    [
+     0.829,
+     0.351,
+     1.836
+    ],
+    [
+     -0.83,
+     0.35,
+     1.836
+    ],
+    [
+     0.829,
+     0.351,
+     -1.299
+    ],
+    [
+     -0.83,
+     0.35,
+     -1.299
+    ]
+   ],
+   "headAt": [
+    [
+     0.662,
+     0.962,
+     2.48
+    ],
+    [
+     -0.664,
+     0.962,
+     2.48
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.962,
+    2.51
+   ],
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8996,
+    "glass0": 140,
+    "wheel0": 765,
+    "kit1": 4010,
+    "glass1": 50,
+    "wheel1": 160,
+    "far": 993
+   },
+   "file": "ambulance.glb",
+   "bytes": 329856
+  },
+  {
+   "id": "van",
+   "kind": "van",
+   "style": null,
+   "tint": true,
+   "dims": {
+    "L": 4.899,
+    "W": 2.349,
+    "H": 1.929,
+    "WB": 3.135
+   },
+   "wheelR": 0.351,
+   "wheelsAt": [
+    [
+     0.836,
+     0.363,
+     1.776
+    ],
+    [
+     -0.822,
+     0.351,
+     1.776
+    ],
+    [
+     0.836,
+     0.363,
+     -1.359
+    ],
+    [
+     -0.822,
+     0.351,
+     -1.359
+    ]
+   ],
+   "headAt": [
+    [
+     0.666,
+     0.973,
+     2.42
+    ],
+    [
+     -0.661,
+     0.963,
+     2.42
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.968,
+    2.45
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 3580,
+    "kit0": 5415,
+    "glass0": 140,
+    "wheel0": 765,
+    "paint1": 1944,
+    "kit1": 2116,
+    "glass1": 50,
+    "wheel1": 160,
+    "far": 1000
+   },
+   "file": "van.glb",
+   "bytes": 292208
+  },
+  {
+   "id": "utility",
+   "kind": "utility",
+   "style": null,
+   "tint": true,
+   "dims": {
+    "L": 5.372,
+    "W": 2.002,
+    "H": 1.657,
+    "WB": 3.161
+   },
+   "wheelR": 0.356,
+   "wheelsAt": [
+    [
+     0.794,
+     0.356,
+     1.785
+    ],
+    [
+     -0.793,
+     0.356,
+     1.785
+    ],
+    [
+     0.774,
+     0.356,
+     -1.376
+    ],
+    [
+     -0.772,
+     0.356,
+     -1.376
+    ]
+   ],
+   "headAt": [
+    [
+     0.524,
+     0.838,
+     2.499
+    ],
+    [
+     -0.524,
+     0.838,
+     2.499
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.838,
+    2.529
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 1685,
+    "kit0": 7313,
+    "glass0": 192,
+    "wheel0": 826,
+    "paint1": 1038,
+    "kit1": 3222,
+    "glass1": 57,
+    "wheel1": 160,
+    "far": 972
+   },
+   "file": "utility.glb",
+   "bytes": 333360
+  },
+  {
+   "id": "tow",
+   "kind": "tow",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 5.659,
+    "W": 2.002,
+    "H": 1.972,
+    "WB": 3.161
+   },
+   "wheelR": 0.356,
+   "wheelsAt": [
+    [
+     0.794,
+     0.356,
+     1.928
+    ],
+    [
+     -0.793,
+     0.356,
+     1.928
+    ],
+    [
+     0.774,
+     0.356,
+     -1.233
+    ],
+    [
+     -0.772,
+     0.356,
+     -1.233
+    ]
+   ],
+   "headAt": [
+    [
+     0.524,
+     0.838,
+     2.642
+    ],
+    [
+     -0.524,
+     0.838,
+     2.642
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.838,
+    2.672
+   ],
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8994,
+    "glass0": 192,
+    "wheel0": 826,
+    "kit1": 3889,
+    "glass1": 57,
+    "wheel1": 160,
+    "far": 920
+   },
+   "file": "tow.glb",
+   "bytes": 333568
+  },
+  {
+   "id": "truck",
+   "kind": "truck",
+   "style": null,
+   "tint": true,
+   "dims": {
+    "L": 5.857,
+    "W": 2.433,
+    "H": 2.838,
+    "WB": 3.345
+   },
+   "wheelR": 0.356,
+   "wheelsAt": [
+    [
+     0.899,
+     0.356,
+     1.873
+    ],
+    [
+     -0.91,
+     0.356,
+     1.873
+    ],
+    [
+     0.876,
+     0.356,
+     -1.472
+    ],
+    [
+     -0.886,
+     0.356,
+     -1.472
+    ]
+   ],
+   "headAt": [
+    [
+     0.788,
+     0.906,
+     2.836
+    ],
+    [
+     -0.788,
+     0.906,
+     2.836
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.906,
+    2.866
+   ],
+   "rotorAt": null,
+   "tris": {
+    "paint0": 2989,
+    "kit0": 6010,
+    "glass0": 174,
+    "wheel0": 826,
+    "paint1": 978,
+    "kit1": 1416,
+    "glass1": 52,
+    "wheel1": 160,
+    "far": 948
+   },
+   "file": "truck.glb",
+   "bytes": 269864
+  },
+  {
+   "id": "bus",
+   "kind": "bus",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 12.267,
+    "W": 3.064,
+    "H": 3.025
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 5559,
+    "kit1": 999,
+    "far": 2000
+   },
+   "file": "bus.glb",
+   "bytes": 156600
+  },
+  {
+   "id": "fire",
+   "kind": "fire",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 9.4,
+    "W": 3.262,
+    "H": 3.671
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [
+    [
+     1.037,
+     0.933,
+     4.72
+    ],
+    [
+     -1.032,
+     0.934,
+     4.72
+    ]
+   ],
+   "beamAt": [
+    0,
+    0.933,
+    4.75
+   ],
+   "rotorAt": null,
+   "tris": {
+    "kit0": 9000,
+    "kit1": 5681,
+    "far": 1826
+   },
+   "file": "fire.glb",
+   "bytes": 351484
+  },
+  {
+   "id": "tractor",
+   "kind": "tractor",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 4,
+    "W": 2.095,
+    "H": 2.689
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8998,
+    "kit1": 5280,
+    "far": 680
+   },
+   "file": "tractor.glb",
+   "bytes": 352916
+  },
+  {
+   "id": "scooter",
+   "kind": "moto",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 1.75,
+    "W": 0.454,
+    "H": 1.049
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8999,
+    "kit1": 6027,
+    "far": 754
+   },
+   "file": "scooter.glb",
+   "bytes": 321140
+  },
+  {
+   "id": "bicycle",
+   "kind": "bicycle",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 1.75,
+    "W": 0.486,
+    "H": 1.108
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8997,
+    "kit1": 3504,
+    "far": 793
+   },
+   "file": "bicycle.glb",
+   "bytes": 223544
+  },
+  {
+   "id": "loco",
+   "kind": "loco",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 14.2,
+    "W": 2.658,
+    "H": 3.868
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8977,
+    "glass0": 94,
+    "kit1": 7862,
+    "glass1": 50,
+    "far": 1392
+   },
+   "file": "loco.glb",
+   "bytes": 215800
+  },
+  {
+   "id": "railcar",
+   "kind": "coach",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 16,
+    "W": 2.334,
+    "H": 2.799
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 8999,
+    "glass0": 992,
+    "kit1": 5902,
+    "glass1": 736,
+    "far": 2250
+   },
+   "file": "railcar.glb",
+   "bytes": 335992
+  },
+  {
+   "id": "boxcar",
+   "kind": "wagon",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 12,
+    "W": 2.935,
+    "H": 2.841
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 4330,
+    "kit1": 3502,
+    "far": 1048
+   },
+   "file": "boxcar.glb",
+   "bytes": 243440
+  },
+  {
+   "id": "a320",
+   "kind": "plane",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 28,
+    "W": 25.282,
+    "H": 8.732
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 9000,
+    "kit1": 4310,
+    "far": 2243
+   },
+   "file": "a320.glb",
+   "bytes": 267272
+  },
+  {
+   "id": "heli",
+   "kind": "heli",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 12,
+    "W": 4.328,
+    "H": 5.036
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": [
+    0.424,
+    3.426,
+    2.35
+   ],
+   "tris": {
+    "kit0": 5412,
+    "kit1": 965,
+    "far": 1994,
+    "rotor": 648
+   },
+   "file": "heli.glb",
+   "bytes": 120532
+  },
+  {
+   "id": "rowboat",
+   "kind": "boat",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 3.6,
+    "W": 1.4,
+    "H": 1.18
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 7028,
+    "kit1": 1262,
+    "far": 769
+   },
+   "file": "rowboat.glb",
+   "bytes": 139528
+  },
+  {
+   "id": "motorboat",
+   "kind": "boat",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 6,
+    "W": 2,
+    "H": 1.313
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 1192,
+    "kit1": 405,
+    "far": 800
+   },
+   "file": "motorboat.glb",
+   "bytes": 42516
+  },
+  {
+   "id": "yacht",
+   "kind": "ferry",
+   "style": null,
+   "tint": false,
+   "dims": {
+    "L": 14,
+    "W": 4.248,
+    "H": 3.15
+   },
+   "wheelR": 0.32,
+   "wheelsAt": [],
+   "headAt": [],
+   "beamAt": null,
+   "rotorAt": null,
+   "tris": {
+    "kit0": 5298,
+    "kit1": 3588,
+    "far": 1656
+   },
+   "file": "yacht.glb",
+   "bytes": 215320
+  }
+ ]
+}

@@ -60,6 +60,8 @@ export interface FounderSave {
   bag?: { name: string; from: string; day: number; food?: boolean; ticket?: boolean; gift?: number }[];
   /** V2: what the Founder wears (bought in the shops) */
   style?: { top?: string; coat?: string; legs?: string; shoes?: string; scarf?: string };
+  /** V2 (Milestone 9): the character the Founder chose to be (gfx/people.ts; null: the code-built figure) */
+  figure?: string | null;
   /** V2 (Milestone 6): shifts worked, by job (src/player/shifts.ts) */
   jobs?: unknown;
 }
