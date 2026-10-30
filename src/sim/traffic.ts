@@ -427,6 +427,16 @@ export const Traffic = {
   sources: [] as ((foot: (o: any) => void) => void)[],
   /** a driver held up by the Founder sounds the horn (the client plays it) */
   onHonk: null as ((who: any) => void) | null,
+  /** V2: is a spot (V1 px) in the player's view? (set by the client from its camera; null headless) */
+  seen: null as ((x: number, y: number) => boolean) | null,
+
+  /** V2: gridlock relief is due for a vehicle at (x, y) stuck for `stuckT` s against a limit of `after`. Not while the
+   *  player is looking at it (a stuck car left the road the instant relief came, vanishing in front of them), unless
+   *  it has been stuck four times as long */
+  reliefDue(stuckT: number, after: number, x: number, y: number): boolean {
+    if (stuckT <= after) return false;
+    return stuckT > after * 4 || !Traffic.seen?.(x, y);
+  },
 
   /**
    * Index every road user where they stood after the last tick. `life` is the

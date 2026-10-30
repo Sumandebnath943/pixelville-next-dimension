@@ -68,7 +68,7 @@ function paletteTip(key: string): string {
     police: 'answers crimes, crashes & disputes', fire: 'douses fires before ruin', school: 'kids enroll on weekdays',
     college: 'jobless adults study here', hospital: 'catches the unwell', courthouse: 'trials & stronger convictions',
     bank: 'founders can take business loans', townhall: "the mayor's office", busstop: 'two stops start a bus line',
-    trainstation: 'two railed stations start trains', taxistand: 'cabs for the car-less', dock: 'boats, ferries & waterfront work',
+    trainstation: 'two railed stations start trains', taxistand: 'cabs for the car-less', carpark: 'nine bays: visitors park here when a place is full', dock: 'boats, ferries & waterfront work',
     watertower: 'clean water (drought insurance)', powerplant: 'electric light for the town', park: 'free fun, happier neighbours',
     casino: 'the house usually wins', exchange: 'the five tickers get a floor', tvstation: 'news travels town-wide instantly',
     farm: 'the village grows what it eats', airport: 'planes bring extra visitors',

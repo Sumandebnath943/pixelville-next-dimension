@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#0d1117" />
-    <title>PixelVille â€” Next Dimension</title>
+    <title>PixelVille — Next Dimension</title>
     <meta name="description" content="The living village sim, now in 3D: walk, drive and build a village whose people think, remember and vote." />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -90,16 +90,16 @@
             <span class="stat" title="Combined household wealth"><svg><use href="#i-coins" /></svg><b id="stat-wealth">$0</b></span>
             <span class="stat" title="Town safety"><svg><use href="#i-shield" /></svg><b id="stat-safe">92%</b></span>
             <span class="stat" title="Happiness"><svg><use href="#i-smile" /></svg><b id="stat-hap">100%</b></span>
-            <button class="chip" id="stat-leader" title="Village leadership â€” open the mayor's report"><svg><use href="#i-hall" /></svg><span id="stat-leader-text">Self-governing</span></button>
+            <button class="chip" id="stat-leader" title="Village leadership — open the mayor's report"><svg><use href="#i-hall" /></svg><span id="stat-leader-text">Self-governing</span></button>
           </span>
           <span class="tb-sep"></span>
           <span id="speed" class="seg" title="Game speed (fast-forward in the Planner)">
-            <button data-s="0" title="Pause (Space in the Planner)"><svg><use href="#i-pause" /></svg></button><button data-s="1" title="Normal speed">1Ã—</button><button data-s="2" title="2Ã— (Planner)">2Ã—</button><button data-s="3" title="4Ã— (Planner)">4Ã—</button><button data-s="4" title="8Ã— (Planner)">8Ã—</button>
+            <button data-s="0" title="Pause (Space in the Planner)"><svg><use href="#i-pause" /></svg></button><button data-s="1" title="Normal speed">1×</button><button data-s="2" title="2× (Planner)">2×</button><button data-s="3" title="4× (Planner)">4×</button><button data-s="4" title="8× (Planner)">8×</button>
           </span>
           <span id="filebtns">
-            <button class="ib" id="btn-phone" title="Phone â€” map, wallet, news (Tab)"><svg><use href="#i-phone" /></svg></button>
-            <button class="ib" id="btn-planner" title="Planner â€” rise up and build (P)"><svg><use href="#i-crane" /></svg></button>
-            <button class="ib" id="btn-god" title="God view â€” see the village clearly through storm, mist and fog (G)"><svg><use href="#i-godeye" /></svg></button>
+            <button class="ib" id="btn-phone" title="Phone — map, wallet, news (Tab)"><svg><use href="#i-phone" /></svg></button>
+            <button class="ib" id="btn-planner" title="Planner — rise up and build (P)"><svg><use href="#i-crane" /></svg></button>
+            <button class="ib" id="btn-god" title="God view — see the village clearly through storm, mist and fog (G)"><svg><use href="#i-godeye" /></svg></button>
             <button class="ib" id="btn-journal" title="Task book & village news (J)"><svg><use href="#i-book" /></svg><span id="journal-badge"></span></button>
             <button class="ib" id="btn-stats" title="Village history"><svg><use href="#i-chart" /></svg></button>
             <button class="ib" id="btn-menu" title="Menu"><svg><use href="#i-menu" /></svg></button>
@@ -135,7 +135,7 @@
         </div>
         <div id="tk-log"></div>
         <div id="tk-topics"></div>
-        <form id="tk-form"><input id="tk-input" maxlength="300" placeholder="Say somethingâ€¦" autocomplete="off" /><button class="primary" type="submit">Say</button></form>
+        <form id="tk-form"><input id="tk-input" maxlength="300" placeholder="Say something…" autocomplete="off" /><button class="primary" type="submit">Say</button></form>
         <p id="tk-mode"></p>
       </div>
       <div id="streethud">
@@ -155,10 +155,10 @@
       <div id="info" class="glass"></div>
       <div id="toasts"></div>
       <div id="subs" aria-live="polite"></div>
-      <div id="wanted" class="glass" title="Wanted â€” stay out of sight and a star drops"><span id="stars"></span><i class="gauge"><b id="escape"></b></i></div>
+      <div id="wanted" class="glass" title="Wanted — stay out of sight and a star drops"><span id="stars"></span><i class="gauge"><b id="escape"></b></i></div>
       <!-- Milestone 6: the shift you're working, and the marker over what to do next -->
       <div id="shift" class="glass">
-        <div class="sh-head"><span id="sh-ico"></span><span class="sh-who"><b id="sh-title"></b><small id="sh-place"></small></span><button class="ib" id="sh-end" title="Clock off â€” end the shift and get paid"><svg><use href="#i-close" /></svg></button></div>
+        <div class="sh-head"><span id="sh-ico"></span><span class="sh-who"><b id="sh-title"></b><small id="sh-place"></small></span><button class="ib" id="sh-end" title="Clock off — end the shift and get paid"><svg><use href="#i-close" /></svg></button></div>
         <div id="sh-obj"></div>
         <div id="sh-sub"></div>
         <i class="gauge" id="sh-gauge"><b id="sh-bar"></b></i>
@@ -168,14 +168,14 @@
       <div id="shift-mark"></div>
 
       <div id="sc-panel">
-        <div id="tv" class="glass" title="PVTV â€” the village news channel">
+        <div id="tv" class="glass" title="PVTV — the village news channel">
           <div id="tv-head"><span><svg><use href="#i-tv" /></svg>PVTV</span><span class="tv-live"><i></i>Live</span></div>
-          <div id="tv-headline">PVTV signs on â€” good morning!</div>
-          <div id="tv-ticker"><span id="tv-ticker-text">PVTV Â· village news &amp; markets</span></div>
+          <div id="tv-headline">PVTV signs on — good morning!</div>
+          <div id="tv-ticker"><span id="tv-ticker-text">PVTV · village news &amp; markets</span></div>
         </div>
         <div id="mapwrap" class="glass">
           <canvas id="minimap" width="256" height="256" title="Click for directions there (in the Planner: fly there)"></canvas>
-          <div id="rci" title="Demand: Residential Â· Commercial Â· Industrial (jobs)">
+          <div id="rci" title="Demand: Residential · Commercial · Industrial (jobs)">
             <div class="rci-col"><div class="rci-track"><i id="rci-r"></i></div><b>R</b></div>
             <div class="rci-col"><div class="rci-track"><i id="rci-c"></i></div><b>C</b></div>
             <div class="rci-col"><div class="rci-track"><i id="rci-i"></i></div><b>I</b></div>
@@ -193,14 +193,14 @@
         <div id="stick"><i></i></div>
         <div id="lookpad"></div>
         <div id="tbtns">
-          <button data-a="jump" title="Jump">â¤’</button>
+          <button data-a="jump" title="Jump">⤒</button>
           <button data-a="interact" title="Interact">E</button>
           <button data-a="vehicle" title="Car"><svg><use href="#i-car" /></svg></button>
           <button data-a="camera" title="Camera"><svg><use href="#i-eye" /></svg></button>
           <button data-a="planner" title="Planner"><svg><use href="#i-crane" /></svg></button>
           <button data-hold="run" title="Run">Run</button>
-          <button data-hold="climb" class="t-fly" title="Climb (nose up)">â–²</button>
-          <button data-hold="dive" class="t-fly" title="Descend (nose down)">â–¼</button>
+          <button data-hold="climb" class="t-fly" title="Climb (nose up)">▲</button>
+          <button data-hold="dive" class="t-fly" title="Descend (nose down)">▼</button>
         </div>
       </div>
     </div>
@@ -213,7 +213,7 @@
       <button id="tour-btn" class="primary"></button>
     </div>
     <div id="tour-ring"></div>
-    <div id="rotate"><i>ðŸ“±</i><b>Turn your phone sideways</b><span>The village is wide: PixelVille plays in landscape.</span></div>
+    <div id="rotate"><i>📱</i><b>Turn your phone sideways</b><span>The village is wide: PixelVille plays in landscape.</span></div>
 
     <div id="modals">
       <div id="settings" class="modal"><div class="modal-card glass">
@@ -222,7 +222,7 @@
         <section class="set-pane on" data-pane="village">
           <div class="set-row"><label for="set-name">Name</label><input id="set-name" maxlength="24" spellcheck="false" /></div>
           <div class="set-row"><label for="set-pace">Growth pace</label><select id="set-pace">
-            <option value="cozy">Cozy â€” slow and steady</option><option value="normal">Normal</option><option value="bustling">Bustling â€” fast growth</option></select></div>
+            <option value="cozy">Cozy — slow and steady</option><option value="normal">Normal</option><option value="bustling">Bustling — fast growth</option></select></div>
           <div class="set-row"><label for="set-xmas">Christmas fast-forward lock</label><select id="set-xmas">
             <option value="eve">Only Christmas Eve &amp; Day</option><option value="season">The whole festive week</option><option value="off">Never lock</option></select></div>
           <div class="set-row"><label for="set-autosave">Autosave</label><select id="set-autosave">
@@ -233,18 +233,18 @@
         </section>
         <section class="set-pane" data-pane="graphics">
           <div class="set-row"><label for="set-quality">Quality</label><select id="set-quality">
-            <option value="auto">Auto (picked for this device)</option><option value="low">Low â€” phones, older laptops</option><option value="medium">Medium â€” laptops</option><option value="high">High â€” gaming PCs</option><option value="ultra">Ultra â€” High, plus every small shadow and full reflections</option></select></div>
+            <option value="auto">Auto (picked for this device)</option><option value="low">Low — phones, older laptops</option><option value="medium">Medium — laptops</option><option value="high">High — gaming PCs</option><option value="ultra">Ultra — High, plus every small shadow and full reflections</option></select></div>
           <div class="set-row"><label for="set-res">Resolution</label><select id="set-res">
-            <option value="auto">Auto â€” lowers itself to keep the game smooth</option><option value="1">Full</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.55">55%</option></select></div>
+            <option value="auto">Auto — lowers itself to keep the game smooth</option><option value="1">Full</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.55">55%</option></select></div>
           <div class="set-row"><label for="set-fps">Frame rate</label><select id="set-fps">
-            <option value="0">As fast as it goes</option><option value="30">30 fps â€” saves battery</option></select></div>
+            <option value="0">As fast as it goes</option><option value="30">30 fps — saves battery</option></select></div>
           <div class="set-row"><label for="set-fov">Field of view</label><input id="set-fov" type="range" min="55" max="95" step="1" /></div>
           <p class="note" id="set-gfx-note">Quality applies after a reload; the rest at once.</p>
         </section>
         <section class="set-pane" data-pane="controls">
           <div class="set-row"><label for="set-sens">Look sensitivity</label><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" /></div>
           <div class="set-row"><label for="set-invert">Invert look up/down</label><input id="set-invert" type="checkbox" class="toggle" /></div>
-          <h2>Keys <small>click one, then press the new key Â· Esc cancels</small></h2>
+          <h2>Keys <small>click one, then press the new key · Esc cancels</small></h2>
           <div id="set-keys"></div>
           <div class="row-end split"><span class="note" id="set-keys-note"></span><button id="set-keys-reset">Reset to the defaults</button></div>
           <p class="note">A gamepad works as it is: sticks to move and look, <kbd>A</kbd> jump, <kbd>X</kbd> use, <kbd>Y</kbd> vehicle, triggers to drive, <kbd>View</kbd> phone, <kbd>Menu</kbd> Planner, and the d-pad and <kbd>A</kbd> through every menu (<kbd>B</kbd> backs out).</p>
@@ -253,9 +253,9 @@
           <div class="set-row"><label for="set-ui">Interface size</label><select id="set-ui">
             <option value="0.85">Compact</option><option value="1">Standard</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></div>
           <div class="set-row"><label for="set-subs">Subtitles</label><select id="set-subs">
-            <option value="off">Off</option><option value="speech">What people say in the street</option><option value="all">Speech and sounds (horns, sirens, thunderâ€¦)</option></select></div>
+            <option value="off">Off</option><option value="speech">What people say in the street</option><option value="all">Speech and sounds (horns, sirens, thunder…)</option></select></div>
           <div class="set-row"><label for="set-cv">Colour vision</label><select id="set-cv">
-            <option value="standard">Standard</option><option value="redgreen">Redâ€“green safe (blue and orange)</option><option value="blueyellow">Blueâ€“yellow safe (teal and pink)</option></select></div>
+            <option value="standard">Standard</option><option value="redgreen">Red–green safe (blue and orange)</option><option value="blueyellow">Blue–yellow safe (teal and pink)</option></select></div>
           <div class="set-row"><label for="set-shake">Camera shake (earthquakes, crashes)</label><input id="set-shake" type="checkbox" class="toggle" /></div>
           <div class="set-row"><label for="set-bob">Head bob when walking in first person</label><input id="set-bob" type="checkbox" class="toggle" /></div>
           <div class="set-row"><label for="set-calm">Reduce motion (no flashes, sliding panels or scrolling ticker)</label><input id="set-calm" type="checkbox" class="toggle" /></div>
@@ -278,10 +278,10 @@
         <header class="m-head"><h1>Found a new village</h1><button class="ib" data-close="newmap" title="Close"><svg><use href="#i-close" /></svg></button></header>
         <div class="set-row"><label for="nm-name">Village name</label><input id="nm-name" maxlength="24" spellcheck="false" value="PixelVille" /></div>
         <div class="set-row"><label for="nm-mode">Mode</label><select id="nm-mode">
-          <option value="sandbox">Sandbox â€” no goals, just life</option>
-          <option value="first100">The First Hundred â€” reach 100 residents</option>
-          <option value="railage">The Rail Age â€” get trains running</option>
-          <option value="festive">A Year Without Loss â€” 28 days, no building lost</option></select></div>
+          <option value="sandbox">Sandbox — no goals, just life</option>
+          <option value="first100">The First Hundred — reach 100 residents</option>
+          <option value="railage">The Rail Age — get trains running</option>
+          <option value="festive">A Year Without Loss — 28 days, no building lost</option></select></div>
         <div class="set-row"><label>You</label><div class="seg fig-sex" id="nm-sex"><button data-f="0" class="on">A man</button><button data-f="1">A woman</button></div></div>
         <div class="fig-faces" id="nm-faces"></div>
         <p class="note">The current village is left as it is in your save slots; autosave moves on to the new one.</p>
@@ -291,14 +291,14 @@
       <!-- V2 (Milestone 9): who made the models (filled from models/credits.json) -->
       <div id="creditsui" class="modal"><div class="modal-card glass wide">
         <header class="m-head"><h1>Credits</h1><button class="ib" data-close="creditsui" title="Close"><svg><use href="#i-close" /></svg></button></header>
-        <div id="cr-body" class="credits"><p class="note">Loadingâ€¦</p></div>
+        <div id="cr-body" class="credits"><p class="note">Loading…</p></div>
         <div class="row-end"><button class="primary" data-close="creditsui">Close</button></div>
       </div></div>
 
       <!-- V2 (Milestone 9): who the Founder is -->
       <div id="figureui" class="modal"><div class="modal-card glass">
         <header class="m-head"><h1>Your look</h1><button class="ib" data-close="figureui" title="Close"><svg><use href="#i-close" /></svg></button></header>
-        <p class="note">Who the Founder is. The clothes you've bought, the hat and the scarf stay as they are.</p>
+        <p class="note">Who the Founder is. The clothes you've bought and the scarf stay as they are.</p>
         <div class="set-row"><label>You</label><div class="seg fig-sex" id="fg-sex"><button data-f="0" class="on">A man</button><button data-f="1">A woman</button></div></div>
         <div class="fig-faces" id="fg-faces"></div>
         <div class="row-end"><button class="primary" data-close="figureui">Done</button></div>
@@ -338,45 +338,45 @@
       </div></div>
 
       <div id="help" class="modal"><div class="modal-card glass wide help-card">
-        <header class="m-head"><h1><img class="help-logo" src="/logo.svg" alt="PixelVille â€” Next Dimension" /></h1><button class="ib" data-close="help" title="Close"><svg><use href="#i-close" /></svg></button></header>
+        <header class="m-head"><h1><img class="help-logo" src="/logo.svg" alt="PixelVille — Next Dimension" /></h1><button class="ib" data-close="help" title="Close"><svg><use href="#i-close" /></svg></button></header>
         <p class="lede">You are <b>the Founder</b>: walk your village at street level, drive its roads, and rise into the sky to build. <b>The village figures out the rest</b>: families move in, find work, fall in love, vote, gossip and remember.</p>
         <!-- Milestone 8: the controls at a glance, as keycaps -->
         <div class="ctl-board">
           <div class="ctl-group"><h4>Move</h4>
             <div class="ctl-wasd"><kbd class="cap" data-k="forward">W</kbd><kbd class="cap" data-k="left">A</kbd><kbd class="cap" data-k="back">S</kbd><kbd class="cap" data-k="right">D</kbd></div>
-            <p><kbd class="cap" data-k="run">Shift</kbd> run Â· <kbd class="cap" data-k="jump">Space</kbd> jump</p></div>
+            <p><kbd class="cap" data-k="run">Shift</kbd> run · <kbd class="cap" data-k="jump">Space</kbd> jump</p></div>
           <div class="ctl-group"><h4>Look</h4>
             <div class="ctl-mouse"><i></i></div>
-            <p>Click the view, then move the mouse Â· <kbd class="cap" data-k="camera">V</kbd> first or third person</p></div>
+            <p>Click the view, then move the mouse · <kbd class="cap" data-k="camera">V</kbd> first or third person</p></div>
           <div class="ctl-group"><h4>Do</h4>
             <p><kbd class="cap big" data-k="interact">E</kbd> talk, go in, use, hire a bike</p>
             <p><kbd class="cap big" data-k="vehicle">F</kbd> get in or out (your car waits at the Lodge)</p></div>
           <div class="ctl-group"><h4>Drive</h4>
-            <p><kbd class="cap" data-k="forward">W</kbd> gas Â· <kbd class="cap" data-k="back">S</kbd> brake Â· <kbd class="cap" data-k="left">A</kbd><kbd class="cap" data-k="right">D</kbd> steer Â· <kbd class="cap" data-k="jump">Space</kbd> handbrake</p>
+            <p><kbd class="cap" data-k="forward">W</kbd> gas · <kbd class="cap" data-k="back">S</kbd> brake · <kbd class="cap" data-k="left">A</kbd><kbd class="cap" data-k="right">D</kbd> steer · <kbd class="cap" data-k="jump">Space</kbd> handbrake</p>
             <p class="dim">Keep right, mind the lights: the road cameras write tickets</p></div>
           <div class="ctl-group"><h4>Build</h4>
             <p><kbd class="cap big" data-k="planner">P</kbd> rise into the Planner and back down</p>
             <p class="dim">Pick from the palette, click to place, <kbd class="cap" data-k="rotate">R</kbd> turns the door</p></div>
           <div class="ctl-group"><h4>More</h4>
-            <p><kbd class="cap" data-k="phone">Tab</kbd> phone Â· <kbd class="cap" data-k="photo">F2</kbd> photo mode Â· <kbd class="cap">F1</kbd> this sheet</p></div>
+            <p><kbd class="cap" data-k="phone">Tab</kbd> phone · <kbd class="cap" data-k="photo">F2</kbd> photo mode · <kbd class="cap">F1</kbd> this sheet</p></div>
         </div>
         <div class="help-grid">
           <div><h3>On the street</h3>
-            <p><kbd data-k="forward">W</kbd><kbd data-k="left">A</kbd><kbd data-k="back">S</kbd><kbd data-k="right">D</kbd> move Â· <kbd data-k="run">Shift</kbd> run Â· <kbd data-k="jump">Space</kbd> jump Â· mouse to look (click the view first)<br />
-            <kbd data-k="camera">V</kbd> first or third person Â· <kbd data-k="interact">E</kbd> a building or villager nearby<br />
-            <kbd data-k="vehicle">F</kbd> into or out of your car (parked at the Lodge) Â· <kbd data-k="forward">W</kbd>/<kbd data-k="back">S</kbd> gas and brake Â· <kbd data-k="jump">Space</kbd> handbrake<br />
+            <p><kbd data-k="forward">W</kbd><kbd data-k="left">A</kbd><kbd data-k="back">S</kbd><kbd data-k="right">D</kbd> move · <kbd data-k="run">Shift</kbd> run · <kbd data-k="jump">Space</kbd> jump · mouse to look (click the view first)<br />
+            <kbd data-k="camera">V</kbd> first or third person · <kbd data-k="interact">E</kbd> a building or villager nearby<br />
+            <kbd data-k="vehicle">F</kbd> into or out of your car (parked at the Lodge) · <kbd data-k="forward">W</kbd>/<kbd data-k="back">S</kbd> gas and brake · <kbd data-k="jump">Space</kbd> handbrake<br />
             <kbd data-k="phone">Tab</kbd> your phone: map and directions, wallet, news, tasks, camera<br />
             <kbd data-k="photo">F2</kbd> photo mode: the world pauses, the camera flies free (lens, focus, looks, another hour or weather); <kbd>Enter</kbd> saves a PNG</p></div>
           <div><h3>The Planner</h3>
-            <p><kbd data-k="planner">P</kbd> rise into the Planner and back down Â· <kbd data-k="forward">W</kbd><kbd data-k="left">A</kbd><kbd data-k="back">S</kbd><kbd data-k="right">D</kbd> glide Â· wheel zoom Â· <kbd data-k="descend">Q</kbd>/<kbd data-k="climb">E</kbd> or right-drag to rotate<br />
-            Pick from the palette and click to place Â· <kbd data-k="rotate">R</kbd> turns the door side Â· drag roads, rails, rivers and the bulldozer<br />
-            Click any building or villager to inspect Â· right-click or <kbd>Esc</kbd> cancels Â· <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo Â· up to 8Ã— speed Â· Settings â†’ Controls changes any key<br />
+            <p><kbd data-k="planner">P</kbd> rise into the Planner and back down · <kbd data-k="forward">W</kbd><kbd data-k="left">A</kbd><kbd data-k="back">S</kbd><kbd data-k="right">D</kbd> glide · wheel zoom · <kbd data-k="descend">Q</kbd>/<kbd data-k="climb">E</kbd> or right-drag to rotate<br />
+            Pick from the palette and click to place · <kbd data-k="rotate">R</kbd> turns the door side · drag roads, rails, rivers and the bulldozer<br />
+            Click any building or villager to inspect · right-click or <kbd>Esc</kbd> cancels · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · up to 8× speed · Settings → Controls changes any key<br />
             <kbd data-k="god">G</kbd> god view: the view clears of storm, mist and fog (the weather goes on below); again to see the weather</p></div>
           <div><h3>Gamepad and touch</h3>
-            <p>Sticks move and look Â· <kbd>A</kbd> jump Â· <kbd>X</kbd> use Â· <kbd>Y</kbd> vehicle Â· <kbd>R3</kbd> camera Â· <kbd>LB</kbd> photo Â· <kbd>View</kbd> phone Â· <kbd>Menu</kbd> Planner Â· triggers drive. In any menu the d-pad moves, <kbd>A</kbd> presses, <kbd>B</kbd> backs out. In the Planner the ring in the middle is your cursor: <kbd>A</kbd> places, <kbd>LB</kbd> turns the palette's tabs, <kbd>X</kbd> pauses.<br />
-            On phones: left thumb moves, right thumb looks, buttons for the rest (â–²â–¼ climb and descend on the flight deck). In the Planner, drag to pan and pinch to zoom.</p></div>
+            <p>Sticks move and look · <kbd>A</kbd> jump · <kbd>X</kbd> use · <kbd>Y</kbd> vehicle · <kbd>R3</kbd> camera · <kbd>LB</kbd> photo · <kbd>View</kbd> phone · <kbd>Menu</kbd> Planner · triggers drive. In any menu the d-pad moves, <kbd>A</kbd> presses, <kbd>B</kbd> backs out. In the Planner the ring in the middle is your cursor: <kbd>A</kbd> places, <kbd>LB</kbd> turns the palette's tabs, <kbd>X</kbd> pauses.<br />
+            On phones: left thumb moves, right thumb looks, buttons for the rest (▲▼ climb and descend on the flight deck). In the Planner, drag to pan and pinch to zoom.</p></div>
           <div><h3>Work shifts</h3>
-            <p>The phone's <b>Jobs</b> app (or a workplace's card) starts a shift: firefighter, police, paramedic, taxi, bus, delivery, train driver, pilot, electrician, builder, shop or cafÃ©, PVTV reporter, farmer.<br />
+            <p>The phone's <b>Jobs</b> app (or a workplace's card) starts a shift: firefighter, police, paramedic, taxi, bus, delivery, train driver, pilot, electrician, builder, shop or café, PVTV reporter, farmer.<br />
             The card top left says what to do; a tag marks where. <kbd data-k="interact">E</kbd> does the work, <kbd data-k="vehicle">F</kbd> takes the work vehicle. In a cab or a cockpit: <kbd data-k="forward">W</kbd>/<kbd data-k="back">S</kbd> power and brake, <kbd data-k="climb">E</kbd>/<kbd data-k="descend">Q</kbd> climb and descend. Clock off for your pay.</p></div>
           <div><h3>Getting started</h3>
             <p>Open the Planner and drop a <b>house</b> near the highway: a road connects itself and the first family moves in. Add jobs, shops and a school, then come back down and watch the morning commute.</p></div>
@@ -401,7 +401,7 @@
       <div class="pm-chips" id="pm-wx"></div>
       <p class="pm-note" id="pm-saved"></p>
       <div class="pm-actions"><button id="pm-hide">Hide <kbd>H</kbd></button><button class="primary" id="pm-shoot"><svg><use href="#i-camera" /></svg>Save photo <kbd>Enter</kbd></button></div>
-      <p class="pm-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move Â· <kbd>E</kbd>/<kbd>Q</kbd> up, down Â· <kbd>Shift</kbd> faster Â· drag to look Â· wheel zooms Â· <kbd>Esc</kbd> leaves</p>
+      <p class="pm-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>E</kbd>/<kbd>Q</kbd> up, down · <kbd>Shift</kbd> faster · drag to look · wheel zooms · <kbd>Esc</kbd> leaves</p>
     </div>
     <!-- V2: Auto village: the watching panel (season, weather, festival, pace) and the build in progress -->
     <div id="auto" class="glass" aria-label="Auto village">
@@ -414,7 +414,7 @@
       <div class="pm-chips" id="au-fest"></div>
       <div class="pm-sec">Pace</div>
       <div class="pm-chips" id="au-speed"></div>
-      <p class="pm-note">Drag to turn the view Â· wheel to come closer Â· <kbd>H</kbd> hides this</p>
+      <p class="pm-note">Drag to turn the view · wheel to come closer · <kbd>H</kbd> hides this</p>
       <div class="pm-actions"><button id="au-view"><svg><use href="#i-camera" /></svg>Another view</button><button id="au-new"><svg><use href="#i-sprout" /></svg>New village</button></div>
       <button class="primary" id="au-play"><svg><use href="#i-home" /></svg>Play this village</button>
     </div>
@@ -422,10 +422,10 @@
     <!-- V2: the graphics card reset: say so (the picture used to just freeze) and offer the way back -->
     <div id="gpu-lost" role="alertdialog" aria-labelledby="gpu-lost-title"><div class="glass">
       <b id="gpu-lost-title">The graphics card needed a rest</b>
-      <p>It ran short of memory and reset, so the picture stopped. Your village is saved â€” reload to carry on (the next load uses lighter graphics).</p>
+      <p>It ran short of memory and reset, so the picture stopped. Your village is saved — reload to carry on (the next load uses lighter graphics).</p>
       <button class="primary" id="gpu-reload">Reload</button>
     </div></div>
-    <div id="au-build"><div class="glass"><b id="au-build-title">Building an auto village</b><span id="au-build-text">Laying out the streetsâ€¦</span></div></div>
+    <div id="au-build"><div class="glass"><b id="au-build-title">Building an auto village</b><span id="au-build-text">Laying out the streets…</span></div></div>
     <div id="flash"></div>
     <div id="fade"></div>
     <div id="curtain">
@@ -461,11 +461,11 @@
         <i style="left: 94%; --dx: 3vw; animation-duration: 19s; animation-delay: -11s"></i>
       </div>
       <div class="ld-shade"></div>
-      <header class="ld-top"><img class="ld-logo" src="/logo.svg" alt="PixelVille â€” Next Dimension" /></header>
+      <header class="ld-top"><img class="ld-logo" src="/logo.svg" alt="PixelVille — Next Dimension" /></header>
       <section class="ld-panel">
         <div class="ld-status">
           <span class="ld-kicker" id="loading-village">Waking the village</span>
-          <p id="loading-text" aria-live="polite">Raising the villageâ€¦</p>
+          <p id="loading-text" aria-live="polite">Raising the village…</p>
         </div>
         <b class="ld-pct"><span id="loading-pct">0</span><small>%</small></b>
         <div class="ld-stages" id="loading-track" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -486,7 +486,7 @@
           <div class="ld-rescue-btns">
             <button class="primary" id="ld-again">Open it again</button>
             <button id="ld-light">Open it with lighter graphics</button>
-            <button id="ld-fresh">Start a new village <small>(this one is kept: Menu â†’ Load village)</small></button>
+            <button id="ld-fresh">Start a new village <small>(this one is kept: Menu → Load village)</small></button>
           </div>
         </div>
       </section>
@@ -498,28 +498,32 @@
          quiet list, and a "live" mark saying the flight behind is the village as it is right now -->
     <div id="landing">
       <div class="la-shade"></div>
-      <div class="la-panel">
-        <img class="la-logo" src="/logo.svg" alt="PixelVille â€” Next Dimension" />
-        <section class="la-village">
-          <span class="la-eyebrow" id="la-eyebrow">Your village</span>
-          <b id="la-name">PixelVille</b>
-          <span id="la-meta"></span>
-          <div class="la-stats" id="la-stats"></div>
-        </section>
-        <nav class="la-buttons" aria-label="Main menu">
-          <button class="primary la-go" id="la-continue"><svg><use href="#i-home" /></svg><span>Continue</span><kbd>Enter</kbd><svg class="la-arrow"><use href="#i-back" /></svg></button>
-          <div class="la-list">
-            <button id="la-new"><svg><use href="#i-map" /></svg><span>Found a new village<small>Start again in an empty valley</small></span></button>
-            <button id="la-auto"><svg><use href="#i-sprout" /></svg><span>Auto village<small>A ready-made village to watch live and grow</small></span></button>
-            <button id="la-load"><svg><use href="#i-folder" /></svg><span>Load a village<small>Open a village you saved</small></span></button>
-            <button id="la-controls"><svg><use href="#i-help" /></svg><span>Controls<small>Keyboard, mouse, gamepad and touch</small></span></button>
-            <button id="la-settings"><svg><use href="#i-gear" /></svg><span>Settings<small>Graphics, sound and accessibility</small></span></button>
-            <button id="la-credits"><svg><use href="#i-star" /></svg><span>Credits<small>Who made the people, vehicles and animals</small></span></button>
-          </div>
-        </nav>
+      <div class="la-wrap">
+        <div class="la-panel">
+          <img class="la-logo" src="/logo.svg" alt="PixelVille — Next Dimension" />
+          <section class="la-card">
+            <div class="la-village">
+              <span class="la-eyebrow" id="la-eyebrow">Your village</span>
+              <b id="la-name">PixelVille</b>
+              <span id="la-meta"></span>
+              <div class="la-stats" id="la-stats"></div>
+            </div>
+            <button class="primary la-go" id="la-continue"><svg><use href="#i-home" /></svg><span>Continue</span><kbd>Enter</kbd><svg class="la-arrow"><use href="#i-back" /></svg></button>
+          </section>
+          <nav class="la-modes" aria-label="Start a village">
+            <button id="la-new"><svg><use href="#i-map" /></svg><b>New village</b><small>An empty valley, yours to found</small></button>
+            <button id="la-auto"><svg><use href="#i-sprout" /></svg><b>Auto village</b><small>A ready-made town, live</small></button>
+            <button id="la-load"><svg><use href="#i-folder" /></svg><b>Load</b><small>Open a village you saved</small></button>
+          </nav>
+          <nav class="la-util" aria-label="Options">
+            <button id="la-controls"><svg><use href="#i-help" /></svg>Controls</button>
+            <button id="la-settings"><svg><use href="#i-gear" /></svg>Settings</button>
+            <button id="la-credits"><svg><use href="#i-star" /></svg>Credits</button>
+          </nav>
+        </div>
       </div>
-      <div class="la-live"><i></i><span id="la-live">Live Â· the village right now</span></div>
-      <p class="la-foot">Milestone 8 Â· the village keeps living while you're away</p>
+      <div class="la-live"><i></i><span id="la-live">Live · the village right now</span></div>
+      <p class="la-foot">A living village · now in three dimensions</p>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -178,9 +178,26 @@ void main() {
       float rad = max(0.32, starPx * 0.9);
       col += tint * smoothstep(rad, 0.0, d) * (0.32 * 0.32) / (rad * rad) * (0.04 + mag * 0.5) * tw * stars * Fex;
     }
-    // faint milky band
-    float band = exp(-pow(dot(dir, normalize(vec3(0.3, 0.2, 1.0))) * 3.5, 2.0));
-    col += stars * vec3(0.004, 0.0045, 0.006) * band * (0.5 + 0.5 * sphereNoise(dir, 40.0));
+    // the Milky Way (V2: it was a band of blotchy noise that read as a smudge on the sky): a soft river of light with
+    // a brighter core, split by dark lanes of dust that run along it, and thick with faint stars
+    vec3 gN = normalize(vec3(0.3, 0.2, 1.0));
+    vec3 gA = normalize(cross(gN, vec3(0.0, 1.0, 0.0))), gB = cross(gN, gA);
+    float gu = atan(dot(dir, gB), dot(dir, gA)), gv = dot(dir, gN);
+    float gw = 0.15 + 0.045 * sin(gu * 2.0 + 1.3) + 0.025 * sin(gu * 5.0);
+    float band = exp(-gv * gv / (gw * gw));
+    float core = 1.0 + 1.3 * exp(-(gu - 0.6) * (gu - 0.6) * 2.5);
+    float lane = gv - 0.03 * sin(gu * 3.0) - 0.015 * sin(gu * 7.0 + 2.0);
+    float dust = 1.0 - 0.65 * exp(-lane * lane / (gw * gw * 0.07)) * smoothstep(-0.3, 0.7, sin(gu * 2.0 + 0.4));
+    float glow = band * core * dust;
+    col += stars * vec3(0.0022, 0.0024, 0.003) * glow * Fex;
+    vec3 gp = dir * 620.0, gc = floor(gp);
+    float gh = h12(gc.xy + gc.z * 53.0 + 7.0);
+    if (gh > 1.0 - 0.06 * glow) {
+      vec3 go = vec3(h12(gc.yz + 1.0), h12(gc.zx + 2.0), h12(gc.xy + 5.0)) - 0.5;
+      float gd = length(fract(gp) - 0.5 - go * 0.5);
+      float gr = max(0.32, starPx * (620.0 / 260.0) * 0.9);
+      col += mix(vec3(1.0, 0.9, 0.8), vec3(0.8, 0.88, 1.0), h12(gc.xz)) * smoothstep(gr, 0.0, gd) * (0.32 * 0.32) / (gr * gr) * 0.05 * stars * Fex;
+    }
   }
   // moon disc with maria, and its halo (V2: the discs are added last, over the sky's glow, behind the clouds)
   vec3 discs = vec3(0.0);

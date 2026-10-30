@@ -10,7 +10,7 @@ import { Settings } from '../sim/settings';
 import { Input } from '../input/input';
 import { heightAt, isWaterAt, treeSpot, postsNear } from '../render/terrain';
 import { drivewayCars, DrivewayCar } from '../render/parked';
-import { baySpot } from '../sim/parking';
+import { baySpot, bayCount } from '../sim/parking';
 import { CAT } from '../sim/catalog';
 import type { BuildingLayer } from '../render/buildings';
 import { emit, on } from '../sim/core';
@@ -184,7 +184,8 @@ export class Founder {
     if (this.hurtT > 6 && this.health < 100) this.health = Math.min(100, this.health + dt * 4);
   }
 
-  /* the Founder: a deep-violet coat, a gold scarf, a wide-brimmed hat */
+  /* the Founder: a deep-violet coat and a gold scarf (V2: the wide-brimmed hat is gone: it stood a hand above everyone
+     else's head and made the Founder look a giant) */
   private person!: Person;
   private ride: Ride | null = null;
   private lastCar = { speed: 0, yaw: 0 };
@@ -192,7 +193,6 @@ export class Founder {
   style: { top?: string; coat?: string; legs?: string; shoes?: string; scarf?: string } = {};
   /** V2: the day the Founder last had a cut or a shave (people notice, that day) */
   groomed = -1;
-  private hat: THREE.Group | null = null;
   private scarfMesh: THREE.Mesh | null = null;
   /** V2: put on something bought in a shop (the body is rebuilt in the new colours) */
   restyle(part: 'top' | 'coat' | 'legs' | 'shoes' | 'scarf', colour: string): void {
@@ -203,7 +203,7 @@ export class Founder {
   /** V2 (Milestone 9): who the Founder is: one of the modelled villagers' characters, chosen when the village is
    *  founded (or since, in Settings); null: the code-built figure (until the characters have loaded) */
   figure: string | null = DEFAULT_FIGURE;
-  /** wear another character (the clothes, hat and scarf carry over) */
+  /** wear another character (the clothes and scarf carry over) */
   setFigure(id: string | null): void {
     this.figure = id;
     setFounderRig(id);
@@ -217,17 +217,16 @@ export class Founder {
   private figureRig(): Rig | undefined {
     return this.figure ? castLoaded().find((r) => r.id === this.figure) : undefined;
   }
-  /** the Founder's figure in the clothes they wear, with the hat and the scarf on */
+  /** the Founder's figure in the clothes they wear, with the scarf on */
   private dressBody(): void {
     const c = (h: string): THREE.Color => new THREE.Color(h);
     const st = this.style;
     if (this.person) {
       this.mesh.remove(this.person.root);
-      if (this.hat) this.person.bones.head.remove(this.hat);
       if (this.scarfMesh) this.person.bones.neck.remove(this.scarfMesh);
     }
     const look = {
-      height: 1.83, build: 1.04, female: false, skin: c('#e0ac85'), hair: c('#3a2618'),
+      height: 1.78, build: 1, female: false, skin: c('#e0ac85'), hair: c('#3a2618'),
       top: c(st.top ?? st.coat ?? '#4a2a6a'), legs: c(st.legs ?? '#2a2238'), shoes: c(st.shoes ?? '#16121a'), longHair: false, longSleeves: true, skirt: false,
       coat: c(st.coat ?? st.top ?? '#4a2a6a'),
     };
@@ -238,25 +237,10 @@ export class Founder {
       : new Person(look);
     this.person.carriesUmbrella = false;
     this.mesh.add(this.person.root);
-    if (this.hat) this.person.bones.head.add(this.hat);
     if (this.scarfMesh) this.person.bones.neck.add(this.scarfMesh);
   }
   private buildBody(): void {
     this.dressBody();
-    const felt = surface(new THREE.MeshStandardMaterial({ color: 0x1e1a24, roughness: 0.75 }), { snow: 0.8, wet: 0.5 }, 'felt');
-    const gold = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.35, metalness: 0.6 });
-    const hat = new THREE.Group();
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.022, 28), felt);
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.125, 0.16, 24), felt);
-    crown.position.y = 0.085;
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.127, 0.127, 0.035, 24), gold);
-    band.position.y = 0.03;
-    hat.add(brim, crown, band);
-    hat.position.set(0, 0.185, 0.005);
-    hat.rotation.x = -0.05;
-    hat.traverse((o) => (o.castShadow = true));
-    this.person.bones.head.add(hat);
-    this.hat = hat;
     const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.066, 0.016, 8, 24), surface(new THREE.MeshStandardMaterial({ color: 0xb8902e, roughness: 0.9 }), { snow: 0.6, wet: 0.6 }, 'scarf'));
     scarf.rotation.x = Math.PI / 2;
     scarf.scale.set(1.15, 1, 0.95);
@@ -288,6 +272,13 @@ export class Founder {
       this.ride = new CarModel(t === 'police' ? 'estate' : 'sedan', col, t !== 'taxi', t);
     } else this.ride = v.kind === 'moto' ? new Moto(col) : new CarModel(v.style as CarStyle, col, true);
     this.carMesh.add(this.ride.root);
+  }
+
+  /** V2: the vehicle models arrived after the Founder was placed (a new village is founded before they finish
+   *  loading, and its Founder drove the old code-built car until the next load): redraw what was drawn without one */
+  refreshRide(): void {
+    if (this.ride instanceof CarModel && !this.ride.model) this.setRide(this.vehicle);
+    if (this.parkedRide instanceof CarModel && !this.parkedRide.model) this.showParked(this.fleet.cur);
   }
 
   /** draw (or stop drawing) the owned vehicle left standing while a stolen one is in hand */
@@ -552,7 +543,7 @@ export class Founder {
         this.seenB.add(b);
         for (const c of drivewayCars(b, this.driveCars)) if (capsule(p, r, c.x, c.z, c.yaw, 1.35, 0.92)) hit = true;
         this.driveCars.length = 0;
-        if (b.parked > 0 && !CAT[b.type]?.res) for (let k = 0; k < Math.min(4, b.parked); k++) {
+        if (b.parked > 0 && !CAT[b.type]?.res) for (let k = 0; k < Math.min(bayCount(b), b.parked); k++) {
           const s = baySpot(b, k);
           if (s && capsule(p, r, s.x, s.z, s.yaw, 1.35, 0.92)) hit = true;
         }
@@ -831,7 +822,8 @@ export class Founder {
     // knocked down: on the ground for a moment
     const mv = this.downT > 0 ? { x: 0, y: 0 } : Input.move();
     const run = Input.running();
-    const speed = run ? 7.2 : 3.2;
+    // (V2: a brisk walk and a real run: it walked at a jogger's 3.2 m/s and ran at 7.2, and its legs flailed to keep up)
+    const speed = run ? 6 : 2;
     const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw);
     const rx = -Math.cos(this.camYaw), rz = Math.sin(this.camYaw);
     const vx = (fx * mv.y + rx * mv.x) * speed, vz = (fz * mv.y + rz * mv.x) * speed;

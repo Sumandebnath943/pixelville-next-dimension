@@ -521,7 +521,7 @@ export const Life: any = {
       cab.prog += moved * cab.dir; // ~46 km/h
       // (V2: gridlock relief: a cab stuck for good is back at its rank for the next fare, any passenger dropped)
       cab.stuckT = moved > 0.002 ? 0 : (cab.stuckT || 0) + dt;
-      if (cab.stuckT > STUCK_RELIEF) {
+      if (Traffic.reliefDue(cab.stuckT, STUCK_RELIEF, cab.x, cab.y)) {
         cab.stuckT = 0; cab.pax = []; cab.returning = false; cab.dir = 1; cab.prog = 0; cab.pause = 4; cab.v = 0;
         const nr = this.pickTaxiRoute(cab.home, cab.standTile);
         if (nr) cab.route = nr;
@@ -609,7 +609,9 @@ export const Life: any = {
     return { x: x0 + u[0] * out - u[1] * k, y: y0 + u[1] * out + u[0] * k, yaw: Math.atan2(x0 - bx, y0 - by) };
   },
   /* a passenger hops off and wanders a few steps onto the pavement, then fades */
-  spawnAlighter(px: number, py: number, awayX: number, awayY: number, pax: any, speed = 12) {
+  // (V2: at a walk, 1.4 m/s: at 12 px/s they sprinted off in a straight line for thirty metres, through whatever stood
+  // in the way, buildings included)
+  spawnAlighter(px: number, py: number, awayX: number, awayY: number, pax: any, speed = 2.8) {
     if (this.alighters.length > 50 || !pax) return;
     if (World.isRail((px / T) | 0, (py / T) | 0)) return;   // never set foot on the tracks
     const m = Math.hypot(awayX, awayY) || 1;
@@ -624,9 +626,9 @@ export const Life: any = {
     if (this.alighters.length) {
       for (const a of this.alighters) {
         a.life -= dt; a.ph += dt * 7;
-        // step forward, but stop dead at the kerb — passengers never stray onto the rails
+        // step forward, but stop dead at the kerb — passengers never stray onto the rails (V2: nor into a building)
         const nx = a.x + a.vx * dt, ny = a.y + a.vy * dt;
-        if (World.isRail((nx / T) | 0, (ny / T) | 0)) { a.vx = 0; a.vy = 0; }
+        if (World.isRail((nx / T) | 0, (ny / T) | 0) || World.buildingAt((nx / T) | 0, (ny / T) | 0)) { a.vx = 0; a.vy = 0; }
         else { a.x = nx; a.y = ny; }
       }
       this.alighters = this.alighters.filter((a: any) => a.life > 0);
@@ -1775,7 +1777,7 @@ export const Life: any = {
       this.followPath(t, t.path, t.prog, Traffic.lanePx(t));
       // (V2: gridlock relief, as for the villagers' cars: stuck for good, the visitors give up and go home)
       t.stuckT = moved > 0.002 ? 0 : (t.stuckT || 0) + dt;
-      if (t.stuckT > STUCK_RELIEF) { t.done = true; if (t.phase === 'in') t.venue.visitors++; continue; }
+      if (Traffic.reliefDue(t.stuckT, STUCK_RELIEF, t.x, t.y)) { t.done = true; if (t.phase === 'in') t.venue.visitors++; continue; }
       if (t.prog >= t.path.length - 1) {
         if (t.phase === 'in') { t.phase = 'visit'; t.venue.visitors++; }
         // (V2: and away down the road beyond the edge, out of sight before it's gone)
@@ -1895,12 +1897,15 @@ export const Life: any = {
       const ltr = Math.random() < 0.5;
       const y = Math.random() * GH * T;
       const n = 3 + (Math.random() * 4 | 0);
+      // V2: a flock of one kind, at a height of its own
+      const kind = ['gull', 'gull', 'crow', 'pigeon'][Math.random() * 4 | 0], alt = 20 + Math.random() * 26;
       for (let i = 0; i < n; i++)
         this.birds.push({
           x: ltr ? -30 - i * 14 : GW * T + 30 + i * 14,
           y: y + (Math.random() * 30 - 15),
           vx: (ltr ? 1 : -1) * (30 + Math.random() * 14),
           ph: Math.random() * 7,
+          kind, alt,
         });
     }
     for (const b of this.birds) { b.x += b.vx * dt; b.ph += dt * 9; }

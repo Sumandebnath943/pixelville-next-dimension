@@ -100,8 +100,13 @@ const BEAMS = /* glsl */ `
     vec3 bl = -bd * inversesqrt(max(bdd, 1e-4));
     // what squarely faces the lamps (the back of the car ahead, a wall) is lit brightly, but eased off before it
     // burns out white
-    float bn = max(dot(pvN, bl), 0.0) * bI;
-    pvBeam += bl * (bI / (1.0 + bn / 2.0));
+    float bnl = max(dot(pvN, bl), 0.0);
+    float bk = bI / (1.0 + bnl * bI / 2.0);
+    // (V2: and never more than a lamp-lit wall shows at this exposure: a car's nose a metre or two from a wall, a
+    // person or the car ahead lit it many times white at night, a blinding patch. The road, which the beam grazes, is
+    // as before)
+    bk = min(bk, 4.0 / (uExposure * max(bnl, 0.02)));
+    pvBeam += bl * bk;
   }
   float pvBeamE = length(pvBeam);
   #ifdef PV_SOFTBEAM

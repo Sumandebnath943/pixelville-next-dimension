@@ -134,6 +134,18 @@ Traffic.onHonk = (who) => {
   Snd.at(who.x * 0.5, who.y * 0.5, 70, () => Snd.horn(1)); // (from where the driver is, quieter with distance)
   if (who.trip) { who.bubble = '😤'; who.bubbleUntil = performance.now() + 2500; }
 };
+// V2: what the player can see (gridlock relief waits until a stuck car is out of view: it vanished before their eyes)
+{
+  const fwd = new THREE.Vector3();
+  Traffic.seen = (x, y) => {
+    const cam = stage.camera, dx = x * 0.5 - cam.position.x, dz = y * 0.5 - cam.position.z, dy = 1 - cam.position.y;
+    const d = Math.hypot(dx, dy, dz);
+    if (d < 25) return true;
+    if (d > 220) return false;
+    cam.getWorldDirection(fwd);
+    return (dx * fwd.x + dy * fwd.y + dz * fwd.z) / d > 0.55;
+  };
+}
 const gps = new Gps();
 const arrows = new GpsArrows(stage.scene);
 
@@ -1029,6 +1041,8 @@ function runFrame(now: number): void {
   terrain.setPools(stage.lampK * (planner.active ? 0.075 : 0.05) / Math.max(0.6, stage.sky.exposure * 0.25));
   if (!inside) {
     guard('terrain', () => terrain.frame(stage.night, stage.camera.position));
+    // (V2: where the Founder is on foot or at the wheel, for the animals that shy away or take wing)
+    actors.player = planner.active ? null : { x: founder.pos.x, z: founder.pos.z, fast: founder.driving || founder.speedKmh > 12 };
     guard('actors', () => actors.update(dt, focus.x, focus.z, range, now, stage.night));
   }
   if (gps.dest && street) arrows.update(dt, gps.route, fx, fz, (x, z) => founder.groundAt(x, z), stage.sky.exposure, stage.night);
@@ -1559,6 +1573,7 @@ async function boot(): Promise<void> {
   step('Dressing the villagers…', 0.82);
   await models;
   founder.refreshFigure();
+  founder.refreshRide();
   step('Lighting the village…', 0.85);
   await yieldFrame();
   actors.prewarm(true);

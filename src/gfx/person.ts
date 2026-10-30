@@ -11,6 +11,7 @@
    pose for the rain.
    ============================================================ */
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { surface } from './surface';
 import { outfitMaterial, type Outfit } from './people';
 
@@ -300,6 +301,22 @@ function buildBody(l: Look): THREE.BufferGeometry {
 const HIP = [25, 21, 14, 6, -1, -7, -11, -4, 12, 22];
 const KNEE = [5, 16, 18, 11, 6, 8, 36, 60, 44, 14];
 const ANKLE = [0, -6, 2, 6, 9, 4, -16, -8, 1, 2];
+// V2: running, p = 0 foot strike: a short stance (about 40 %), then a flight phase; the knee folds right up in the swing
+const HIP_RUN = [30, 20, 6, -8, -14, -4, 16, 34, 44, 38];
+const KNEE_RUN = [22, 40, 30, 16, 26, 70, 104, 92, 56, 30];
+const ANKLE_RUN = [4, 14, 6, -14, -20, -6, 4, 8, 8, 6];
+/** V2: strides a second at `speed` m/s for someone `h` times 1.75 m tall. Walking, people take longer strides as well as
+ *  quicker ones as they speed up; running, the cadence hardly rises (about 170–190 steps a minute) and the stride
+ *  lengthens. (It used to be one fixed stride, so a run was a walk played at nearly three hundred steps a minute) */
+export function cadence(speed: number, h: number, runK: number): number {
+  const walk = speed / (h * (0.98 + 0.25 * Math.min(speed, 2.2)));
+  const run = 1.3 + 0.06 * speed;
+  return walk + (run - walk) * runK;
+}
+/** V2: how far into a run a gait at `speed` m/s is (0 walking … 1 running) */
+export function runOf(speed: number): number {
+  return THREE.MathUtils.smoothstep(speed, 2.1, 3.0);
+}
 function cyc(tab: number[], p: number): number {
   const n = tab.length;
   const x = (((p % 1) + 1) % 1) * n;
@@ -322,19 +339,73 @@ function materials(): THREE.Material[] {
   return MATS;
 }
 
-let UMBRELLA: THREE.Group | null = null;
-function umbrella(color: THREE.Color): THREE.Group {
-  if (!UMBRELLA) {
-    UMBRELLA = new THREE.Group();
-    const canopy = new THREE.ConeGeometry(0.52, 0.22, 8, 1, true);
-    canopy.translate(0, 0.86, 0);
-    const shaft = new THREE.CylinderGeometry(0.008, 0.008, 0.95, 5);
-    shaft.translate(0, 0.42, 0);
-    UMBRELLA.add(new THREE.Mesh(canopy), new THREE.Mesh(shaft, new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.3 })));
+/* V2: an umbrella as one is made (it was an open eight-sided cone on a stick): eight panels of fabric on a domed frame,
+   each sagging a little between its ribs and curving up between the rib tips at the rim, a ferrule on top, a steel
+   shaft and a hooked handle under the hand. Two groups of panels, so one can be two-tone like a golf umbrella */
+const RIBS = 8, CANOPY_R = 0.62, CANOPY_A = 0.96, RIM_Y = 0.66;
+function canopyGeo(): THREE.BufferGeometry {
+  const pos: number[] = [], idx: number[][] = [[], []];
+  const U = 6, V = 9, rib = (a: number, v: number): THREE.Vector3 => {
+    const phi = v * CANOPY_A, r = CANOPY_R * Math.sin(phi);
+    return new THREE.Vector3(r * Math.cos(a), RIM_Y + CANOPY_R * (Math.cos(phi) - Math.cos(CANOPY_A)), r * Math.sin(a));
+  };
+  for (let k = 0; k < RIBS; k++) {
+    const a0 = (k / RIBS) * Math.PI * 2, a1 = ((k + 1) / RIBS) * Math.PI * 2, base = pos.length / 3;
+    for (let j = 0; j <= V; j++)
+      for (let i = 0; i <= U; i++) {
+        const u = i / U, v = j / V, bulge = Math.sin(Math.PI * u);
+        const p = rib(a0, v).lerp(rib(a1, v), u);
+        // the cloth sags in towards the shaft between the ribs, and the rim curves up between the tips
+        const r = Math.hypot(p.x, p.z), sag = 1 - 0.035 * bulge * v;
+        p.x *= sag; p.z *= sag;
+        p.y += 0.03 * bulge * v ** 3 - 0.012 * bulge * v * (1 - v) * (r > 0 ? 1 : 0);
+        pos.push(p.x, p.y, p.z);
+      }
+    const g = idx[k % 2];
+    for (let j = 0; j < V; j++)
+      for (let i = 0; i < U; i++) {
+        const a = base + j * (U + 1) + i, b = a + U + 1;
+        g.push(a, a + 1, b, a + 1, b + 1, b);
+      }
   }
-  const g = UMBRELLA.clone(true);
-  const m = surface(new THREE.MeshStandardMaterial({ color, roughness: 0.35, side: THREE.DoubleSide }), { snow: 0.8, wet: 0.1 }, 'umb');
-  (g.children[0] as THREE.Mesh).material = m;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex([...idx[0], ...idx[1]]);
+  geo.addGroup(0, idx[0].length, 0);
+  geo.addGroup(idx[0].length, idx[1].length, 1);
+  geo.computeVertexNormals();
+  return geo;
+}
+function frameGeo(): THREE.BufferGeometry {
+  const top = RIM_Y + CANOPY_R * (1 - Math.cos(CANOPY_A));
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(new THREE.CylinderGeometry(0.007, 0.007, top + 0.04, 6).translate(0, (top + 0.04) / 2 - 0.02, 0));
+  parts.push(new THREE.ConeGeometry(0.012, 0.07, 6).translate(0, top + 0.055, 0)); // the ferrule
+  parts.push(new THREE.CylinderGeometry(0.03, 0.03, 0.02, 10).translate(0, top - 0.005, 0)); // the top notch
+  for (let k = 0; k < RIBS; k++) {
+    const a = (k / RIBS) * Math.PI * 2, r = CANOPY_R * Math.sin(CANOPY_A);
+    parts.push(new THREE.SphereGeometry(0.009, 6, 4).translate(r * Math.cos(a), RIM_Y, r * Math.sin(a))); // the tips
+  }
+  // the hooked handle, under the hand
+  const hook = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.04, 0), new THREE.Vector3(0, -0.1, 0), new THREE.Vector3(0.012, -0.15, 0),
+    new THREE.Vector3(0.045, -0.172, 0), new THREE.Vector3(0.078, -0.155, 0), new THREE.Vector3(0.088, -0.12, 0),
+  ]);
+  parts.push(new THREE.TubeGeometry(hook, 16, 0.012, 6, false));
+  return mergeGeometries(parts.map((g) => g.toNonIndexed()))!;
+}
+const UMB_COLOURS: string[][] = [
+  ['#141416'], ['#141416'], ['#141416'], ['#1c2a44'], ['#5a1822'], ['#1f3a2a'], ['#8a7c62'], ['#a8262a'], ['#d8a820'],
+  ['#24508a'], ['#141416', '#e8e4da'], ['#a8262a', '#ece8e0'], ['#1c2a44', '#c8b060'], ['#24508a', '#e8c020'],
+];
+let UMB_GEO: { canopy: THREE.BufferGeometry; frame: THREE.BufferGeometry; steel: THREE.Material } | null = null;
+function umbrella(): THREE.Group {
+  UMB_GEO ??= { canopy: canopyGeo(), frame: frameGeo(), steel: new THREE.MeshStandardMaterial({ color: 0x1a1a1c, metalness: 0.8, roughness: 0.35 }) };
+  const cols = UMB_COLOURS[Math.floor(Math.random() * UMB_COLOURS.length)];
+  const cloth = (h: string): THREE.Material => surface(new THREE.MeshStandardMaterial({ color: new THREE.Color(h), roughness: 0.55, side: THREE.DoubleSide }), { snow: 0.8, wet: 0.1 }, 'umb');
+  const a = cloth(cols[0]), b = cols[1] ? cloth(cols[1]) : a;
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(UMB_GEO.canopy, [a, b]), new THREE.Mesh(UMB_GEO.frame, UMB_GEO.steel));
   g.children.forEach((c) => (c.castShadow = true));
   return g;
 }
@@ -355,7 +426,6 @@ export class Person {
   private lookTarget = 0;
   private umb: THREE.Group;
   umbrellaUp = 0;
-  stride: number;
   /** wants an umbrella when it rains */
   carriesUmbrella: boolean;
   /** V2 (Milestone 9): the modelled character worn, if any, and the hips' height standing */
@@ -393,12 +463,11 @@ export class Person {
     this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;
     this.root.add(this.mesh);
-    this.stride = 1.32 * (look.height / 1.75);
     this.carriesUmbrella = Math.random() < 0.65;
-    this.umb = umbrella(new THREE.Color().setHSL(Math.random(), 0.5, Math.random() < 0.4 ? 0.12 : 0.4));
+    this.umb = umbrella();
     this.umb.visible = false;
     this.bones.handR.add(this.umb);
-    this.umb.position.set(0, -0.06, 0.02);
+    this.umb.position.set(0, -0.04, 0.02);
   }
 
   /** V2 (Milestone 9): a modelled character's clothes recoloured (top, legs, shoes; null keeps their own) */
@@ -428,33 +497,45 @@ export class Person {
     const h = this.look.height / 1.75;
     const walking = pose === 'walk' || pose === 'carry';
     const walkK = walking ? THREE.MathUtils.clamp(speed / 1.2, 0, 1.3) : 0;
-    if (walking) this.phase += (speed / this.stride) * dt;
+    // (V2: carrying a load is always a walk)
+    const runK = walking && pose !== 'carry' ? runOf(speed) : 0;
+    if (walking) this.phase += cadence(speed, h, runK) * dt;
     const p = this.phase;
     const amp = Math.min(1.15, 0.55 + walkK * 0.5);
+    // (V2: the hips sweep far enough for the foot on the ground to keep pace with the ground going by: a short sweep
+    // at a long stride slid the feet along the pavement like skates)
+    const hipK = amp * (1.2 + 0.15 * THREE.MathUtils.clamp(speed - 1.35, -0.6, 0.8));
+    const lerp = THREE.MathUtils.lerp;
 
     if (walkK > 0.02) {
       for (const [side, off] of [['L', 0], ['R', 0.5]] as const) {
         const q = p + off;
         const sgn = side === 'L' ? 1 : -1;
-        B[`th${side}`].rotation.x = -cyc(HIP, q) * D2R * amp;
-        B[`shin${side}`].rotation.x = cyc(KNEE, q) * D2R * amp;
-        B[`foot${side}`].rotation.x = -cyc(ANKLE, q) * D2R * amp;
-        B[`th${side}`].rotation.z = sgn * 0.03;
-        // arms swing opposite the leg on the same side, elbows flex more going forward
-        const swing = cyc(HIP, q + 0.5) * 0.75 * amp;
+        B[`th${side}`].rotation.x = -lerp(cyc(HIP, q) * hipK, cyc(HIP_RUN, q), runK) * D2R;
+        B[`shin${side}`].rotation.x = lerp(cyc(KNEE, q) * amp, cyc(KNEE_RUN, q), runK) * D2R;
+        B[`foot${side}`].rotation.x = -lerp(cyc(ANKLE, q) * amp, cyc(ANKLE_RUN, q), runK) * D2R;
+        B[`th${side}`].rotation.z = sgn * lerp(0.03, 0.015, runK);
+        // arms swing opposite the leg on the same side, elbows flex more going forward; running, the elbows are bent
+        // near square and the arms drive harder, a little across the body
+        const swing = lerp(cyc(HIP, q + 0.5) * 0.75 * amp, cyc(HIP_RUN, q + 0.5) * 1.05, runK);
         B[`ua${side}`].rotation.x = -swing * D2R;
-        B[`ua${side}`].rotation.z = sgn * 0.09;
-        B[`fa${side}`].rotation.x = -(12 + Math.max(0, swing) * 0.8) * D2R;
+        B[`ua${side}`].rotation.z = sgn * lerp(0.09, 0.14, runK);
+        B[`ua${side}`].rotation.y = sgn * 0.12 * runK;
+        B[`fa${side}`].rotation.x = -lerp(12 + Math.max(0, swing) * 0.8, 82 + Math.max(0, swing) * 0.35, runK) * D2R;
       }
       const tw = Math.PI * 2 * p;
-      B.hips.position.y = this.hipY + Math.cos(tw * 2) * 0.022 * amp - 0.012;
-      B.hips.position.x = Math.sin(tw) * 0.022 * amp;
-      B.hips.rotation.y = Math.sin(tw) * 0.08 * amp;
-      B.hips.rotation.z = Math.sin(tw) * 0.035 * amp;
-      B.chest.rotation.y = -Math.sin(tw) * 0.11 * amp;
-      B.spine.rotation.x = 0.05 + walkK * 0.03;
-      B.head.rotation.y = Math.sin(tw) * 0.04;
-      B.head.rotation.x = -0.05;
+      // walking, the hips rise over each planted foot; running, they dip as each foot takes the weight and rise into
+      // the flight
+      const walkY = Math.cos(tw * 2) * 0.022 * amp - 0.012;
+      const runY = -0.032 * h * Math.cos(2 * tw - Math.PI * 2 * 0.24) - 0.045 * h;
+      B.hips.position.y = this.hipY + lerp(walkY, runY, runK);
+      B.hips.position.x = Math.sin(tw) * lerp(0.022 * amp, 0.01, runK);
+      B.hips.rotation.y = Math.sin(tw) * lerp(0.08 * amp, 0.13, runK);
+      B.hips.rotation.z = Math.sin(tw) * lerp(0.035 * amp, 0.02, runK);
+      B.chest.rotation.y = -Math.sin(tw) * lerp(0.11 * amp, 0.19, runK);
+      B.spine.rotation.x = lerp(0.05 + walkK * 0.03, 0.17, runK);
+      B.head.rotation.y = Math.sin(tw) * lerp(0.04, 0.02, runK);
+      B.head.rotation.x = lerp(-0.05, -0.15, runK);
     } else {
       // idle: breathing, a slow weight shift, hands relaxed
       const br = Math.sin(this.t * 1.6);

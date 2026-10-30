@@ -296,6 +296,8 @@ export const Game = {
     const d = CAT[key];
     if (!d) return false;
     if (d.building) {
+      // V2: the door turned to a street the plot already touches, rather than a new spur laid round to it
+      f = World.streetFacing(key, x, y, f);
       const b = World.placeBuilding(key, x, y, false, f);
       if (!b) return false;
       b.byFounder = true; // (V2: the Founder's own: it opens with a few days' wages in the till, sim/economy.ts)

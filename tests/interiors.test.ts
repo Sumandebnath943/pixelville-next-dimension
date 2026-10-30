@@ -12,7 +12,7 @@ import { buy, a, useOf } from '../src/player/shopping';
 import { Wallet } from '../src/player/wallet';
 
 // (V2: the farm's barn and the cab office at a taxi rank have rooms too)
-const OUTDOOR = ['park', 'grandpark', 'plaza', 'playground', 'zoo', 'amusement', 'busstop', 'forest', 'pond', 'lake', 'river', 'mountain', 'peak', 'road', 'rail', 'bulldoze'];
+const OUTDOOR = ['park', 'grandpark', 'plaza', 'playground', 'zoo', 'amusement', 'busstop', 'carpark', 'forest', 'pond', 'lake', 'river', 'mountain', 'peak', 'road', 'rail', 'bulldoze'];
 
 describe('interiors', () => {
   beforeEach(() => { Sim.people = []; Sim.clock = 12 * 60; });

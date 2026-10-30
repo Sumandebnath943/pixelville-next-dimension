@@ -55,6 +55,8 @@ export const ENV = {
   beamP: { value: Array.from({ length: MAX_BEAMS }, () => new THREE.Vector4()) },
   beamF: { value: Array.from({ length: MAX_BEAMS }, () => new THREE.Vector4()) },
   beamR: { value: Array.from({ length: MAX_BEAMS }, () => new THREE.Vector4()) },
+  /** V2: the exposure this frame is drawn at (about 0.15 by day, 7–9 at night), so glows can be kept in display terms */
+  exposure: { value: 1 },
 };
 
 function powerTexture(): THREE.DataTexture {
@@ -84,6 +86,18 @@ uniform vec3 uFogSun;
 uniform float uFogDensity;
 uniform float uFogHeight;
 uniform sampler2D uPower;
+uniform float uExposure;
+
+/* V2: a glow (a lit window, a sign, neon) kept from burning out: the night's exposure is some fifty times the day's, and
+   a lamp bright enough to show by day came out of the tone curve as flat, blinding white after dark. Past 'knee' on
+   screen its brightness eases towards 'cap' (both in display terms, so it reads the same at any exposure); the hue is
+   kept, so warm light stays warm */
+vec3 pvGlowCap(vec3 c, float knee, float cap) {
+  float L = dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExposure;
+  if (L <= knee) return c;
+  float Lc = knee + (L - knee) / (1.0 + (L - knee) / (cap - knee));
+  return c * (Lc / L);
+}
 
 /* 1 where the power is on (the map is 256 tiles of 8 m; off the map it's always on) */
 float pvPower(vec3 wp) {
@@ -169,4 +183,5 @@ export function bindEnv(u: Record<string, THREE.IUniform>): void {
   u.uFogDensity = ENV.fogDensity;
   u.uFogHeight = ENV.fogHeight;
   u.uPower = ENV.power;
+  u.uExposure = ENV.exposure;
 }

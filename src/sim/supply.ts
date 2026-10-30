@@ -439,7 +439,7 @@ export const Supply = {
         // (V2: gridlock relief, as for the villagers' cars: stuck for good, a load on its way counts as delivered, an
         // empty truck is back at the yard)
         t.stuckT = step > 0.002 ? 0 : (t.stuckT || 0) + dt;
-        if (t.stuckT > STUCK_RELIEF) { if (t.phase === 'go' && !t.unloaded) { t.unloaded = true; this.unload(t); } t.done = true; continue; }
+        if (Traffic.reliefDue(t.stuckT, STUCK_RELIEF, t.x, t.y)) { if (t.phase === 'go' && !t.unloaded) { t.unloaded = true; this.unload(t); } t.done = true; continue; }
         Life.followPath(t, t.path, Math.min(t.prog, t.path.length - 1), Traffic.lanePx(t));
         if (nearlyThere(t, t.path, step, dt)) {
           // (V2: back to the edge, it drives on away down the road; an export is sold beyond the edge, so it doesn't

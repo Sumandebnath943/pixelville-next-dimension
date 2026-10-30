@@ -306,9 +306,10 @@ export class Planner {
       return;
     }
     if (d.building) {
-      const f = normFacing(this.tool, this.facing);
-      const fp = footprint(this.tool, f);
+      // (V2: shown as it will be built: turned to face a street the plot already touches, if its door side doesn't)
       const o = this.originFor(this.tool, tile);
+      const f = World.streetFacing(this.tool, o.x, o.y, normFacing(this.tool, this.facing));
+      const fp = footprint(this.tool, f);
       const ok = World.canPlace(this.tool, o.x, o.y, f);
       this.ghostMat.color.set(ok ? 0x40ff80 : 0xff4040);
       const h = Math.max(4, (d.ex || 10) * 0.6);

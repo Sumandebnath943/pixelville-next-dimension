@@ -17,6 +17,8 @@ import { CAT } from '../sim/catalog';
 import { World } from '../sim/world';
 import { Weather } from '../sim/weather';
 import { hex, shade, hash2 } from './kit';
+import { zooPlan } from './zoo';
+import { Lots, type Spot } from '../sim/parking';
 import { Kit, Packed, Palette, sharedPalette, Frame, Hole, wallFace, obox, sashWindow, frontDoor, glassPane, chimney as brickChimney, TRIM, meshesFromParts, freeAfterUpload } from '../gfx/architecture';
 import * as TX from '../gfx/textures';
 import { TreeInstance, Species } from '../gfx/vegetation';
@@ -217,6 +219,8 @@ export interface Built {
   trees: TreeInstance[];
   /** volumes the street camera can't enter (local x0 y0 z0 x1 y1 z1); null top = the building's height */
   cam: (number | null)[][];
+  /** V2: room for cars on the plot (local x, z, yaw) */
+  parking: { park: [number, number, number][]; drive: [number, number, number][] };
 }
 
 class Ctx implements Built {
@@ -228,6 +232,14 @@ class Ctx implements Built {
   height = 4;
   solids: Box2[] = [];
   trees: TreeInstance[] = [];
+  /** V2: where no car may stand (crops, lawns), local */
+  noPark: Box2[] = [];
+  /** V2: bays a builder lays out itself (local x, z, yaw), instead of the ones found in the plot */
+  bays: [number, number, number][] = [];
+  /** V2: the trees, local (for the parking search) */
+  treesLocal: [number, number][] = [];
+  /** V2: the parking the plot has room for (local x, z, yaw): visitors' bays, a home's driveway */
+  parking: { park: [number, number, number][]; drive: [number, number, number][] } = { park: [], drive: [] };
   cam: (number | null)[][] = [];
   W: number;
   D: number;
@@ -482,6 +494,7 @@ class Ctx implements Built {
   /** a real tree (it joins the forest layer) */
   tree(x: number, z: number, s = 1): void {
     const p = V(x, 0, z).applyMatrix4(this.kit.base);
+    this.treesLocal.push([x, z]);
     const pick: Species[] = ['lime', 'oak', 'birch', 'lime', 'oak'];
     const k = Math.abs(Math.round(this.hv + x * 3 + z * 7));
     this.trees.push({ x: p.x, z: p.z, y: 0.1, species: pick[k % pick.length], scale: s * 0.62, rot: (k % 628) / 100 });
@@ -912,6 +925,8 @@ function buildPark(c: Ctx, grand: boolean, plaza: boolean): void {
     c.body.cyl(0, 0.75, 0, 2.6, 0.02, 14, c.c(winter ? '#dde8f0' : '#5a9ad8'));
     c.body.cyl(0, 0.7, 0, 0.4, 2.2, 8, c.c('#bdb8ac'));
     c.body.cyl(0, 2.6, 0, 1.0, 0.25, 10, c.c('#bdb8ac'));
+    // (V2: solid: villagers, the Founder and the pigeons walked through the basin)
+    c.solid(-2.6, -2.6, 2.6, 2.6, 0.8);
   }
   const n = grand ? 14 : plaza ? 4 : 6;
   for (let i = 0; i < n; i++) {
@@ -921,6 +936,7 @@ function buildPark(c: Ctx, grand: boolean, plaza: boolean): void {
     if (Math.abs(x) < 2.5 || Math.abs(z) < 2.5) continue;
     if (plaza) {
       c.body.cyl(x, 0.1, z, 1.2, 0.8, 8, c.c('#8a8478'));
+      c.solid(x - 1, z - 1, x + 1, z + 1, 0.9);
       c.tree(x, z, 0.7);
     }
     else c.tree(x, z, 0.9 + (h % 5) / 10);
@@ -999,30 +1015,115 @@ function buildAmusement(c: Ctx): void {
   c.height = cy + R + 1;
 }
 
+/* V2: the zoo as zoos are laid out (render/zoo.ts has the plan, shared with its animals): it was four identical square
+   pens with a tree in each and a hut. A gate with ticket kiosks, walks between the enclosures, and in each its own
+   ground, fence, pool, rocks, trees and feeding place */
 function buildZoo(c: Ctx): void {
-  c.lot(Weather.season === 3 ? '#e6ecf2' : '#8cc062', 0.05);
-  for (let i = 0; i < 4; i++) {
-    const x = -c.hw + 3 + (i % 2) * (c.W / 2 - 1), z = -c.hd + 3 + Math.floor(i / 2) * (c.D / 2 - 2);
-    c.fence(x, z, x + c.W / 2 - 5, z + c.D / 2 - 5, '#7a5a3a', 1.4);
-    c.tree(x + 3, z + 3, 0.8);
+  const winter = Weather.season === 3;
+  const plan = zooPlan(c.hw, c.hd);
+  c.lot(winter ? '#e6ecf2' : '#7fb35a', 0.05);
+  const snow = (h: string): THREE.Color => (winter ? c.c(h).lerp(WHITE, 0.55) : c.c(h));
+  // the walks
+  const paving = c.c('#cdbfa3');
+  for (const [x0, z0, x1, z1] of plan.paths) c.body.box(x0, 0.1, z0, x1, 0.14, z1, paving);
+  for (const p of plan.pens) {
+    // (sand for the elephants, the dry grass of a savanna for the lions and zebras, packed snow-white for the penguins)
+    c.body.force = winter ? null : p.kind === 'elephant' ? 'sand' : p.kind === 'lion' || p.kind === 'zebra' || p.kind === 'petting' ? 'grass' : null;
+    c.body.box(p.x0 + 0.1, 0.1, p.z0 + 0.1, p.x1 - 0.1, 0.12, p.z1 - 0.1, snow(p.ground));
+    c.body.force = null;
+    // (no gate in a pen's fence: the keepers' doors are at the back)
+    c.fence(p.x0, p.z0, p.x1, p.z1, p.fence, p.fenceH, []);
+    if (p.pool) {
+      const w = winter ? c.c('#d8e6ee') : c.c(p.kind === 'penguin' ? '#3c9ccf' : '#4a8ab8');
+      if (p.pool.rz) {
+        c.body.box(p.pool.x - p.pool.rx - 0.3, 0.1, p.pool.z - p.pool.rz - 0.3, p.pool.x + p.pool.rx + 0.3, 0.2, p.pool.z + p.pool.rz + 0.3, c.c('#b8bcc0'));
+        c.body.force = 'paint'; // (still water, glossy: as paving it came out grey)
+        c.body.box(p.pool.x - p.pool.rx, 0.2, p.pool.z - p.pool.rz, p.pool.x + p.pool.rx, 0.21, p.pool.z + p.pool.rz, w);
+        c.body.force = null;
+        c.solid(p.pool.x - p.pool.rx, p.pool.z - p.pool.rz, p.pool.x + p.pool.rx, p.pool.z + p.pool.rz, 0.2);
+      } else {
+        c.body.cyl(p.pool.x, 0.1, p.pool.z, p.pool.rx + 0.35, 0.12, 14, c.c('#a8a090'));
+        c.body.force = 'paint'; // (still water, glossy: as paving it came out grey)
+        c.body.cyl(p.pool.x, 0.22, p.pool.z, p.pool.rx, 0.01, 14, w);
+        c.body.force = null;
+        const r = p.pool.rx * 0.8;
+        c.solid(p.pool.x - r, p.pool.z - r, p.pool.x + r, p.pool.z + r, 0.2);
+      }
+    }
+    for (const r of p.rocks) {
+      const grey = p.kind === 'penguin' ? '#dfe4e8' : p.kind === 'lion' ? '#9a8a72' : '#8f877c';
+      c.body.cyl(r.x, 0.1, r.z, r.r, r.h, 4, snow(grey), undefined, r.r * 0.45);
+      c.body.cyl(r.x + r.r * 0.35, 0.1, r.z - r.r * 0.2, r.r * 0.55, r.h * 0.6, 3, snow(grey).multiplyScalar(0.92), undefined, r.r * 0.2);
+      c.solid(r.x - r.r * 0.75, r.z - r.r * 0.75, r.x + r.r * 0.75, r.z + r.r * 0.75, r.h);
+    }
+    for (const t of p.trees) c.tree(t.x, t.z, t.s);
+    // where the food goes out: a hay rack, a log, a trough, a feeding rock
+    const f = p.feed;
+    if (p.kind === 'lion') c.body.box(f.x - 0.9, 0.1, f.z - 0.5, f.x + 0.9, 0.5, f.z + 0.5, c.c('#7a6a58'));
+    else if (p.kind === 'penguin') c.body.box(f.x - 0.6, 0.1, f.z - 0.4, f.x + 0.6, 0.35, f.z + 0.4, c.c('#c8ccd0'));
+    else {
+      c.body.box(f.x - 1.1, 0.1, f.z - 0.35, f.x + 1.1, 0.75, f.z + 0.35, c.c('#6a4a2c'));
+      c.body.box(f.x - 1.0, 0.75, f.z - 0.3, f.x + 1.0, 0.95, f.z + 0.3, snow('#c8a94c'));
+    }
+    c.solid(f.x - 1.1, f.z - 0.5, f.x + 1.1, f.z + 0.5, 0.9);
+    // an information board on the walk side
+    const bz = p.z1 > 0 ? p.z0 - 0.25 : p.z1 + 0.25, bx = (p.x0 + p.x1) / 2;
+    c.body.box(bx - 0.04, 0.1, bz - 0.04, bx + 0.04, 1.1, bz + 0.04, c.c('#3a3a3a'));
+    c.glow.box(bx - 0.5, 1.0, bz - 0.03, bx + 0.5, 1.6, bz + 0.03, c.c({ elephant: '#c8a060', lion: '#c87a3a', zebra: '#e8e0c8', penguin: '#7ab8e0', petting: '#8ac060' }[p.kind]));
   }
-  c.body.box(-3, 0.1, c.hd - 4, 3, 3.2, c.hd - 1, c.c('#a07a4a'));
-  c.sign(0, c.hd - 0.95, 3.3, 5, '#3a8a3a', 0.9);
-  c.solid(-3, c.hd - 4, 3, c.hd - 1);
-  c.height = 5;
+  // the petting farm's shed
+  const pf = plan.pens.find((p) => p.kind === 'petting')!;
+  const sx0 = pf.x1 - 4.6, sz0 = pf.z1 - 3.6;
+  const top = c.block(sx0, sz0, pf.x1 - 0.6, pf.z1 - 0.6, 0.1, 1, '#a0583a', { door: false, noWin: true, floorH: 2.4 });
+  c.gable(sx0, sz0, pf.x1 - 0.6, pf.z1 - 0.6, top, 1.2, '#5a4a40', '#a0583a', true);
+  // benches and lamps along the walks, trees and hedges round the edge
+  for (const [x, z, yaw] of plan.benches) c.bench(x, z, yaw);
+  for (const [x, z] of plan.lamps) {
+    c.body.cyl(x, 0.1, z, 0.06, 3.2, 6, c.c('#1e2224'));
+    c.glow.box(x - 0.16, 3.2, z - 0.16, x + 0.16, 3.55, z + 0.16, c.c('#ffe2a8'));
+  }
+  for (const [x, z] of [[-c.hw + 2.5, c.hd - 3], [-c.hw + 6, c.hd - 2.5], [c.hw - 2.5, c.hd - 3], [c.hw - 6, c.hd - 2.5], [-9, c.hd - 4], [9, c.hd - 4]]) c.tree(x, z, 0.9);
+  c.body.box(-c.hw + 0.3, 0.1, c.hd - 0.9, -6.2, 1.1, c.hd - 0.3, snow('#4f7a3a'));
+  c.body.box(6.2, 0.1, c.hd - 0.9, c.hw - 0.3, 1.1, c.hd - 0.3, snow('#4f7a3a'));
+  c.solid(-c.hw + 0.3, c.hd - 0.9, -6.2, c.hd - 0.3, 1.1);
+  c.solid(6.2, c.hd - 0.9, c.hw - 0.3, c.hd - 0.3, 1.1);
+  // the gate: two stone piers under a beam with the name, and a ticket kiosk either side
+  for (const sx of [-1, 1]) {
+    c.body.box(sx * 3.4 - 0.45, 0.1, c.hd - 1.4, sx * 3.4 + 0.45, 4.2, c.hd - 0.5, c.c('#b8ab92'));
+    c.solid(sx * 3.4 - 0.45, c.hd - 1.4, sx * 3.4 + 0.45, c.hd - 0.5, 4.2);
+    const kx = sx * 5.4;
+    const kt = c.block(kx - 1.1, c.hd - 4.4, kx + 1.1, c.hd - 2.4, 0.1, 1, '#3f6e3a', { door: false, floorH: 2.6 });
+    c.flatRoof(kx - 1.1, c.hd - 4.4, kx + 1.1, c.hd - 2.4, kt, '#2e3a2c', 0.15);
+  }
+  c.body.box(-3.9, 4.2, c.hd - 1.3, 3.9, 4.6, c.hd - 0.6, c.c('#6a4a2c'));
+  c.sign(0, c.hd - 0.55, 4.65, 5.6, '#2f6b34', 1.0);
+  c.height = 6;
 }
 
 function buildFarm(c: Ctx): void {
   const season = Weather.season;
   const crop = ['#8ab84a', '#c8b040', '#c88a3a', '#e6ecf2'][season];
   c.lot('#9a7a52', 0.05);
-  for (let x = -c.hw + 1; x < c.hw - 18; x += 2.2) c.body.box(x, 0.05, -c.hd + 1, x + 1.4, season === 3 ? 0.12 : 0.6, c.hd - 1, c.c(crop, (x % 3) * 0.02));
+  // (V2: the rows stop short of the street, where a gravel track runs along the front: the farm's cars and the
+  // visitors' stand there, not in the crops)
+  for (let x = -c.hw + 1; x < c.hw - 18; x += 2.2) c.body.box(x, 0.05, -c.hd + 1, x + 1.4, season === 3 ? 0.12 : 0.6, c.hd - 6, c.c(crop, (x % 3) * 0.02));
+  c.noPark.push([-c.hw, -c.hd, c.hw - 17.5, c.hd - 5.6]);
+  c.body.box(-c.hw + 0.4, 0.05, c.hd - 5.4, c.hw - 18, 0.09, c.hd - 0.2, c.c('#a89a80'));
   const bx0 = c.hw - 15, bx1 = c.hw - 6, bz0 = -c.hd + 3, bz1 = 2;
   const top = c.block(bx0, bz0, bx1, bz1, 0.1, 1, '#b83a2a', { door: true, noWin: true, floorH: 5 });
   c.gable(bx0, bz0, bx1, bz1, top, 4, '#6a6a6a', '#b83a2a', false);
   c.body.cyl(c.hw - 3, 0.1, -6, 2.0, 11, 10, c.c('#c8ccd0'));
   c.body.cyl(c.hw - 3, 11.1, -6, 2.0, 1.6, 10, c.c('#9aa0a8'), undefined, 0.3);
   c.solid(c.hw - 5, -8, c.hw - 1, -4);
+  // V2: the yard as a yard: a post-and-rail fence with a gate by the barn, a water trough and a hay rack (the
+  // animals drink and eat at them: render/fauna.ts)
+  c.fence(c.hw - 17.5, 2.4, c.hw - 0.8, c.hd - 0.8, '#7a5634', 1.2, [[c.hw - 12, c.hw - 9]]);
+  c.body.box(c.hw - 4.1, 0.05, 6.1, c.hw - 1.9, 0.55, 6.9, c.c('#7a8288'));
+  c.body.box(c.hw - 4.0, 0.5, 6.2, c.hw - 2.0, 0.52, 6.8, c.c(season === 3 ? '#d8e6ee' : '#4a8ab8'));
+  c.solid(c.hw - 4.1, 6.1, c.hw - 1.9, 6.9, 0.6);
+  c.body.box(c.hw - 10.1, 0.05, c.hd - 2.8, c.hw - 7.9, 0.8, c.hd - 2.3, c.c('#6a4a2c'));
+  c.body.box(c.hw - 10, 0.8, c.hd - 2.75, c.hw - 8, 1.05, c.hd - 2.35, c.c('#c8a94c'));
+  c.solid(c.hw - 10.1, c.hd - 2.8, c.hw - 7.9, c.hd - 2.3, 1);
   c.height = 12.7;
 }
 
@@ -1189,6 +1290,79 @@ function buildLodge(c: Ctx): void {
   c.sign(0, z1 + 1.85, 3.9, 3.2, '#c9a64a', 0.5);
 }
 
+/* V2: a public car park: nine marked bays along the back, backed into from the aisle in front, a kerb round it, a
+   pay machine, lamps and the blue P */
+function buildCarPark(c: Ctx): void {
+  c.lot('#3c3e42', 0.05);
+  const bz = -c.hd + 3.2, n = 9, step = 2.6;
+  const line = c.c('#e8e8e2');
+  for (let k = 0; k <= n; k++) {
+    const x = -((n * step) / 2) + k * step;
+    c.body.force = 'paint';
+    c.body.box(x - 0.06, 0.1, -c.hd + 0.6, x + 0.06, 0.115, bz + 2.4, line);
+    c.body.force = null;
+  }
+  for (let k = 0; k < n; k++) c.bays.push([-((n - 1) * step) / 2 + k * step, bz, 0]);
+  // the kerb and a low hedge down the sides and the back
+  for (const [x0, z0, x1, z1] of [[-c.hw + 0.1, -c.hd + 0.1, c.hw - 0.1, -c.hd + 0.5], [-c.hw + 0.1, -c.hd + 0.1, -c.hw + 0.5, c.hd - 0.6], [c.hw - 0.5, -c.hd + 0.1, c.hw - 0.1, c.hd - 0.6]] as [number, number, number, number][]) {
+    c.body.box(x0, 0.1, z0, x1, 0.62, z1, c.c('#4f7a3a'));
+    c.solid(x0, z0, x1, z1, 0.62);
+  }
+  // the pay machine, two lamps, the sign
+  c.body.box(c.hw - 2.4, 0.1, c.hd - 1.6, c.hw - 1.8, 1.5, c.hd - 1.2, c.c('#2a4a7a'));
+  c.solid(c.hw - 2.4, c.hd - 1.6, c.hw - 1.8, c.hd - 1.2, 1.5);
+  for (const x of [-c.hw + 1.2, c.hw - 1.2]) {
+    c.body.cyl(x, 0.1, 0, 0.07, 5, 6, c.c('#1e2224'));
+    c.glow.box(x - 0.25, 5, -0.15, x + 0.25, 5.25, 0.15, c.c('#fff2d8'));
+  }
+  c.body.box(-c.hw + 1.1, 0.1, c.hd - 1.2, -c.hw + 1.25, 2.6, c.hd - 1.05, c.c('#3a3a3a'));
+  c.glow.box(-c.hw + 0.55, 2.6, c.hd - 1.16, -c.hw + 1.8, 3.6, c.hd - 1.09, c.c('#1f5fbf'));
+  c.sign(-c.hw + 4.2, c.hd - 0.6, 0.2, 3.2, '#1f5fbf', 0.55);
+  c.height = 5.3;
+}
+
+/* ---------- V2: parking ----------
+   Where cars stand on a plot, found from what the builder put on it: the car's own 4.6 × 1.9 m and the drive out in
+   front of it to the street must be clear of every wall, tree, crop and the front door. Homes look first along the
+   sides of the plot (one car each side, nose to the street), then across the front; workplaces and venues across the
+   front first, then the sides. Lawns, parks, plazas and the like take no cars at all (they use the car parks). */
+const NO_PARKING = new Set(['park', 'grandpark', 'plaza', 'zoo', 'playground', 'pool', 'stadium', 'amusement', 'busstop', 'taxistand', 'lodge']);
+function findParking(c: Ctx, b: any, key: string): Ctx['parking'] {
+  const d = CAT[key] || CAT[b.type];
+  const out: Ctx['parking'] = { park: [], drive: [] };
+  if (!d || NO_PARKING.has(b.type) || b.construction > 0) return out;
+  if (c.bays.length) { out.park = c.bays.slice(); return out; }
+  const W = c.W, D = c.D, hw = W / 2, hd = D / 2;
+  // the door, in the plot's frame (cars keep two metres either side of it)
+  const f = b.facing || 0, gx = (b.x + b.w / 2) * TM, gz = (b.y + b.h / 2) * TM;
+  const dx = (b.door?.x ?? 0) * TM + 4 - gx, dz = (b.door?.y ?? 0) * TM + 4 - gz;
+  const doorX = f === 0 ? dx : f === 1 ? -dz : f === 2 ? -dx : dz;
+  const blocks = [...c.solids, ...c.noPark];
+  const clear = (x0: number, z0: number, x1: number, z1: number): boolean =>
+    x0 >= -hw + 0.15 && x1 <= hw - 0.15 &&
+    !blocks.some(([a0, b0, a1, b1]) => x1 > a0 && x0 < a1 && z1 > b0 && z0 < b1) &&
+    !c.treesLocal.some(([tx, tz]) => tx > x0 - 0.7 && tx < x1 + 0.7 && tz > z0 - 0.7 && tz < z1 + 0.7);
+  const taken: number[] = [];
+  const tryAt = (lx: number, lz: number, list: [number, number, number][]): void => {
+    if (taken.some((x) => Math.abs(x - lx) < 2.6)) return;
+    if (Math.abs(lx - doorX) < 2.2) return;
+    if (!clear(lx - 0.95, lz - 2.3, lx + 0.95, hd)) return;
+    taken.push(lx);
+    list.push([lx, lz, 0]);
+  };
+  const front = (list: [number, number, number][], max: number): void => {
+    const n = Math.floor((W - 1) / 2.7);
+    for (let k = 0; k < n && list.length < max; k++) tryAt(-((n - 1) * 2.7) / 2 + k * 2.7, hd - 2.6, list);
+  };
+  const sides = (list: [number, number, number][], max: number): void => {
+    // (down the middle of a house's driveway, between the wall and the garden fence)
+    for (const sx of [1, -1]) if (list.length < max) tryAt(sx * (hw - 1.4), hd - 3.2, list);
+  };
+  if (d.res) { sides(out.drive, 3); front(out.drive, 3); }
+  else if (d.building) { front(out.park, 6); sides(out.park, 6); }
+  return out;
+}
+
 /* ---------- dispatch ---------- */
 export function buildFor(b: any, kit?: Kit): Built {
   const key = b.type;
@@ -1247,11 +1421,13 @@ export function buildFor(b: any, kit?: Kit): Built {
     case 'heliport': buildHeliport(c); break;
     case 'busstop': buildBusStop(c); break;
     case 'taxistand': buildTaxiStand(c); break;
+    case 'carpark': buildCarPark(c); break;
     case 'boatclub': buildBoatClub(c); break;
     default:
       if (FAST_FOOD[key]) buildFastFood(c);
       else buildShop(c);
   }
+  c.parking = findParking(c, b, key);
   if (OPEN.has(key)) {
     c.solids = c.solids.filter((s) => (s[2] - s[0]) * (s[3] - s[1]) < 60);
     c.cam = c.cam.filter((s) => (s[3]! - s[0]!) * (s[5]! - s[2]!) < 60);
@@ -1386,8 +1562,12 @@ export class BuildingLayer {
   /** bumps when the trees planted by buildings change */
   treesVersion = 0;
 
+  /** V2: each building's parking (world): visitors' bays and a home's driveway */
+  lots = new Map<number, { park: Spot[]; drive: Spot[] }>();
+
   constructor(scene: THREE.Scene) {
     scene.add(this.group);
+    Lots.of = (b) => this.lots.get(b.id) ?? null;
   }
 
   /** the coarse look signature: rebuild only when it changes */
@@ -1467,6 +1647,12 @@ export class BuildingLayer {
         return [Math.min(pts[0][0], pts[1][0]), Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][0], pts[1][0]), Math.max(pts[0][1], pts[1][1])];
       };
       for (const [x0, z0, x1, z1] of c.solids) e.solids.push(world(x0, z0, x1, z1));
+      // V2: its parking, in the world (sim/parking.ts reads it through Lots)
+      const spot = ([x, z, yaw]: [number, number, number]): Spot => {
+        const [rx, rz] = f === 0 ? [x, z] : f === 1 ? [z, -x] : f === 2 ? [-x, -z] : [-z, x];
+        return { x: rx + gx, z: rz + gz, yaw: yaw + (f * Math.PI) / 2 };
+      };
+      this.lots.set(b.id, { park: c.parking.park.map(spot), drive: c.parking.drive.map(spot) });
       e.cam = new Float32Array(c.cam.length * 6);
       c.cam.forEach(([x0, y0, z0, x1, y1, z1], i) => {
         const [wx0, wz0, wx1, wz1] = world(x0!, z0!, x1!, z1!);
@@ -1505,6 +1691,7 @@ export class BuildingLayer {
   }
 
   private drop(e: Entry): void {
+    this.lots.delete(e.b.id);
     if (e.dyn) {
       this.group.remove(e.dyn);
       e.dyn.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
@@ -1597,6 +1784,18 @@ export class BuildingLayer {
           const e = this.entries.get(b.id);
           if (e) out.push(...e.solids);
         }
+      }
+    return out;
+  }
+
+  /** V2: the trees planted by the buildings near a point (park and garden trees, the zoo's), for what walks round them */
+  treesNear(x: number, z: number, r: number): TreeInstance[] {
+    const out: TreeInstance[] = [];
+    const ids = new Set<number>();
+    for (let tz = Math.floor((z - r) / TM) - 1; tz <= Math.floor((z + r) / TM) + 1; tz++)
+      for (let tx = Math.floor((x - r) / TM) - 1; tx <= Math.floor((x + r) / TM) + 1; tx++) {
+        const b = World.buildingAt(tx, tz);
+        if (b && !ids.has(b.id)) { ids.add(b.id); const e = this.entries.get(b.id); if (e) out.push(...e.trees); }
       }
     return out;
   }

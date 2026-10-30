@@ -432,9 +432,14 @@ export function flushBeams(eye: THREE.Vector3, k: number, cap = MAX_BEAMS): void
   BEAMS.clear();
   near.sort((a, b) => a.d - b.d);
   const n = Math.min(near.length, cap, MAX_BEAMS);
+  // V2: only the nearest few beams reach the shaders. When one more car came nearer, the farthest's pool of light
+  // went out at once, and the road went dark in a patch as if something had cast a shadow over it: the farthest
+  // fade out as the next car closes in, so a beam comes and goes gently
+  const edge = near.length > n ? Math.sqrt(near[n].d) : Infinity;
   for (let i = 0; i < n; i++) {
     const { o, p, k: s } = near[i], e = o.matrixWorld.elements;
-    ENV.beamP.value[i].set(p.x, p.y, p.z, BEAM_CD * k * s);
+    const fade = edge === Infinity ? 1 : 1 - THREE.MathUtils.smoothstep(Math.sqrt(near[i].d), edge * 0.7, edge);
+    ENV.beamP.value[i].set(p.x, p.y, p.z, BEAM_CD * k * s * fade);
     _bv.set(e[8], e[9], e[10]).normalize();
     ENV.beamF.value[i].set(_bv.x, _bv.y, _bv.z, 0);
     _bv.set(-e[0], -e[1], -e[2]).normalize(); // (a car's right hand is its -x)
@@ -474,6 +479,22 @@ export function glare(): THREE.SpriteMaterial {
   // the same features as the thought bubbles' sprites, so it compiles no new shader
   GLARE = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0x000000 });
   return GLARE;
+}
+/** V2: how strongly the code-built vehicles' lamps glow: as set by day, eased off at the night's exposure (about fifty
+ *  times the day's), where they burnt out into blinding blots */
+function lampScale(): number {
+  return Math.min(1, 1.5 / Math.max(ENV.exposure.value, 1e-3));
+}
+/** V2: the front wheels' angle for a yaw rate `turn` (rad/s) at a signed `speed` (m/s, below 0 reversing). Reversing,
+ *  the same lock swings the car the other way, so the angle takes the speed's sign: it used to divide by the speed
+ *  floored at a positive number, and every vehicle backing round a corner turned its wheels against the turn */
+export function steerAngle(turn: number, wheelbase: number, speed: number, max: number, slow = 0.5): number {
+  const v = speed >= 0 ? Math.max(speed, slow) : Math.min(speed, -slow);
+  return THREE.MathUtils.clamp((turn * wheelbase) / v, -max, max);
+}
+/** V2: brake lights: standing, or slowing whichever way it's going (reversing and gathering speed is not braking) */
+export function isBraking(speed: number, accel: number): boolean {
+  return Math.abs(speed) < 0.05 || accel * Math.sign(speed) < -0.6;
 }
 /** where the camera is this frame (set by the stage), for how much of a lamp's glare it sees */
 export const VIEW = new THREE.Vector3();
@@ -603,7 +624,7 @@ export class Car {
     this.root.position.set(x, y, z);
     this.root.rotation.y = yaw;
     this.spin += (speed * dt) / this.dims.wheelR;
-    const steer = THREE.MathUtils.clamp((turn * this.dims.WB) / Math.max(speed, 0.5), -0.6, 0.6);
+    const steer = steerAngle(turn, this.dims.WB, speed, 0.6);
     this.wheels.forEach((w, i) => {
       w.rotation.y = i < 2 ? steer : 0;
       w.children[0].rotation.x = this.spin;
@@ -617,7 +638,7 @@ export class Car {
     this.bounce += this.bv * dt;
     this.body.rotation.set(this.pitch, 0, this.roll);
     this.body.position.y = this.bounce * 0.02;
-    this.braking = accel < -0.6 || speed < 0.05;
+    this.braking = isBraking(speed, accel);
   }
 
   /** flash the light bar (police only) */
@@ -625,8 +646,9 @@ export class Car {
     if (this.model) { this.model.setSiren(on, t); return; }
     if (!this.siren) return;
     const ph = Math.floor(t * 6) % 2;
-    this.siren.red.emissiveIntensity = on && ph ? 18 : 0;
-    this.siren.blue.emissiveIntensity = on && !ph ? 18 : 0;
+    const g = Math.min(1, 3 * lampScale());
+    this.siren.red.emissiveIntensity = on && ph ? 18 * g : 0;
+    this.siren.blue.emissiveIntensity = on && !ph ? 18 * g : 0;
   }
   setPaint(c: THREE.Color): void {
     if (this.model) { this.model.setPaint(c); return; }
@@ -646,11 +668,12 @@ export class Car {
     const ahead = (face[0] ** 4 + face[1] ** 4) / 2;
     // the lens itself glows softly; the light comes from the small bulbs behind it (the whole lens shows now that it
     // sits on the paint, so its glow is kept low enough for the bulbs and the strip to read through it)
-    this.head.emissiveIntensity = on ? 0.7 * (0.4 + 0.6 * ahead) : 0;
-    this.bulb.emissiveIntensity = on ? 34 * (0.12 + 0.88 * ahead) : 0;
+    const g = lampScale();
+    this.head.emissiveIntensity = on ? 0.7 * (0.4 + 0.6 * ahead) * g : 0;
+    this.bulb.emissiveIntensity = on ? 34 * (0.12 + 0.88 * ahead) * g : 0;
     // daytime running lights whenever the engine is on
-    this.drl.emissiveIntensity = parked ? 0 : on ? 9 : 5;
-    this.tail.emissiveIntensity = parked ? 0 : (on ? 2.2 : 0) + (this.braking ? 8 : 0);
+    this.drl.emissiveIntensity = (parked ? 0 : on ? 9 : 5) * g;
+    this.tail.emissiveIntensity = (parked ? 0 : (on ? 2.2 : 0) + (this.braking ? 8 : 0)) * g;
     // the beam on the road ahead (it dips with the body under braking)
     if (on && night > 0.12) addBeam(this.body, ...this.beamAt);
     // the glare: seen head-on a broad bloom, side-on a small point
@@ -761,19 +784,20 @@ export class Moto {
     this.root.rotation.y = yaw;
     this.spin += (speed * dt) / this.dims.wheelR;
     this.spinF.rotation.x = this.spinR.rotation.x = this.spin;
-    this.front.rotation.y = THREE.MathUtils.clamp((turn * this.dims.WB) / Math.max(speed, 0.6), -0.5, 0.5);
+    this.front.rotation.y = steerAngle(turn, this.dims.WB, speed, 0.5, 0.6);
     // lean into the turn the way a rider would (none when standing)
     const want = speed > 1 ? THREE.MathUtils.clamp(-turn * speed * 0.055, -0.55, 0.55) : 0.12;
     this.lean += (want - this.lean) * Math.min(1, dt * 4);
     this.body.rotation.z = this.lean;
-    this.braking = accel < -0.6 || speed < 0.05;
+    this.braking = isBraking(speed, accel);
   }
   setPaint(c: THREE.Color): void {
     this.paint.color.copy(c);
   }
   lights(on: boolean, night: number, parked = false): void {
-    this.head.emissiveIntensity = on ? 9 : 0;
-    this.tail.emissiveIntensity = parked ? 0 : (on ? 2.2 : 0) + (this.braking ? 8 : 0);
+    const g = lampScale();
+    this.head.emissiveIntensity = on ? 9 * g : 0;
+    this.tail.emissiveIntensity = (parked ? 0 : (on ? 2.2 : 0) + (this.braking ? 8 : 0)) * g;
     // one lamp, turning with the bars
     if (on && night > 0.12) addBeam(this.front, 0, 0.55, 0, 0.55);
   }
@@ -845,17 +869,17 @@ export class Bike {
     this.spin += (speed * dt) / this.dims.wheelR;
     this.spinF.rotation.x = this.spinR.rotation.x = this.spin;
     this.crank += (speed * dt) / 0.9;
-    this.front.rotation.y = THREE.MathUtils.clamp((turn * this.dims.WB) / Math.max(speed, 0.6), -0.6, 0.6);
+    this.front.rotation.y = steerAngle(turn, this.dims.WB, speed, 0.6, 0.6);
     const want = speed > 1 ? THREE.MathUtils.clamp(-turn * speed * 0.06, -0.45, 0.45) : 0.08;
     this.lean += (want - this.lean) * Math.min(1, dt * 4);
     this.body.rotation.z = this.lean;
-    this.braking = accel < -0.6 || speed < 0.05;
+    this.braking = isBraking(speed, accel);
   }
   setPaint(c: THREE.Color): void {
     this.paint.color.copy(c);
   }
   lights(on: boolean, _night: number, parked = false): void {
-    this.head.emissiveIntensity = on && !parked ? 6 : 0;
+    this.head.emissiveIntensity = on && !parked ? 6 * lampScale() : 0;
   }
 }
 

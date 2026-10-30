@@ -134,7 +134,8 @@ body.planner #btn-god { display: inline-flex; }
   position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
   background: var(--accent); color: var(--accent-ink); font: 700 10px var(--font); display: none; align-items: center; justify-content: center;
 }
-#menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 236px; padding: 6px; display: none; flex-direction: column; z-index: 5; background: rgba(20, 24, 32, 0.94); }
+/* (V2: never past the bottom of the window: with its newer items it ran off short screens and large interface sizes) */
+#menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 236px; max-height: calc(100dvh - var(--tbh) - 22px); overflow-y: auto; padding: 6px; display: none; flex-direction: column; z-index: 5; background: rgba(20, 24, 32, 0.94); }
 #menu.open { display: flex; animation: pop 0.16s ease-out; }
 #menu button { width: 100%; justify-content: flex-start; background: transparent; border: 0; padding: 9px 10px; border-radius: 8px; }
 #menu button:hover { background: var(--glass-hi); }
@@ -333,7 +334,7 @@ em.up, em.down { font-style: normal; }
 .ph-job i { font-style: normal; color: var(--ink-2); }
 .ph-mini { padding: 3px 10px; font-size: 11.5px; flex: none; }
 .ph-veh .pill { flex: none; }
-@media (max-height: 640px) { .ph-apps { gap: 10px 6px; } .ph-big { font-size: 40px; } .ph-home { padding-top: 12px; } }
+@media (max-height: 560px) { .ph-apps { gap: 10px 6px; } .ph-big { font-size: 40px; } .ph-home { padding-top: 12px; } }
 
 /* ---------- cards: buildings, villagers, the mayor ---------- */
 #info { position: absolute; right: 10px; top: calc(var(--tbh) + 18px); width: 344px; max-height: calc(100% - var(--tbh) - 228px); overflow-y: auto; display: none; padding: 16px 16px 14px; }
@@ -691,62 +692,92 @@ body.landing #hud, body.landing #touch, body.landing #prompt, body.landing #tour
 .la-shade {
   position: absolute; inset: 0;
   background:
-    linear-gradient(90deg, rgba(5, 7, 12, 0.9) 0%, rgba(5, 7, 12, 0.72) 26%, rgba(5, 7, 12, 0.18) 52%, rgba(5, 7, 12, 0) 66%),
-    linear-gradient(0deg, rgba(5, 7, 12, 0.7) 0%, rgba(5, 7, 12, 0) 26%),
-    linear-gradient(180deg, rgba(5, 7, 12, 0.45) 0%, rgba(5, 7, 12, 0) 18%);
+    radial-gradient(120% 90% at 0% 50%, rgba(5, 7, 12, 0.88) 0%, rgba(5, 7, 12, 0.66) 34%, rgba(5, 7, 12, 0.12) 62%, rgba(5, 7, 12, 0) 78%),
+    linear-gradient(0deg, rgba(5, 7, 12, 0.72) 0%, rgba(5, 7, 12, 0) 28%),
+    linear-gradient(180deg, rgba(5, 7, 12, 0.5) 0%, rgba(5, 7, 12, 0) 20%);
 }
-.la-panel {
-  position: absolute; left: clamp(16px, 6vw, 96px); top: 50%; transform: translateY(-50%); width: min(430px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 22px; pointer-events: auto; animation: laIn 0.8s ease-out both;
+/* (V2: the panel sits in a wrapper that centres it when it fits and scrolls when it doesn't: centred by a transform it
+   was cut off top and bottom whenever the window was shorter than the menu) */
+.la-wrap {
+  position: absolute; inset: 0; display: flex; align-items: safe center; overflow-y: auto; overscroll-behavior: contain;
+  padding: max(16px, env(safe-area-inset-top)) clamp(16px, 6vw, 96px) max(16px, env(safe-area-inset-bottom));
 }
-@keyframes laIn { from { opacity: 0; transform: translate(-14px, -50%); } }
-.la-logo { width: 100%; filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6)); }
+.la-panel { width: min(460px, 100%); margin-block: auto; display: flex; flex-direction: column; gap: 16px; pointer-events: auto; animation: laIn 0.8s ease-out both; }
+@keyframes laIn { from { opacity: 0; transform: translateX(-14px); } }
+.la-logo { width: 92%; margin-bottom: 2px; filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6)); }
+/* the village as a card, edged in gold, with the way into it */
+.la-card {
+  position: relative; display: flex; flex-direction: column; gap: 16px; padding: 18px; border-radius: 20px; border: 1px solid transparent;
+  background:
+    linear-gradient(160deg, rgba(22, 26, 36, 0.74), rgba(10, 12, 18, 0.66)) padding-box,
+    linear-gradient(135deg, rgba(240, 194, 122, 0.6), rgba(255, 255, 255, 0.06) 38%, rgba(255, 255, 255, 0.04) 62%, rgba(240, 194, 122, 0.32)) border-box;
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
 .la-village { display: flex; flex-direction: column; gap: 4px; padding: 0 2px; }
-.la-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); }
-.la-village b { font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -0.01em; color: #fbf6ec; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
+.la-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 650; letter-spacing: 0.24em; text-transform: uppercase; color: var(--accent); }
+.la-eyebrow::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(240, 194, 122, 0.45), rgba(240, 194, 122, 0)); }
+.la-village b { font-size: 32px; line-height: 1.08; font-weight: 750; letter-spacing: -0.015em; color: #fbf6ec; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.5); overflow-wrap: anywhere; }
 .la-village #la-meta { color: var(--ink-2); }
 .la-village #la-meta:empty { display: none; }
 .la-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .la-stats:empty { display: none; }
 .la-stats span {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px; border-radius: 999px; font-size: 12px; color: var(--ink);
-  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.09); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.08);
 }
 .la-stats svg { width: 14px; height: 14px; color: var(--accent); }
-.la-buttons { display: flex; flex-direction: column; gap: 14px; }
-.la-buttons button { pointer-events: auto; }
+.la-panel button { pointer-events: auto; cursor: pointer; }
 .la-go {
-  position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px 18px; border-radius: 14px; border: 0;
-  background: linear-gradient(180deg, #f7d9a4, #ecb867); color: var(--accent-ink); font: 650 16px var(--font); text-align: left;
-  box-shadow: 0 10px 30px rgba(236, 184, 103, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.5); transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s;
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; width: 100%; padding: 15px 18px; border-radius: 14px; border: 0;
+  background: linear-gradient(180deg, #f9dfae, #ecb867 55%, #e2a952); color: var(--accent-ink); font: 700 16px var(--font); text-align: left;
+  box-shadow: 0 10px 30px rgba(236, 184, 103, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -2px 0 rgba(120, 70, 10, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s;
 }
-.la-go:hover, .la-go:focus-visible { transform: translateY(-1px); box-shadow: 0 14px 36px rgba(236, 184, 103, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.55); filter: brightness(1.04); }
+/* a slow glint across the button, so the eye finds it */
+.la-go::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -40%; width: 30%; pointer-events: none;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0)); transform: skewX(-18deg);
+  animation: laGlint 5.5s ease-in-out 1.2s infinite;
+}
+@keyframes laGlint { 0%, 70% { left: -40%; } 100% { left: 130%; } }
+.la-go:hover, .la-go:focus-visible { transform: translateY(-1px); box-shadow: 0 14px 36px rgba(236, 184, 103, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -2px 0 rgba(120, 70, 10, 0.18); filter: brightness(1.05); }
 .la-go:focus-visible { outline: 2px solid #fff3dc; outline-offset: 3px; }
 .la-go svg { width: 20px; height: 20px; }
 .la-go span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .la-go kbd { background: rgba(0, 0, 0, 0.14); border-color: rgba(0, 0, 0, 0.18); color: inherit; }
 .la-go .la-arrow { width: 18px; height: 18px; transform: rotate(180deg); transition: transform 0.2s ease; }
 .la-go:hover .la-arrow, .la-go:focus-visible .la-arrow { transform: rotate(180deg) translateX(-3px); }
-.la-list {
-  display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 16px;
-  background: rgba(12, 15, 22, 0.42); border: 1px solid rgba(255, 255, 255, 0.07); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+/* three ways in, as tiles */
+.la-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.la-modes button {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 14px 12px 13px; border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(12, 15, 22, 0.5); color: var(--ink); font: inherit; text-align: left;
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.2s ease;
 }
-.la-list button {
-  position: relative; display: flex; align-items: center; gap: 14px; width: 100%; padding: 10px 12px; border: 0; border-radius: 11px;
-  background: transparent; color: var(--ink); font: 600 14px var(--font); text-align: left; transition: background 0.15s ease, transform 0.15s ease;
+.la-modes button > svg { width: 34px; height: 34px; padding: 8px; border-radius: 10px; color: var(--accent); background: rgba(240, 194, 122, 0.1); border: 1px solid rgba(240, 194, 122, 0.18); }
+.la-modes b { font-size: 14px; font-weight: 650; line-height: 1.2; }
+.la-modes small { font-size: 11.5px; line-height: 1.3; color: var(--ink-3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.la-modes button:hover, .la-modes button:focus-visible {
+  outline: none; transform: translateY(-2px); border-color: rgba(240, 194, 122, 0.45); background: rgba(24, 28, 38, 0.62);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(240, 194, 122, 0.12);
 }
-.la-list button::before { content: ''; position: absolute; left: 0; top: 22%; bottom: 22%; width: 3px; border-radius: 3px; background: var(--accent); opacity: 0; transform: scaleY(0.4); transition: opacity 0.15s, transform 0.15s; }
-.la-list button:hover, .la-list button:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; transform: translateX(3px); }
-.la-list button:hover::before, .la-list button:focus-visible::before { opacity: 1; transform: none; }
-.la-list button > svg { width: 32px; height: 32px; padding: 7px; border-radius: 9px; background: rgba(255, 255, 255, 0.06); color: var(--accent); }
-.la-list span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.la-list small { font-size: 12px; font-weight: 400; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.la-buttons > *, .la-list > button { animation: laRow 0.6s ease-out both; }
-.la-list > button:nth-child(1) { animation-delay: 0.08s; }
-.la-list > button:nth-child(2) { animation-delay: 0.14s; }
-.la-list > button:nth-child(3) { animation-delay: 0.2s; }
-.la-list > button:nth-child(4) { animation-delay: 0.26s; }
-@keyframes laRow { from { opacity: 0; transform: translateX(-8px); } }
+/* the rest, quietly, in a strip */
+.la-util { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(12, 15, 22, 0.42); border: 1px solid rgba(255, 255, 255, 0.07); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+.la-util button {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 8px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--ink-2); font: 600 13px var(--font); white-space: nowrap; transition: background 0.15s ease, color 0.15s ease;
+}
+.la-util button svg { color: var(--accent); }
+.la-util button:hover, .la-util button:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+.la-card, .la-modes > button, .la-util { animation: laRow 0.6s ease-out both; }
+.la-card { animation-delay: 0.05s; }
+.la-modes > button:nth-child(1) { animation-delay: 0.12s; }
+.la-modes > button:nth-child(2) { animation-delay: 0.18s; }
+.la-modes > button:nth-child(3) { animation-delay: 0.24s; }
+.la-util { animation-delay: 0.3s; }
+@keyframes laRow { from { opacity: 0; transform: translateY(6px); } }
 .la-live {
   position: absolute; right: 22px; top: 18px; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
   font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2);
@@ -754,21 +785,35 @@ body.landing #hud, body.landing #touch, body.landing #prompt, body.landing #tour
 }
 .la-live i { width: 8px; height: 8px; border-radius: 50%; background: #ff5a4a; box-shadow: 0 0 0 0 rgba(255, 90, 74, 0.6); animation: laLive 2s ease-out infinite; }
 @keyframes laLive { 70% { box-shadow: 0 0 0 8px rgba(255, 90, 74, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 90, 74, 0); } }
-.la-foot { position: absolute; right: 22px; bottom: 16px; margin: 0; color: var(--ink-3); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
-@media (max-height: 600px) {
-  .la-panel { gap: 12px; }
-  .la-logo { width: 74%; }
-  .la-list button { padding: 7px 10px; }
-  .la-list small { display: none; }
-  .la-list button > svg { width: 26px; height: 26px; padding: 5px; }
+.la-foot { position: absolute; right: 22px; bottom: 16px; margin: 0; color: var(--ink-3); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; pointer-events: none; }
+@media (max-height: 560px) {
+  .la-panel { gap: 10px; }
+  .la-logo { width: 70%; }
+  .la-card { padding: 14px; gap: 12px; }
+  .la-village b { font-size: 26px; }
+  .la-stats { margin-top: 4px; }
   .la-go { padding: 12px 16px; }
+  .la-modes button { padding: 10px 10px 9px; gap: 4px; }
+  .la-modes button > svg { width: 28px; height: 28px; padding: 6px; }
+  .la-modes small { display: none; }
+  .la-util button { padding: 7px 6px; }
+}
+@media (max-height: 440px) {
+  .la-logo { width: 52%; }
+  .la-stats { display: none; }
+  .la-modes button { flex-direction: row; align-items: center; }
 }
 @media (max-width: 640px) {
   .la-shade { background: linear-gradient(0deg, rgba(5, 7, 12, 0.92) 0%, rgba(5, 7, 12, 0.6) 60%, rgba(5, 7, 12, 0.3) 100%); }
   .la-live { left: 16px; right: auto; }
   .la-foot { display: none; }
+  .la-util button svg { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .la-panel, .la-buttons > *, .la-list > button, .la-live i { animation: none !important; } }
+@media (max-width: 400px) {
+  .la-modes small { display: none; }
+  .la-modes b { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { .la-panel, .la-card, .la-modes > button, .la-util, .la-live i, .la-go::after { animation: none !important; } }
 
 /* ---------- the controls sheet (Milestone 8) ---------- */
 .help-logo { height: 40px; width: auto; display: block; }

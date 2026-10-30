@@ -271,8 +271,10 @@ export const Health = {
         const step = Traffic.advance(a, (a.drv ??= {}), a.path, a.prog, 1, AMB_SPEED, dt, 0.75, true);
         a.prog = Math.min(stop, a.prog + step);
         Life.followPath(a, a.path, a.prog, Traffic.lanePx(a.drv));
-        // (V2: or held up just short of the spot: the crew walk the last few metres)
-        if (Traffic.there(a.drv, stop - a.prog, step, dt)) {
+        // (V2: or held up just short of the spot: the crew walk the last few metres; and, held up a while within a
+        // few tiles of it (behind the very crash it was called to, the wrecks across the junction), they walk the rest)
+        a.heldT = step > 0.002 ? 0 : (a.heldT || 0) + dt;
+        if (Traffic.there(a.drv, stop - a.prog, step, dt) || (a.heldT > 6 && stop - a.prog < 4.5)) {
           // (V2: pulled up behind whatever already stands there: a second ambulance at a crash, a squad car)
           a.prog = Traffic.settle(a, a.path, a.prog, Traffic.lanePx(a.drv), 0.75);
           Life.followPath(a, a.path, a.prog, Traffic.lanePx(a.drv));

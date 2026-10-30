@@ -14,7 +14,7 @@ import { Calamity } from './calamity';
 import { Settings } from './settings';
 import { Traffic, CAR_LEN, LANE, lanePose, kerbside } from './traffic';
 import { Walk } from './walking';
-import { spotFor, PARK_TIME } from './parking';
+import { spotFor, PARK_TIME, bayCount, carParkNear } from './parking';
 import { Rep } from './reputation';
 import { Health } from './health';
 import { Edu, ESSENTIAL } from './education';
@@ -1579,7 +1579,7 @@ export const Sim: any = {
         // block, each waiting for room the next one fills) is left to be fetched home, and its driver walks on: each
         // one who leaves the loop opens a gap in it
         t.stuckT = moved > 0.002 ? 0 : (t.stuckT || 0) + dt;
-        if (t.stuckT > GIVE_UP_AFTER) { this.leaveCar(p, t); return; }
+        if (Traffic.reliefDue(t.stuckT, GIVE_UP_AFTER, p.x, p.y)) { this.leaveCar(p, t); return; }
       } else {
         // V2 (Milestone 8): on foot, along a pavement at their own pace, stepping aside for others,
         // waiting at the kerb before crossing (sim/walking.ts)
@@ -1595,6 +1595,15 @@ export const Sim: any = {
       if (t.prog >= t.path.length - 1) { // arrived
         // V2 (Milestone 8): a car reverses into its spot (the drive at home, a bay at the venue) before anyone gets out
         if (t.car && t.to && (t.parkT || 0) < PARK_TIME) { t.parkT = (t.parkT || 0) + dt; return; }
+        // V2: parked at a public car park (the place itself had no bay free): on foot the rest of the way, the car
+        // left in its bay for the way back
+        if (t.car && t.lot) {
+          t.lot.parked = (t.lot.parked || 0) + 1;
+          p.carLotId = t.lot.id;
+          const wp = World.walkPath(t.lot.door.x, t.lot.door.y, p.dest.door.x, p.dest.door.y) || World.roadPath(t.lot.door.x, t.lot.door.y, p.dest.door.x, p.dest.door.y);
+          if (wp && wp.length > 1) { p.trip = { path: wp, prog: 0, car: null, taxi: false, moto: false, keepCar: t.car }; return; }
+          t.lot.parked--; p.carLotId = undefined;
+        }
         const dest = p.dest;
         p.state = 'in'; p.at = dest; p.trip = null; p.dest = null;
         if (dest !== p.home) {
@@ -1719,7 +1728,11 @@ export const Sim: any = {
 
   startTrip(p: Person, dest: Building, until: number, backTo: Building) {
     if (!dest || !p.home.connected || !dest.connected || dest.construction || dest.ruined) { p.returnAt = undefined; return; }
-    const path = World.roadPath(p.at!.door.x, p.at!.door.y, dest.door.x, dest.door.y);
+    // V2: a car left at a public car park is where its bay is (and where the drive back starts)
+    const lot: Building | null = p.carHeld && p.carLotId !== undefined ? World.buildings.find((b: Building) => b.id === p.carLotId) || null : null;
+    p.carLotId = undefined;
+    const park: Building = lot || p.at!;
+    let path = World.roadPath(park.door.x, park.door.y, dest.door.x, dest.door.y);
     if (!path || path.length < 2) {
       // unreachable: if going out, skip; if going home, teleport — but check
       // out of the venue properly so head-counts and the family car survive
@@ -1727,7 +1740,7 @@ export const Sim: any = {
         if (p.at !== p.home) {
           p.at!.inside = Math.max(0, p.at!.inside - 1);
           if (p.carHeld) {
-            p.at!.parked = Math.max(0, p.at!.parked - 1);
+            park.parked = Math.max(0, park.parked - 1);
             p.carHeld.free = true; p.carHeld = null;
           }
         }
@@ -1737,7 +1750,7 @@ export const Sim: any = {
     }
     if (p.at !== p.home && p.at !== dest) { // leaving a venue/workplace
       p.at!.inside = Math.max(0, p.at!.inside - 1);
-      if (p.carHeld) p.at!.parked = Math.max(0, p.at!.parked - 1);
+      if (p.carHeld) park.parked = Math.max(0, park.parked - 1);
     }
     p.backTo = backTo || null;
     // family car for long trips (adults only); reuse the one parked at the venue.
@@ -1779,8 +1792,15 @@ export const Sim: any = {
     if (car || moto || taxi) {
       p.trip.joined = false;
       if (car) {
-        p.trip.from = spotFor(p.at, car, Math.max(0, (p.at!.parked || 0)));
-        p.trip.to = spotFor(dest, car, Math.max(0, dest.parked || 0));
+        p.trip.from = spotFor(park, car, Math.max(0, (park.parked || 0)));
+        // V2: no bay free there? the nearest public car park with one, and the driver walks on from it
+        let at: Building = dest;
+        if (dest !== p.home && (dest.parked || 0) >= bayCount(dest)) {
+          const cp = carParkNear(dest, World.buildings);
+          const cpath = cp && World.roadPath(park.door.x, park.door.y, cp.door.x, cp.door.y);
+          if (cp && cpath && cpath.length > 1) { at = cp; p.trip.path = kerbside(cpath); p.trip.lot = cp; }
+        }
+        p.trip.to = spotFor(at, car, Math.max(0, at.parked || 0));
       }
     }
     if (!car && !moto && p.kind !== 'kid' && Math.random() < 0.15) p.trip.dog = (Math.random() * 2) | 0; // walk the dog

@@ -89,6 +89,8 @@ export const CAT: Record<string, CatDef> = {
   postoffice: {name:"Post Office",emoji:"📮",cat:"civic",w:2,h:2,ex:10,jobs:4,hours:{s:480,e:1050},key:"postoffice",building:true},
   busstop: {name:"Bus Stop",emoji:"🚏",cat:"transport",w:2,h:1,ex:10,key:"busstop",building:true},
   taxistand: {name:"Taxi Stand",emoji:"🚕",cat:"transport",w:2,h:1,ex:10,jobs:4,hours:{s:0,e:1440},wkd:true,key:"taxistand",building:true},
+  // V2: a public car park: nine marked bays off the street, for visitors to places with no room of their own
+  carpark: {name:"Car Park",emoji:"🅿️",cat:"transport",w:3,h:2,ex:4,key:"carpark",building:true},
   trainstation: {name:"Train Station",emoji:"🚉",cat:"transport",w:6,h:3,ex:18,jobs:12,hours:{s:300,e:1380},wkd:true,key:"trainstation",building:true},
   dock: {name:"Dock",emoji:"⚓",cat:"transport",w:3,h:2,ex:8,jobs:6,hours:{s:360,e:1140},wkd:true,needsWater:true,sandOk:true,key:"dock",building:true},
   heliport: {name:"Heliport",emoji:"🚁",cat:"transport",w:5,h:5,ex:10,jobs:6,hours:{s:360,e:1260},wkd:true,key:"heliport",building:true},

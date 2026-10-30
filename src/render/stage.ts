@@ -237,7 +237,8 @@ export class Stage {
     this.lampK = lampK;
     GLOW.lantern.emissiveIntensity = lampK * 5;
     this.updateLamps(focus, lamps, lampK);
-    setGlare(0.9 * this.sky.nightK);
+    // (V2: a lamp seen head-on dazzles a little, short of the blinding white blot it was at the night's exposure)
+    setGlare(0.9 * this.sky.nightK * Math.min(1, 4.5 / Math.max(1e-3, this.sky.exposure * this.exposureBias * this.viewBoost)));
     VIEW.copy(this.camera.position);
 
     // precipitation and the rainbow
@@ -379,7 +380,8 @@ export class Stage {
     if (this.indoor) {
       this.camera.updateMatrixWorld();
       // the room doesn't move: its shadows only need redrawing now and then
-      this.pipe.render(this.indoorExposure * this.exposureBias, this.frozen ? 0 : 1 / 60, this.indoorFresh || this.frameNo % 30 === 0);
+      ENV.exposure.value = this.indoorExposure * this.exposureBias;
+      this.pipe.render(ENV.exposure.value, this.frozen ? 0 : 1 / 60, this.indoorFresh || this.frameNo % 30 === 0);
       this.indoorFresh = false;
       return;
     }
@@ -412,7 +414,8 @@ export class Stage {
       ENV.reflTex.value = this.groundRefl.rt.texture;
       ENV.reflOn.value = 1;
     } else this.groundReady = false;
-    this.pipe.render(this.sky.exposure * this.exposureBias * this.viewBoost, this.frozen ? 0 : 1 / 60, doShadow);
+    ENV.exposure.value = this.sky.exposure * this.exposureBias * this.viewBoost;
+    this.pipe.render(ENV.exposure.value, this.frozen ? 0 : 1 / 60, doShadow);
   }
 
   /* ---------- V2 (Milestone 7): resolution that keeps the frame rate ---------- */

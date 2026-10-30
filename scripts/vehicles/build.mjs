@@ -74,8 +74,10 @@ class Soup {
   }
 }
 
-/** weld a soup into an indexed mesh (identical vertices shared), then simplify it towards `target` triangles */
-function indexed(s, target = Infinity, flags = []) {
+/** weld a soup into an indexed mesh (identical vertices shared), then simplify it towards `target` triangles, never
+ *  moving the surface by more than `err` of the model's size (V2: it was a quarter of it, and the simplifier carved
+ *  holes and dents in trucks, ambulances and the fire engine to reach its target) */
+function indexed(s, target = Infinity, flags = [], err = 0.01) {
   const key = new Map(), remap = [], verts = [];
   for (let i = 0; i < s.count; i++) {
     const k = [s.pos[i * 3], s.pos[i * 3 + 1], s.pos[i * 3 + 2], s.nor[i * 3], s.nor[i * 3 + 1], s.nor[i * 3 + 2], s.uv[i * 2], s.uv[i * 2 + 1], s.col[i * 3], s.col[i * 3 + 1], s.col[i * 3 + 2], s.glow[i], s.paint[i]].map((x) => Math.round(x * 1e4)).join(',');
@@ -93,7 +95,7 @@ function indexed(s, target = Infinity, flags = []) {
   if (index.length / 3 > target) {
     const attr = new Float32Array(n * 8);
     for (let d = 0; d < n; d++) attr.set([A.nor[d * 3], A.nor[d * 3 + 1], A.nor[d * 3 + 2], A.uv[d * 2], A.uv[d * 2 + 1], A.col[d * 3], A.col[d * 3 + 1], A.col[d * 3 + 2]], d * 8);
-    [index] = MeshoptSimplifier.simplifyWithAttributes(index, A.pos, 3, attr, 8, [0.4, 0.4, 0.4, 1, 1, 0.6, 0.6, 0.6], null, Math.max(3, Math.floor(target) * 3), 0.25, flags);
+    [index] = MeshoptSimplifier.simplifyWithAttributes(index, A.pos, 3, attr, 8, [0.4, 0.4, 0.4, 1, 1, 0.6, 0.6, 0.6], null, Math.max(3, Math.floor(target) * 3), err, flags);
   }
   // keep only the used vertices
   const used = new Int32Array(n).fill(-1);
@@ -330,11 +332,13 @@ async function build(entry, io) {
   const beamAt = headAt.length === 2 ? [0, +((headAt[0][1] + headAt[1][1]) / 2).toFixed(3), +((headAt[0][2] + headAt[1][2]) / 2 + 0.03).toFixed(3)] : null;
 
   /* levels of detail: near, mid (no interior), far (one mesh, everything, for instancing) */
+  // (V2: the near model is the model as made, up to 24 000 triangles: drawn only within 30 m, a few at a time; it was cut
+  // to 9 000, half or less of most of them, and looked unfinished)
   const tot = parts.paint.count / 3 + parts.kit.count / 3;
-  const k0 = Math.min(1, 9000 / Math.max(1, tot));
+  const k0 = Math.min(1, 24000 / Math.max(1, tot));
   const outside = (s) => s.filter((t) => s.glow[t] !== -1);
-  const near = { paint: indexed(parts.paint, (parts.paint.count / 3) * k0), kit: indexed(parts.kit, (parts.kit.count / 3) * k0), glass: indexed(parts.glass), wheel: wheelGeo ? indexed(wheelGeo, 900) : null };
-  const midL = { paint: indexed(parts.paint, Math.max(300, parts.paint.count / 3 * 0.25)), kit: indexed(outside(parts.kit), Math.max(300, parts.kit.count / 3 * 0.18)), glass: indexed(parts.glass, Math.max(50, parts.glass.count / 3 * 0.3)), wheel: wheelGeo ? indexed(wheelGeo, 160) : null };
+  const near = { paint: indexed(parts.paint, (parts.paint.count / 3) * k0, [], 0.004), kit: indexed(parts.kit, (parts.kit.count / 3) * k0, [], 0.004), glass: indexed(parts.glass), wheel: wheelGeo ? indexed(wheelGeo, 900, [], 0.01) : null };
+  const midL = { paint: indexed(parts.paint, Math.max(400, parts.paint.count / 3 * 0.45), [], 0.02), kit: indexed(outside(parts.kit), Math.max(400, parts.kit.count / 3 * 0.35), [], 0.02), glass: indexed(parts.glass, Math.max(50, parts.glass.count / 3 * 0.5), [], 0.02), wheel: wheelGeo ? indexed(wheelGeo, 240, [], 0.03) : null };
   const farS = new Soup().append(parts.paint).append(outside(parts.kit));
   const gl = parts.glass;
   for (let i = 0; i < gl.count; i++) farS.push(new THREE.Vector3().fromArray(gl.pos, i * 3), new THREE.Vector3().fromArray(gl.nor, i * 3), WHITE, [0.02, 0.025, 0.03], [0.1, 0.3], 0, 0);
@@ -343,7 +347,7 @@ async function build(entry, io) {
     if (c[0] < 0) w.transform(new THREE.Matrix4().makeRotationY(Math.PI));
     farS.append(w.transform(new THREE.Matrix4().makeTranslation(c[0], c[1], c[2])));
   }
-  const far = indexed(farS, entry.far || 1000, ['Prune']);
+  const far = indexed(farS, entry.far || 1600, ['Prune'], 0.05);
 
   /* the GLB */
   const out = new Document();

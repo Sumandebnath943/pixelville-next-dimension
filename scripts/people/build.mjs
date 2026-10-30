@@ -13,7 +13,7 @@
    (<raw folder>/<src>/ holds <src>.fbx and its TGAs)
    ============================================================ */
 /* global console, process, Buffer, fetch, setTimeout */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -228,12 +228,16 @@ async function build(entry, rawDir, io) {
     const kind = /pistol|gun|rifle|weapon|knife|baton|taser/i.test(mt.name) ? 'drop' : /_body$/i.test(mt.name) ? 'body' : /_head$/i.test(mt.name) ? 'head' : /opacity/i.test(mt.name) ? 'hair' : 'extra';
     return { name: mt.name, kind };
   });
-  const smalls = parts.filter((p) => p.kind === 'head' || p.kind === 'hair' || p.kind === 'extra');
-  const AW = 512, AH = 512 + 256 * Math.ceil(smalls.length / 2);
+  // (V2: the head has a 512² square of its own beside the body's. Squeezed into 256² with the hair and the extras, a
+  // 2048² face kept a sixty-fourth of its detail and every villager's face was a blur)
+  const headPart = parts.find((p) => p.kind === 'head');
+  const smalls = parts.filter((p) => p !== headPart && (p.kind === 'head' || p.kind === 'hair' || p.kind === 'extra'));
+  const AW = 1024, AH = 512 + 256 * Math.ceil(smalls.length / 4);
   parts.forEach((p) => {
     if (p.kind === 'body') p.rect = [0, 0, 512, 512];
+    if (p === headPart) p.rect = [512, 0, 512, 512];
     const i = smalls.indexOf(p);
-    if (i >= 0) p.rect = [(i % 2) * 256, 512 + Math.floor(i / 2) * 256, 256, 256];
+    if (i >= 0) p.rect = [(i % 4) * 256, 512 + Math.floor(i / 4) * 256, 256, 256];
   });
 
   // posed vertices with their game weights; the body's triangles also remember what they clothe (1 top, 2 legs,
@@ -306,9 +310,11 @@ async function build(entry, rawDir, io) {
   const lockHair = Uint8Array.from(geo.attributes.hair.array, (h) => (h > 0.5 ? 1 : 0));
   const idx = new Uint32Array(geo.index.array);
   const lods = [];
-  for (const [target, lock] of [[5000, true], [2000, true], [800, false]]) {
+  // (V2: the nearest is drawn within 20 m only: up to 8 000 triangles, moved no more than 1 % of the figure's size. It
+  // was 5 000 and 8 %, some 14 cm, which flattened noses, lips and brows and made the faces unrecognisable)
+  for (const [target, lock, err] of [[8000, true, 0.01], [2500, true, 0.035], [800, false, 0.08]]) {
     let out = idx;
-    if (idx.length / 3 > target) [out] = MeshoptSimplifier.simplifyWithAttributes(idx, fp, 3, fa, 5, [0.5, 0.5, 0.5, 2, 2], lock ? lockHair : null, target * 3, 0.08, lock ? [] : ['Prune']);
+    if (idx.length / 3 > target) [out] = MeshoptSimplifier.simplifyWithAttributes(idx, fp, 3, fa, 5, [0.5, 0.5, 0.5, 2, 2], lock ? lockHair : null, target * 3, err, lock ? [] : ['Prune']);
     lods.push(compact(geo, out));
   }
 
@@ -494,6 +500,12 @@ async function fetchRaw(entry, rawDir) {
       else await new Promise((res) => setTimeout(res, 2000));
     }
     if (!ok) throw new Error(`could not fetch ${path}/${f}`);
+  }
+  // (V2: every texture whole before anything is built: a truncated or missing file made a character with blank skin
+  // and clothes, written over the good one)
+  for (const n of want) {
+    const p = join(dir, n);
+    if (!existsSync(p) || statSync(p).size < 100 * 1024) throw new Error(`incomplete download: ${n}`);
   }
 }
 

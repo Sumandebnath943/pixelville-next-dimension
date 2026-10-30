@@ -328,7 +328,7 @@ async function main(): Promise<void> {
     const cars = life.cars.filter((c) => c.root.visible);
     // (each lit car lights the street itself: its beams go to the shaders just before the frame is drawn; its glare,
     // as in the game, is drawn for where the eye is)
-    setGlare(0.9 * sky.nightK);
+    setGlare(0.9 * sky.nightK * Math.min(1, 4.5 / Math.max(1e-3, sky.exposure)));
     VIEW.copy(camera.position);
     for (const c of cars) c.lights(headsOn, sky.nightK);
     for (const f of street.floaters) {
@@ -369,6 +369,7 @@ async function main(): Promise<void> {
     flushBeams(camera.position, sky.nightK, quality === 'high' ? 8 : quality === 'medium' ? 6 : 3);
     if (lost) return;
     const t0 = performance.now();
+    ENV.exposure.value = sky.exposure;
     if (off.has('post')) {
       renderer.toneMappingExposure = sky.exposure;
       renderer.shadowMap.needsUpdate = doShadow;

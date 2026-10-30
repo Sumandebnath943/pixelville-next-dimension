@@ -26,10 +26,18 @@ function toWorld(b: any, lx: number, lz: number): [number, number] {
   return [bx + rx, bz + rz];
 }
 
+/** V2: the parking each plot really has room for, worked out by the renderer from what it built (walls, trees,
+ *  crops and the way out to the street all clear). The plan's standard places put more than half the driveways and
+ *  bays inside the buildings, and the cars drawn there stood in the walls or, where they couldn't be drawn, vanished.
+ *  Null headless: the standard places. */
+export const Lots = { of: null as ((b: any) => { park: Spot[]; drive: Spot[] } | null) | null };
+
 /** the driveway slot (0–2) of a home's car, or null if it has none (a fourth car parks in the street) */
 export function drivewaySpot(b: any, slot: number): Spot | null {
   const d = CAT[b.type];
   if (!d?.res || slot < 0 || slot > 2) return null;
+  const L = Lots.of?.(b);
+  if (L) return L.drive[slot] ?? null;
   const W = (d.w || 1) * TM, D = (d.h || 1) * TM;
   const [x, z] = toWorld(b, W / 2 - 1.5 - slot * 2.4, D / 2 - 3.2);
   return { x, z, yaw: ((b.facing || 0) * Math.PI) / 2 };
@@ -38,7 +46,10 @@ export function drivewaySpot(b: any, slot: number): Spot | null {
 /** parking bay k (0–3) across the front of a workplace's or venue's plot (staff and visitors) */
 export function baySpot(b: any, k: number): Spot | null {
   const d = CAT[b.type];
-  if (!d || d.res || !d.building || k < 0 || k > 3) return null;
+  if (!d || d.res || !d.building || k < 0) return null;
+  const L = Lots.of?.(b);
+  if (L) return L.park[k] ?? null;
+  if (k > 3) return null;
   const W = (d.w || 1) * TM, D = (d.h || 1) * TM;
   if (W < 6) return null;
   // spread across the width the plot has, 2.7 m apart (a car is 1.8 m wide)
@@ -47,6 +58,27 @@ export function baySpot(b: any, k: number): Spot | null {
   const [x, z] = toWorld(b, -((n - 1) * 2.7) / 2 + k * 2.7, D / 2 - 2.6);
   // (backed in, nose to the street, like the driveways: they reverse in and drive out)
   return { x, z, yaw: ((b.facing || 0) * Math.PI) / 2 };
+}
+
+/** V2: how many cars a workplace's, venue's or car park's plot has bays for */
+export function bayCount(b: any): number {
+  const d = CAT[b.type];
+  if (!d || d.res || !d.building) return 0;
+  const L = Lots.of?.(b);
+  if (L) return L.park.length;
+  const W = (d.w || 1) * TM;
+  return W < 6 ? 0 : Math.min(4, Math.max(1, Math.floor((W - 2) / 2.7)));
+}
+
+/** V2: the nearest public car park to `b` with a bay free (within ten tiles' walk of its door), or null */
+export function carParkNear(b: any, buildings: any[]): any {
+  let best: any = null, bd = 11;
+  for (const c of buildings) {
+    if (c.type !== 'carpark' || !c.connected || c.ruined || c.construction > 0 || (c.parked || 0) >= bayCount(c)) continue;
+    const d = Math.abs(c.door.x - b.door.x) + Math.abs(c.door.y - b.door.y);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return best;
 }
 
 /** where a car leaving `b` stands before it pulls out (its own slot at home, else the venue bay it took) */

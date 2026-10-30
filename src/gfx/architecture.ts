@@ -173,7 +173,7 @@ vec3 pvInterior() {
     gl = mix(vec3(0.7, 0.15, 0.12), mix(vec3(0.15, 0.25, 0.7), vec3(0.85, 0.65, 0.15), gl.y), gl.x);
     vec3 g2 = mix(gl * 0.76, gl * (1.0 - min(1.0, lead)), dk);
     g2 = mix(g2, vec3(0.42, 0.3, 0.32), far);
-    return g2 * (uInteriorDay * 0.35 + uLightsOnK * 0.5);
+    return g2 * (uInteriorDay * 0.35 + uLightsOnK * 0.12);
   }
   float W = 3.4 + fract(seed * 7.13) * 1.8;
   float Hr = 2.6;
@@ -189,7 +189,10 @@ vec3 pvInterior() {
   float day = uInteriorDay;
   vec3 wall = pvPalette(seed);
   if (kind > 0.5) wall = kind > 2.5 ? vec3(0.82, 0.82, 0.8) : kind > 1.5 ? vec3(0.36, 0.22, 0.14) : vec3(0.78, 0.74, 0.66);
-  float lampK = (kind > 2.5 ? 1.4 : kind > 0.5 ? 2.6 * (0.5 + 0.5 * uLightsOnK) + 0.6 : 0.34) * (0.7 + 0.6 * fract(seed * 23.0));
+  // (V2: an office's or a shop's lamps were set to show against the daylight, and at the night's exposure, some fifty
+  // times the day's, they burnt out to flat, blinding white. As dusk falls they ease to a little brighter than a
+  // home's, and pvGlowCap keeps the brightest point of any room from glaring)
+  float lampK = (kind > 2.5 ? mix(1.0, 0.16, uLightsOn) : kind > 0.5 ? mix(1.75, 0.35, uLightsOn) : 0.3) * (0.7 + 0.6 * fract(seed * 23.0));
   // (the room as a far window shows it: its walls in the daylight and its lamps, from no angle in particular)
   vec3 flatC = wall * 0.8 * (vec3(day) * 0.62 * vec3(0.95, 0.97, 1.0) + lampC * lampOn * lampK * 0.42);
 
@@ -253,8 +256,8 @@ vec3 pvInterior() {
       if (kind > 2.5) {
         // a grid of ceiling panels
         vec2 g = fract(h.xz * vec2(0.42, 0.5));
-        col += vec3(0.9, 0.95, 1.0) * lampOn * 2.0 * mix(0.12, step(0.7, g.x) * step(0.6, g.y), dk);
-      } else col += lampC * lampOn * 2.5 * smoothstep(0.3, 0.0, length(h.xz - vec2(0.0, D * 0.5))) * dk;
+        col += vec3(0.9, 0.95, 1.0) * lampOn * 1.0 * mix(0.12, step(0.7, g.x) * step(0.6, g.y), dk);
+      } else col += lampC * lampOn * 1.4 * smoothstep(0.3, 0.0, length(h.xz - vec2(0.0, D * 0.5))) * dk;
     }
   } else {
     col = wall * 0.92;
@@ -358,14 +361,15 @@ export class Palette {
       vDecl: 'attribute vec4 aRoom;\nattribute vec3 aWin;\nattribute vec3 aTan;\nvarying vec4 vRoom;\nvarying vec3 vWin;\nvarying vec3 vTan;',
       vDisplace: 'vRoom = aRoom; vWin = aWin; vTan = normalize(mat3(modelMatrix) * aTan);',
       fDecl: INTERIOR,
-      fEmissive: 'totalEmissiveRadiance += pvInterior();',
+      fEmissive: 'totalEmissiveRadiance += pvGlowCap(pvInterior(), 0.55, 1.1);',
       uniforms: { uInteriorDay: interiorDay, uLightsOn: lightsOn },
     }, 'glass'));
     // curved and odd-shaped glazing: a dark mirror without a room behind it
     add('glassPlain', surface(std({ color: 0x0a1016, roughness: 0.05, metalness: 0.3 }), { wet: 0.1 }, 'glassPlain'));
     // lit panels (neon, beacons, signal lamps): coloured by day, glowing after dusk
     add('glowPanel', surface(std({ vertexColors: true, roughness: 0.35 }), {
-      fEmissive: 'totalEmissiveRadiance += diffuseColor.rgb * (0.25 + uLightsOn * 3.5) * pvPower(vWPos);',
+      // (neon may glow just past the bloom's threshold, never burn out to a white slab)
+      fEmissive: 'totalEmissiveRadiance += pvGlowCap(diffuseColor.rgb * (0.25 + uLightsOn * 3.5) * pvPower(vWPos), 1.2, 4.2);',
       fDecl: 'uniform float uLightsOn;',
       uniforms: { uLightsOn: lightsOn },
     }, 'glowPanel'));
@@ -386,7 +390,7 @@ export class Palette {
       this.defs[k] = {
         mat: surface(std({ map: tex, roughness: 0.4 }), {
           snow: 0.4, wet: 0.3,
-          fEmissive: 'totalEmissiveRadiance += diffuseColor.rgb * uLightsOn * 2.2 * pvPower(vWPos);',
+          fEmissive: 'totalEmissiveRadiance += pvGlowCap(diffuseColor.rgb * uLightsOn * 2.2 * pvPower(vWPos), 0.7, 1.5);',
           fDecl: 'uniform float uLightsOn;',
           uniforms: { uLightsOn: lightsOn },
         }, 'signLit'),

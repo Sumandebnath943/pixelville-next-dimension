@@ -408,6 +408,20 @@ export const World: any = {
     return b;
   },
 
+  /** V2: the door side to build with: as asked if its door meets a road, else another side whose door does (and
+   *  that fits), so a building faces the street it stands on instead of having a spur of road laid round it */
+  streetFacing(key: string, x: number, y: number, f: number) {
+    const meets = (ff: number): boolean => {
+      ff = normFacing(key, ff);
+      if (!this.canPlace(key, x, y, ff)) return false;
+      const { w, h } = footprint(key, ff), d = doorOf(x, y, w, h, ff);
+      return this.isRoad(d.x, d.y);
+    };
+    if (meets(f) || !this.anyRoadExists()) return f;
+    for (const k of [1, 3, 2]) if (meets((f + k) & 3)) return normFacing(key, (f + k) & 3);
+    return f;
+  },
+
   /* spot for city-driven growth: footprint whose door lands on an existing road */
   findBuildSpot(key: string) {
     const roads = [];

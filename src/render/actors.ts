@@ -26,23 +26,36 @@ import type { BuildingLayer } from './buildings';
 import { Person, Look, randomLook, Pose } from '../gfx/person';
 import { Car as CarModel } from '../gfx/car';
 import { FarFleet, pickModel, seedOf, type VehicleModel } from '../gfx/vehicle';
+import { FlyingBirds } from '../gfx/birds';
 import { Crowd, castLoaded, outfitFor, rigFor } from '../gfx/people';
 import { Animal, Herd, beast, dogBreed, zooLoaded, type BeastPose } from '../gfx/animals';
 import { Fauna } from './fauna';
 import { drivewayCars, DrivewayCar, CAR_COLORS as PARKED_COLORS, styleForPaint } from './parked';
-import { baySpot, carDrawPose } from '../sim/parking';
+import { baySpot, bayCount, carDrawPose } from '../sim/parking';
 import { trailhead } from '../sim/peak';
 import { Traffic, lanePose, railPose, workZone, FOOT_PX, LANE_PX } from '../sim/traffic';
 import { ENV } from '../gfx/env';
 import { FireFX } from '../gfx/fire';
 import { XmasPlaza, TreeScene } from '../gfx/festive';
-import { interiorDay } from '../gfx/architecture';
+import { interiorDay, SHADOW_DETAIL } from '../gfx/architecture';
 import { STAGE_DECK } from '../sim/hustings';
 
 /* V2 detail tiers: the nearest villagers are skinned, gait-animated people and the
    nearest cars are full models; everything farther stays light instanced figures */
-const NEAR_PEOPLE = 32, NEAR_PEOPLE_R = 48;
-const NEAR_CARS = 22, NEAR_CARS_R = 80;
+/* V2: Ultra (the player's own choice, for a gaming PC) draws the downloaded models in full detail much further out and
+   more of them at once; every other preset keeps the counts it had, so lighter machines and phones lose nothing */
+const ultra = (): boolean => SHADOW_DETAIL.tiny;
+const nearPeople = (): number => (ultra() ? 56 : 32), nearPeopleR = (): number => (ultra() ? 90 : 48);
+const nearCars = (): number => (ultra() ? 36 : 22), nearCarsR = (): number => (ultra() ? 140 : 80);
+/** squared distances inside which the nearest level of detail is drawn: people, cars, animals (nearest, mid) */
+const lod0People = (): number => (ultra() ? 2500 : 400), lod0Cars = (): number => (ultra() ? 8100 : 900);
+const lodBeasts = (): [number, number] => (ultra() ? [900, 3600] : [144, 900]);
+/** V2: the birds that fly: colour, size, how fast they beat */
+const BIRD_KIND: Record<string, { colour: THREE.Color; scale: number; rate: number }> = {
+  gull: { colour: new THREE.Color(0.96, 0.96, 0.95), scale: 1.05, rate: 1.4 },
+  crow: { colour: new THREE.Color(0.1, 0.1, 0.11), scale: 0.85, rate: 1.7 },
+  pigeon: { colour: new THREE.Color(0.55, 0.58, 0.64), scale: 0.62, rate: 2.2 },
+};
 /* V2 (Milestone 9): the nearest animals are skinned and walk; farther, the big ones stand as instanced herds */
 const NEAR_BEASTS = 24, NEAR_BEASTS_R = 60, HERD_R = 250;
 interface BeastWant { id: string; key: string; x: number; y: number; z: number; yaw: number; pose: BeastPose | 'auto'; speed: number }
@@ -263,12 +276,15 @@ export class Actors {
     // V2: traffic-signal lenses, full-bright and coloured per instance (red, amber, green, or out)
     this.lenses = new InstancedPool(new MeshBuilder().box(-0.09, -0.09, -0.015, 0.09, 0.09, 0.015, hex('#ffffff')).build(), this.sirenMat, 720, g, false);
     this.fleet = new FarFleet(g, (m) => FLEET_CAPS[m.kind] ?? 40);
+    this.flyers = new FlyingBirds(g);
     this.crowd = new Crowd(g);
     this.herd = new Herd(g);
   }
   private lenses: InstancedPool;
   /** V2 (Milestone 9): distant traffic drawn from the downloaded models, and far crowds from the modelled villagers */
   private fleet: FarFleet;
+  /** V2: birds on the wing */
+  private flyers: FlyingBirds;
   private crowd: Crowd;
   /** V2 (Milestone 9): the animals: those wanted this frame, the near ones' skinned bodies (kept by key), far herds,
    *  and the farm, zoo, park and street animals that aren't the sim's */
@@ -276,6 +292,7 @@ export class Actors {
   private nearBeasts = new Map<string, { a: Animal; seen: number; x: number; z: number; v: number }>();
   private herd: Herd;
   private fauna = new Fauna();
+  private faunaWired = false;
 
   private near(x: number, z: number, extra = 0): boolean {
     return Math.abs(x - this.camX) < this.range + extra && Math.abs(z - this.camZ) < this.range + extra;
@@ -301,9 +318,9 @@ export class Actors {
   /** a vehicle this frame; `parked` ones stand with their lights off */
   vehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: VehOpts = {}): void {
     // nearby cars, cabs and patrol cars are drawn as full models
-    if ((type === 'car' || type === 'taxi' || type === 'police') && !opts.scale && this.carWant.length < NEAR_CARS * 2) {
+    if ((type === 'car' || type === 'taxi' || type === 'police') && !opts.scale && this.carWant.length < nearCars() * 2) {
       const d2 = (x - this.camX) ** 2 + (z - this.camZ) ** 2;
-      if (d2 < NEAR_CARS_R * NEAR_CARS_R) {
+      if (d2 < nearCarsR() ** 2) {
         this.carWant.push({ type, x, y, z, yaw, paint: paint.clone(), siren: !!opts.siren, pitch: opts.pitch || 0, roll: opts.roll || 0, parked: !!opts.parked });
         return;
       }
@@ -388,6 +405,7 @@ export class Actors {
     for (const p of Object.values(this.props)) p.begin();
     this.lenses.begin();
     this.fleet.begin();
+    this.flyers.begin();
     this.crowd.begin();
     this.herd.begin();
     this.beastWant.length = 0;
@@ -421,6 +439,7 @@ export class Actors {
     for (const p of Object.values(this.props)) p.end();
     this.lenses.end();
     this.fleet.end();
+    this.flyers.end();
     this.crowd.end();
     this.herd.end();
   }
@@ -559,7 +578,7 @@ export class Actors {
         }
       } else if (b.parked > 0 && !d.res) {
         // V2 (Milestone 8): in marked bays across the front of the plot, nose in (sim/parking.ts)
-        for (let k = 0; k < Math.min(4, b.parked); k++) {
+        for (let k = 0; k < Math.min(bayCount(b), b.parked); k++) {
           const s = baySpot(b, k);
           if (s && this.spotFree(b, s)) this.vehicle('car', s.x, 0.13, s.z, s.yaw, CAR_COLORS[(b.id + k * 3) % CAR_COLORS.length], { parked: true });
         }
@@ -995,11 +1014,30 @@ export class Actors {
       const yaw = Math.atan2(Math.cos(b.ph * k) * k, -Math.sin(b.ph * k * 0.77) * k * 0.77);
       this.animal('butterfly', `fly:${i}`, x, this.groundY(x, z, false) + 0.55 + Math.sin(b.ph * 1.3) * 0.3, z, yaw, 'fly');
     });
-    for (const b of Life.birds) {
+    // V2: birds on the wing (gfx/birds.ts): each flock at its own height, the birds of it loosely spread, beating and
+    // gliding in turn (they were flat triangles rocking from side to side, every one 32 m up)
+    Life.birds.forEach((b: any, i: number) => {
       const x = b.x * PX, z = b.y * PX;
-      if (!this.near(x, z, 120)) continue;
-      const flap = Math.sin(b.ph) * 0.6;
-      this.props.bird.add(x, 32 + Math.sin(b.ph * 0.3) * 2, z, b.vx > 0 ? Math.PI / 2 : -Math.PI / 2, 1.4, null, 0, flap);
+      if (!this.near(x, z, 160)) return;
+      const k = BIRD_KIND[b.kind as string] ?? BIRD_KIND.gull, h = hash2(i * 7 + 3, Math.round(b.vx * 10));
+      const y = (b.alt ?? 30) + (h % 9) - 4 + Math.sin(this.t * 0.4 + i) * 1.2;
+      const beat = THREE.MathUtils.smoothstep(Math.sin(this.t * 0.3 + i * 1.7), -0.35, 0.25);
+      this.flyers.add(x, y, z + Math.sin(this.t * 0.5 + i) * 1.5, b.vx > 0 ? Math.PI / 2 : -Math.PI / 2, 0, b.ph * k.rate, beat, k.colour, k.scale);
+    });
+    // and a few circling over the farms and parks by day, soaring on the warm air with a beat now and then
+    if (Sim.clock > 360 && Sim.clock < 1140 && !Weather.isRaining()) {
+      for (const bd of World.buildings) {
+        if (bd.type !== 'farm' && bd.type !== 'park' && bd.type !== 'grandpark') continue;
+        const cx = (bd.x + bd.w / 2) * TM, cz = (bd.y + bd.h / 2) * TM;
+        if (!this.near(cx, cz, 60)) continue;
+        const k = bd.type === 'farm' ? BIRD_KIND.crow : BIRD_KIND.gull;
+        for (let j = 0; j < 3; j++) {
+          const h = hash2(bd.id, j * 13 + 1), r = 16 + (h % 14), w = (0.22 + ((h >>> 5) % 10) / 60) * (j % 2 ? 1 : -1);
+          const a = this.t * w + ((h >>> 9) % 628) / 100, y = 22 + ((h >>> 3) % 12) + Math.sin(this.t * 0.2 + j) * 2;
+          const beat = THREE.MathUtils.smoothstep(Math.sin(this.t * 0.45 + j * 2.1), 0.55, 0.9);
+          this.flyers.add(cx + Math.cos(a) * r, y, cz + Math.sin(a) * r, Math.atan2(-Math.sin(a) * w, Math.cos(a) * w), w > 0 ? 0.32 : -0.32, this.t * 14 + j, beat, k.colour, k.scale);
+        }
+      }
     }
     // V2 (Milestone 8): the hire bikes in their rack at the foot of each peak's trail
     for (const pk of World.peaks) {
@@ -1283,7 +1321,7 @@ export class Actors {
     const far: PersonDraw[] = [];
     let near = 0, created = 0;
     for (const { p, d } of sorted) {
-      if (near >= NEAR_PEOPLE || d > NEAR_PEOPLE_R * NEAR_PEOPLE_R) { far.push(p); continue; }
+      if (near >= nearPeople() || d > nearPeopleR() ** 2) { far.push(p); continue; }
       const rig = rigFor(p.seed, p.kind, p.job);
       // (a key of its own once the characters have loaded, so a code-built body gives way to the modelled one)
       const key = `${p.kind}|${p.seed}|${p.job || ''}${rig ? '|' + rig.id : ''}`;
@@ -1302,7 +1340,7 @@ export class Actors {
       const r = e.person.root;
       r.visible = true;
       r.scale.setScalar(p.scale || 1);
-      e.person.setLod(d < 400 ? 0 : 1);
+      e.person.setLod(d < lod0People() ? 0 : 1);
       const pose: Pose = p.mode === 'walk' || p.mode === 'run' ? 'walk' : p.mode === 'sit' ? 'sit' : p.mode === 'lie' ? 'lie' : p.mode === 'work' ? 'work' : p.mode === 'carry' ? 'carry' : p.mode === 'speak' ? 'speak' : p.mode === 'cheer' ? 'cheer' : 'idle';
       r.position.set(p.x, p.y + (p.mode === 'lie' ? 0.14 : 0), p.z);
       r.rotation.set(p.mode === 'lie' ? -Math.PI / 2 : 0, p.yaw, 0, 'YXZ');
@@ -1330,7 +1368,7 @@ export class Actors {
     const wants = this.carWant.map((w) => ({ w, d: (w.x - this.camX) ** 2 + (w.z - this.camZ) ** 2 })).sort((a, b) => a.d - b.d);
     let shown = 0;
     for (const { w } of wants) {
-      if (shown >= NEAR_CARS) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, pitch: w.pitch, roll: w.roll, parked: w.parked }); continue; }
+      if (shown >= nearCars()) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, pitch: w.pitch, roll: w.roll, parked: w.parked }); continue; }
       const style = w.type === 'taxi' ? 'sedan' : w.type === 'police' ? 'estate' : styleForPaint(w.paint);
       const model = this.modelFor(w.type, w.paint);
       const kind = `${w.type}:${model ? model.id : style}`;
@@ -1343,7 +1381,7 @@ export class Actors {
       }
       if (!best) best = this.carSlots.find((s) => !s.used && s.kind === kind && this.t - s.seen > 0.4) || null;
       if (!best) {
-        if (this.carSlots.length >= NEAR_CARS + 8) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, parked: w.parked }); continue; }
+        if (this.carSlots.length >= nearCars() + 8) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, parked: w.parked }); continue; }
         const car = new CarModel(style, w.paint, w.type !== 'taxi', w.type === 'taxi' ? 'taxi' : w.type === 'police' ? 'police' : undefined, model?.id);
         this.group.add(car.root);
         best = { car, kind, x: w.x, z: w.z, yaw: w.yaw, v: 0, a: 0, used: false, seen: this.t };
@@ -1352,8 +1390,10 @@ export class Actors {
       if (this.t - best.seen > 0.4) { best.x = w.x; best.z = w.z; best.yaw = w.yaw; best.v = 0; best.a = 0; best.car.setPaint(w.paint); }
       best.used = true;
       shown++;
+      // (V2: signed, along the car's own heading: below 0 when it backs into its spot. It was the distance moved, never
+      // below 0, and a car reversing spun its wheels forwards and turned them against the turn)
       const dist = Math.hypot(w.x - best.x, w.z - best.z);
-      const v = dist < 10 ? dist / dt : 0;
+      const v = dist < 10 ? ((w.x - best.x) * Math.sin(w.yaw) + (w.z - best.z) * Math.cos(w.yaw)) / dt : 0;
       const vs = best.v + (v - best.v) * Math.min(1, dt * 6);
       best.a += ((vs - best.v) / dt - best.a) * Math.min(1, dt * 4);
       let dy = w.yaw - best.yaw;
@@ -1363,7 +1403,7 @@ export class Actors {
       best.x = w.x; best.z = w.z; best.yaw = w.yaw; best.seen = this.t;
       best.car.root.visible = true;
       best.car.drive(dt, w.x, w.z, w.yaw, vs, best.a, dy / dt, w.y);
-      best.car.setLod((w.x - this.camX) ** 2 + (w.z - this.camZ) ** 2 < 900 ? 0 : 1);
+      best.car.setLod((w.x - this.camX) ** 2 + (w.z - this.camZ) ** 2 < lod0Cars() ? 0 : 1);
       // (a parked car stands dark: no headlamps, no tail lamps, no brake lights)
       best.car.lights(!w.parked && (this.night > 0.2 || Weather.isRaining() || Weather.isSnowing()), this.night, w.parked);
       best.car.setSiren(w.siren, this.t);
@@ -1374,8 +1414,33 @@ export class Actors {
   /* V2 (Milestone 9): the farm, zoo, park and street animals round the camera (render/fauna.ts) */
   private collectFauna(): void {
     if (!zooLoaded().length) return;
-    this.fauna.collect(this.dt, this.camX, this.camZ, this.range, (d) => this.animal(d.id, d.key, d.x, this.groundY(d.x, d.z, false), d.z, d.yaw, d.pose, d.speed));
+    if (!this.faunaWired) { this.fauna.blocked = this.faunaBlocked; this.faunaWired = true; }
+    // (V2: on top of the lot's paving or turf, 10 cm up, where the animals' places are: at the bare ground's height the
+    // pigeons on a plaza or outside a shop stood sunk to the breast in it)
+    this.fauna.player = this.player;
+    this.fauna.collect(this.dt, this.camX, this.camZ, this.range, (d) => {
+      const y = this.lotGround(d.x, d.z);
+      this.animal(d.id, d.key, d.x, y, d.z, d.yaw, d.pose, d.speed);
+      // (the farmer behind the plough horse, a keeper putting out the food)
+      const h = d.handler;
+      if (h && this.near(h.x, h.z, 60)) {
+        this.person({ x: h.x, y: this.lotGround(h.x, h.z), z: h.z, yaw: h.yaw, kind: 'man', seed: hash2(Math.round(d.x), Math.round(d.z)) % 997, mode: h.walk ? 'walk' : 'work', phase: 0, job: 'gardener', shirt: hex(h.job === 'farmer' ? '#5a6a3a' : '#3a6a4a') });
+      }
+    });
   }
+  /** V2: the Founder (null in the Planner), for the animals that shy away */
+  player: { x: number; z: number; fast: boolean } | null = null;
+  /** V2: ground height on a lot's paving or turf (10 cm up) or off it */
+  private lotGround(x: number, z: number): number {
+    const tx = Math.floor(x / TM), tz = Math.floor(z / TM);
+    return this.groundY(x, z, false) + (World.inB(tx, tz) && World.bmap[World.idx(tx, tz)] ? 0.1 : 0);
+  }
+  /** V2: something in the way of an animal of radius r at (x, z): a fence, a bench, a rock, a pool, a tree */
+  private faunaBlocked = (x: number, z: number, r: number): boolean => {
+    for (const [x0, z0, x1, z1] of this.buildings.solidsNear(x, z, r + 1)) if (x > x0 - r && x < x1 + r && z > z0 - r && z < z1 + r) return true;
+    for (const t of this.buildings.treesNear(x, z, r + 1)) if ((t.x - x) ** 2 + (t.z - z) ** 2 < (0.45 + r) ** 2) return true;
+    return false;
+  };
 
   /** the nearest animals skinned and moving (each keeps its body by its key), the big ones farther off as herds */
   private drawAnimals(): void {
@@ -1409,7 +1474,8 @@ export class Actors {
       r.visible = true;
       r.position.set(w.x, w.y, w.z);
       r.rotation.y = w.yaw;
-      e.a.setLod(d < 144 ? 0 : d < 900 ? 1 : 2);
+      const [l0, l1] = lodBeasts();
+      e.a.setLod(d < l0 ? 0 : d < l1 ? 1 : 2);
       e.a.animate(this.dt, w.pose === 'auto' ? (e.v > 0.15 ? 'walk' : 'idle') : w.pose, w.speed > 0 ? w.speed : e.v);
     }
     for (const [k, e] of this.nearBeasts) {

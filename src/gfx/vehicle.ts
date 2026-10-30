@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { surface } from './surface';
-import { addBeam, glare, VIEW } from './car';
+import { addBeam, glare, isBraking, steerAngle, VIEW } from './car';
 
 type V3 = [number, number, number];
 interface Lod { paint: THREE.BufferGeometry | null; kit: THREE.BufferGeometry | null; glass: THREE.BufferGeometry | null; wheel: THREE.BufferGeometry | null }
@@ -97,7 +97,10 @@ const KIT_F = /* glsl */ `varying vec2 vPbr;\nvarying float vGlow;\nuniform vec4
  *  (1 headlamps, 4 tail and brake lights, 5 and 6 the two halves of a light bar, 7 a roof sign or beacon). `far`:
  *  instanced, the instance colour tinting only the paint, and each instance's lamps lit or not */
 function kitMaterial(map: THREE.Texture, lampU: { value: THREE.Vector4 }, lamp2U: { value: THREE.Vector4 }, far = false): THREE.MeshStandardMaterial {
-  const m = surface(new THREE.MeshStandardMaterial({ vertexColors: true, map, roughness: 1, metalness: 1, alphaTest: 0.5 }), {
+  // (V2: double-sided, as every one of the downloaded models was made: drawn one-sided, a panel modelled as a single
+  // sheet or wound inwards vanished seen from outside, and buses, vans, trucks and ambulances looked hollow, their
+  // sides and wheels see-through)
+  const m = surface(new THREE.MeshStandardMaterial({ vertexColors: true, map, roughness: 1, metalness: 1, alphaTest: 0.5, side: THREE.DoubleSide }), {
     snow: 0.5, wet: 0.35,
     vDecl: KIT_V + (far ? '\n' + FAR_V : '') + (far ? '' : ''),
     vDisplace: 'vPbr = pbr; vGlow = glow;' + (far ? `
@@ -118,7 +121,9 @@ function kitMaterial(map: THREE.Texture, lampU: { value: THREE.Vector4 }, lamp2U
         : ch < 6.5 && ch > 5.5 ? diffuseColor.rgb * L2.y * 3.0
         : ch < 7.5 && ch > 6.5 ? diffuseColor.rgb * L2.z * 2.0
         : vec3(0.0);
-      totalEmissiveRadiance += e;
+      // (V2: at the night's exposure every lens, tail lamp and brake light burnt out into a blinding blot: headlamps
+      // and beacons may glow a little past the bloom's threshold, tail lamps stay just under it, brake lights over)
+      totalEmissiveRadiance += ch < 1.5 ? pvGlowCap(e, 1.5, 4.6) : ch < 4.5 ? pvGlowCap(e, 1.0, 6.0) : pvGlowCap(e, 2.0, 8.0);
     }`,
   }, far ? 'fleetFar' : 'fleet');
   const base = m.onBeforeCompile;
@@ -133,7 +138,7 @@ function kitMaterial(map: THREE.Texture, lampU: { value: THREE.Vector4 }, lamp2U
 let GLASS: THREE.MeshStandardMaterial | null = null;
 /** tinted glass: see-through looking straight in, a mirror at a glancing angle */
 function glassMaterial(): THREE.MeshStandardMaterial {
-  GLASS ??= surface(new THREE.MeshStandardMaterial({ color: 0x0a0e12, roughness: 0.04, metalness: 0.25, transparent: true, opacity: 0.6 }), {
+  GLASS ??= surface(new THREE.MeshStandardMaterial({ color: 0x0a0e12, roughness: 0.04, metalness: 0.25, transparent: true, opacity: 0.6, side: THREE.DoubleSide }), {
     snow: 0.4, wet: 0.1,
     fColor: 'diffuseColor.a = mix(0.32, 0.95, pow(1.0 - abs(dot(normalize(vWNrm), normalize(cameraPosition - vWPos))), 3.0));',
   }, 'fleetGlass');
@@ -141,7 +146,7 @@ function glassMaterial(): THREE.MeshStandardMaterial {
 }
 /** a car's clear-coated body paint (the same program as the old cars' paint) */
 export function paintMaterial(color: THREE.Color, metallic = true): THREE.MeshPhysicalMaterial {
-  return surface(new THREE.MeshPhysicalMaterial({ color, metalness: metallic ? 0.6 : 0.05, roughness: metallic ? 0.32 : 0.4, clearcoat: 1, clearcoatRoughness: 0.035 }), { snow: 0.9, wet: 0.15 }, 'carPaint') as THREE.MeshPhysicalMaterial;
+  return surface(new THREE.MeshPhysicalMaterial({ color, metalness: metallic ? 0.6 : 0.05, roughness: metallic ? 0.32 : 0.4, clearcoat: 1, clearcoatRoughness: 0.035, side: THREE.DoubleSide }), { snow: 0.9, wet: 0.15 }, 'carPaint') as THREE.MeshPhysicalMaterial;
 }
 
 const _e = new THREE.Vector3(), _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _p = new THREE.Vector3();
@@ -243,7 +248,7 @@ export class ModelCar {
     this.root.position.set(x, y, z);
     this.root.rotation.y = yaw;
     this.spin += (speed * dt) / this.dims.wheelR;
-    this.steer = THREE.MathUtils.clamp((turn * this.dims.WB) / Math.max(speed, 0.5), -0.6, 0.6);
+    this.steer = steerAngle(turn, this.dims.WB, speed, 0.6);
     if (this.wheelMesh) this.placeWheels();
     const tp = THREE.MathUtils.clamp(-accel * 0.0065, -0.035, 0.035);
     const tr = THREE.MathUtils.clamp(-turn * speed * 0.0045, -0.04, 0.04);
@@ -253,7 +258,7 @@ export class ModelCar {
     this.bounce += this.bv * dt;
     this.body.rotation.set(this.pitch, 0, this.roll);
     this.body.position.y = this.bounce * 0.02;
-    this.braking = accel < -0.6 || speed < 0.05;
+    this.braking = isBraking(speed, accel);
   }
   /** the light bar flashing its halves in turn (a taxi's roof sign or a works van's beacon lit with it) */
   setSiren(on: boolean, t = 0): void {

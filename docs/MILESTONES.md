@@ -521,6 +521,19 @@ The code-built people, cars and animals give way to downloaded models (owner's c
 ### Checked
 - 152 tests pass; typecheck clean; lint has no errors; production build builds. In the Browser pane: the traffic run above; god view, the Auto village panel, the cab refusal, the hospital debt; the top bar at 1366, 1093, 1024 and 768 wide; the rescue prompt and the graphics-reset notice; the thaw and lake ice; street trees and FOV at street level; Ultra's kerb shadows at low sun with no black squares; no console errors. For 9j: every animal side on in the look lab; a farm's animals and the plaza's pigeons in an Auto village; the Founder chooser (both sides, portraits, the choice taking effect in the street); the Credits screen.
 
+### 9k · The owner's 23-point list (2026-10-31, branch `fix/owner-list-batch-10`)
+- **Text**: `index.html` had been saved double-encoded in 9j (`â€”` for `—` in 27 lines); repaired.
+- **Night light**: windows, signs and neon, car lamps and the glare kept in display terms (`pvGlowCap`, `ENV.exposure`): at the night's exposure (~9×) they burnt out white. Office and shop lamps eased at dusk. Headlamp beams: a wall-facing patch capped; the farthest beams fade instead of popping (it read as a shadow appearing). The Milky Way redrawn (a band with a dust lane and faint stars; it was blotchy noise).
+- **Vehicles**: drawn double-sided as modelled (buses, vans, trucks, ambulances were see-through); rebuilt with the near model at up to 24 000 triangles and a 0.4 % error (it was 9 000 and 25 %). Reversing: signed speed in `drawCars`, `steerAngle`/`isBraking` in `gfx/car.ts`. Gridlock relief waits while the player can see the car (`Traffic.seen`, `Traffic.reliefDue`). A new village's Founder gets the modelled car (`founder.refreshRide`).
+- **People**: faces get a 512² square of their own in a 1024-wide atlas and the near model 8 000 triangles at 1 % error (the face was 256² and 8 %); all 45 rebuilt. A running gait (`HIP_RUN`…, `cadence`, `runOf`) and hips that sweep enough for the stride; the Founder walks at 2 m/s and runs at 6. The hat is gone. Umbrellas: a domed eight-panel canopy, hooked handle, ordinary colours.
+- **Menu**: landing rebuilt (village card, mode tiles, utility strip) in a scroll-safe wrapper; the in-game menu scrolls on short screens.
+- **Animals** (`render/fauna.ts`, `render/zoo.ts`): obstacle-aware wandering; water, food, milking and the plough horse; keepers at the zoo's noon feeding; deer and hares in open country, shy of the Founder. The zoo redesigned as five themed enclosures round walks with a gated entrance. Fountains and plaza planters solid. Flying birds (`gfx/birds.ts`): body, tail, two-part wings beating in the shader, flap-and-glide, flocks at their own heights, birds circling farms and parks.
+- **Parking**: plots' parking found from what was built (`findParking`, `Lots.of`): none inside walls (it was 168 of 288). A **Car Park** (3×2, nine bays); a full destination sends the car to the nearest car park and the driver walks on (`carParkNear`, `trip.lot`, `carLotId`). Auto villages get two.
+- **Roads**: a new building turns its door to a street its plot already touches (`World.streetFacing`). (Reshaping auto-laid spurs was tried and reverted: it put cars into buses at the new junction shapes.)
+- **Other**: bus and train passengers walk off at 1.4 m/s and stop at buildings; an ambulance held near a crash sends its crew on foot; Ultra shows full-detail models two to three times further out.
+### Checked
+- 158 tests pass (new: `vehicles`, `parking`); typecheck clean; lint no errors; build builds. In the Browser pane: night windows, headlights, the sky, the vehicle lineup, faces, the run and walk, umbrellas, the menu at 1366×630 and phone sizes, the zoo, birds, car parks.
+
 ---
 
 ## Ways of working

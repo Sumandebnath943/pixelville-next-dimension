@@ -106,6 +106,9 @@ export const AutoVillage = {
     // round the square: the town hall, the church, the shops, cafés and the market
     for (const key of ['plaza', 'townhall', 'church', 'cafe', 'bakery', 'market', 'restaurant', 'bank', 'pharmacy', 'library', 'postoffice',
       'florist', 'bookshop', 'icecream', 'barber', 'butcher', 'pizzeria', 'shop', 'tailor', 'taxistand', 'busstop']) place(key, centre, mid);
+    // V2: car parks off the square and by the services, for visitors to places with no room of their own
+    if (!place('carpark', centre, mid)) place('carpark', outer, mid);
+    place('carpark', outer, mid);
     // the streets beyond: services spread round the blocks, a stop at either end of the line
     const services = ['school', 'hospital', 'police', 'fire', 'park', 'cinema', 'gym', 'park', 'playground', 'temple', 'watertower', 'shop', 'cafe', 'busstop', 'busstop', 'hotel'];
     services.forEach((key, i) => place(key, blockOf(i * 5 + (seed & 7)), null) || place(key, outer, null));
