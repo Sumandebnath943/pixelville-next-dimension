@@ -141,7 +141,8 @@ Diegetic UI, opened with one key/button:
 - **Mountains** become real sculpted massifs over V1's 11×11 rock footprint, with hiking trails and summit torches at night.
 - **Water** (lakes, rivers, ponds, sea) is an animated surface at a set level; drought lowers it visibly, floods raise a plane over streets.
 - **Sand** beaches along the sea, trees as instanced low-poly species with seasonal looks.
-- **Off-map edges:** the V1 country roads entering from the west and north become **highways** to other cities; the rail line and sea lanes also exit the map (§13).
+- **Off-map edges:** the V1 country roads entering from the west and north become **highways** to other cities; the rail line and sea lanes also exit the map (§13). The roads carry on beyond the edge along a valley to the horizon, and traffic from out of town drives in along them (`src/sim/approach.ts`).
+- **Seasons on the ground (V2):** snow settles as an even dusting, lies in drifts, and thaws on the village's clock from the drifts' edges with wet ground round them; roads plough to slush; grass comes out flattened and straw-pale and greens over a day and a half; lakes and rivers freeze from the banks out and thaw back to them in floes.
 
 ### 5.3 Buildings
 
@@ -168,6 +169,8 @@ The full list of 87 placeable types is in [Appendix A](#appendix-a--building-cat
 ### 5.5 Streets
 
 Derived from the road grid: lane markings, sidewalks with kerbs, junctions, **traffic lights** (V1 `signals`, still on real-time 8 s phases), **level-crossing gates** (V1 `crossings`), bridges where roads cross water, street lamps, bus shelters, parking bays, trees, benches, bins, post boxes.
+
+**Street trees (V2):** every straight street is lined with trees on its open verges, one every other tile on both sides and one kind all along a street, clear of junctions (`Terrain.updateStreetTrees`); they follow the roads and buildings as the village changes, and their trunks are solid. No tree stands in the road: each stays inside its own tile, park or plot.
 
 ---
 
@@ -278,6 +281,14 @@ Four goods categories keep it readable:
 - Repair crews drive out from the power plant. Playable job: **electrician**.
 - V1's water tower keeps its current role (bills, mood).
 
+### 9.5 The village's money (V2, `src/sim/economy.ts`)
+
+- **Every dollar has a payer.** A workplace pays its people out of its own till, filled by what it sells to villagers and visitors and by its trade beyond the map (a share of a day's wages per type: offices and banks more, shops less).
+- **Public services** (the civic list: school, hospital, police, fire, town hall, library and the rest) run on daily budgets from the village fund (`Gov.treasury`), filled by taxes and a **county grant** of $6 a resident a day. The fund may go negative: it owes the county.
+- **Debts, not free services:** a household bill it can't pay (a hospital stay, a fine) is owed to whoever is due and repaid as money comes in (`b.debts`); the Founder's unpaid bills likewise (`Wallet.bills`). A cab quotes its fare up front and won't take a fare that can't pay; shops sell nothing to an empty purse and only order what they can afford.
+- **Building sites** have budgets that pay for their materials (`Economy.commission`); a workplace the Founder places opens with a few days' wages (god mode costs the village nothing).
+- A place that can't pay its staff says so; a villager's own business that can't pay them for a week closes. Money only enters or leaves at the map's edge (exports, imports, visitors, the county).
+
 ---
 
 ## 10. New player-facing features
@@ -288,6 +299,8 @@ Four goods categories keep it readable:
 | **Vehicle ownership** | Buy cars and motorcycles at the showrooms (prices in V1's range); refuel at gas stations (fuel gauge); repair damage at the auto garage; park anywhere legal (illegal parking → ticket, eventually towed); keep them at the Lodge. Owned vehicles persist in the save. |
 | **In-game phone** | See §4.5. |
 | **Photo mode** | Pause the world, free camera, depth of field, filters, time-of-day and weather preview, hide HUD, save PNG. |
+| **God view** (V2) | In the Planner, `G` clears the view of storm, mist and fog; the weather itself goes on. |
+| **Auto village** (V2) | A whole village laid out and moved into at a press (`src/sim/autovillage.ts`), watched from the air with season, weather, festival and pace pins; the player can take it over at the Lodge. |
 
 ---
 
@@ -380,6 +393,7 @@ All input goes through an **action map**, so bindings are rebindable and every d
 - Carried from V1: clock & date, season, weather (+ next), village tier, population, jobs, wealth, safety, happiness, leader chip, task book, PVTV, R/C/I demand, minimap, clickable toasts (now: set a GPS pin or fly the Planner camera there), villager inspector, building cards, mayor's report with tax policy, history charts, settings.
 - New: wallet, wanted stars, reputation, speedometer/fuel in vehicles, interaction prompts, shift objective panel.
 - Street HUD is minimal; Planner HUD is V1's full dashboard.
+- **Fitting the screen (V2):** on a smaller screen the whole interface scales down a size by itself (about 0.9 at 1366 px wide, never below 0.8; touch screens 0.9; phones keep their own layout), and the top bar stays one row by giving up labels a step at a time; only a narrow screen gets two full rows.
 
 ---
 
@@ -389,6 +403,7 @@ All input goes through an **action map**, so bindings are rebindable and every d
 - Saves everything V1 saves (world, buildings with stable ids, people, minds, government, journal) plus facings, health, education, stock levels, power state, Founder (wallet, vehicles, reputation memories, wanted state cleared on save).
 - **V1 import:** a V1 v4 save is placed in the centre of a new 256² map (offset 64, 64), surrounding terrain generated to match (sea continues along the south). People, minds, ownership and the mayor survive.
 - Failed loads roll back to the running game (V1 behaviour).
+- **A village that won't open (V2):** a boot that never reaches play leaves a mark; the next boot offers to open it again, open it with lighter graphics for that visit, or start afresh with the old village kept as the `rescue` save ("Kept safe" in Load). A graphics reset autosaves at once and offers a reload.
 
 ---
 
@@ -433,7 +448,9 @@ Vite · TypeScript (strict; the ported sim is checked against shared entity type
 - Static geometry merged per chunk; instancing for trees, lamps, props, people and cars.
 - Frustum + distance culling; cascaded shadows near the player only.
 - Night lighting: emissive windows and lamp glow, real lights only for the closest sources (headlights, sirens, fires).
-- Quality presets (Low / Medium / High) with automatic detection; mobile defaults to Low.
+- Quality presets (Low / Medium / High) with automatic detection; mobile defaults to Low. **Ultra** (V2) is only ever the player's choice: High plus every small shadow and full mirrors.
+- Draw only what shows (V2): the water mirror is skipped when water is a sliver of the view; wet streets mirror the nearest 320 m; flat ground and the smallest details cast no shadows below Ultra; static meshes drop their page copy once on the GPU. Resolution scaling stops at 80% and the grade sharpens.
+- Never a frozen screen (V2): each part of the frame runs guarded, so one failure is logged and skipped.
 - Sim heavy passes (grievance survey, coverage, planning) stay throttled as in V1.
 
 ### 17.5 Testing
@@ -445,7 +462,7 @@ Vite · TypeScript (strict; the ported sim is checked against shared entity type
 
 ## 18. Audio
 
-V1's procedural WebAudio (ambience, bells, sirens, fireworks) is kept and made **positional**: sirens approach and pass, engines rev, rain is louder outdoors, interiors muffle the street, carols drift from the Christmas tree.
+V1's procedural WebAudio (ambience, bells, sirens, fireworks) is kept and made **positional**: sirens approach and pass, engines rev, rain is louder outdoors, interiors muffle the street, carols drift from the Christmas tree. Since 2026-10-27 a new synthesised engine (street, room and UI buses with reverb) plays an ambience built from what's around the listener (`src/audio/scape.ts`: wind, leaves, rain, water, traffic, crowds, birds by species, insects, sites, works, fires), engine voices, the Founder's engine, tyres and footsteps by surface, and each building's own sounds indoors.
 
 ---
 

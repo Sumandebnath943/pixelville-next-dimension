@@ -916,7 +916,8 @@ function buildPark(c: Ctx, grand: boolean, plaza: boolean): void {
   const n = grand ? 14 : plaza ? 4 : 6;
   for (let i = 0; i < n; i++) {
     const h = hash2(c.hv, i);
-    const x = ((h % 1000) / 1000 - 0.5) * (c.W - 6), z = (((h >> 10) % 1000) / 1000 - 0.5) * (c.D - 6);
+    // (V2: unsigned: a signed shift threw half the park's trees out of the park, onto the road)
+    const x = ((h % 1000) / 1000 - 0.5) * (c.W - 6), z = (((h >>> 10) % 1000) / 1000 - 0.5) * (c.D - 6);
     if (Math.abs(x) < 2.5 || Math.abs(z) < 2.5) continue;
     if (plaza) {
       c.body.cyl(x, 0.1, z, 1.2, 0.8, 8, c.c('#8a8478'));
@@ -1264,10 +1265,11 @@ function rubble(kit: Kit, b: any): void {
   kit.box('gravel', -W / 2 + 0.3, 0, -D / 2 + 0.3, W / 2 - 0.3, 0.14, D / 2 - 0.3, new THREE.Color(0.55, 0.52, 0.5));
   for (let i = 0; i < 18; i++) {
     const h = hash2(b.id, i);
-    const x = ((h % 1000) / 1000 - 0.5) * (W - 3), z = (((h >> 10) % 1000) / 1000 - 0.5) * (D - 3);
-    const s = 0.5 + ((h >> 20) % 10) / 6;
+    // (V2: unsigned shifts: signed, half the rubble landed off the plot, some of it in the street)
+    const x = ((h % 1000) / 1000 - 0.5) * (W - 3), z = (((h >>> 10) % 1000) / 1000 - 0.5) * (D - 3);
+    const s = 0.5 + ((h >>> 20) % 10) / 6;
     const g = new THREE.BoxGeometry(s * 1.4, s, s);
-    g.rotateY((h % 628) / 100).rotateZ(((h >> 4) % 60) / 100);
+    g.rotateY((h % 628) / 100).rotateZ(((h >>> 4) % 60) / 100);
     g.translate(x, s / 2, z);
     kit.add(i % 3 ? 'brickBrown' : 'stone', g, new THREE.Color(0.6, 0.55, 0.5));
   }

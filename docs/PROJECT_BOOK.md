@@ -2,7 +2,7 @@
 
 > The A–Z of the project: every system, place, rule, file and idea, in one alphabetical book.
 > For getting started, read [HANDOFF.md](HANDOFF.md); for the design, [DESIGN.md](DESIGN.md); for what each milestone delivered, [MILESTONES.md](MILESTONES.md).
-> State as of 2026-10-25, Milestone 7 built and merged into `main` (the deploy waits on the owner).
+> State as of 2026-10-30: Milestones 1–8 done, Milestone 9 (live play fixes) on `main`, live at https://pixelvillenextdimension.houseofnamus.com/ (every push to `main` deploys). "M9" entries below are from the batches after launch.
 
 ---
 
@@ -27,15 +27,19 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Ambulance** — See **Health**. Also the **Paramedic** shift's vehicle.
 
+**Approach** — **M9** `src/sim/approach.ts`: the roads that run off the map carry on along a valley to the horizon (`Terrain` draws them); visitors' cars, delivery trucks and the county's van drive in from 1.1 km out on the right-hand row, one behind another, and join only when there's room; what leaves drives away out of sight. Vehicles still off the map have `off` set and are not indexed by **Traffic**.
+
 **Architecture** — Headless **Sim** (`src/sim`, no Three.js/DOM) → 3D layers (`src/render`, `src/gfx`) → the player (`src/player`, `src/jobs`) → UI (`src/ui`). The sim talks to the client only through hooks the client sets (see **Hooks**).
 
 **Arrest** — The Founder can be arrested (**Busted**) or, on a **Police** shift, arrest a burglar (`Life.resolve(true)`).
 
 **Assets** — Everything is procedural (no downloaded models or textures). Real rigged people and cars are waiting on the owner's licensing decision (CC0-only vs CC-BY/Mixamo vs paid). Any assets must be listed in `public/assets/LICENSES.md`.
 
-**Auto resolution** — M7: Settings → Graphics → Resolution "auto" (`Stage.autoRes`) drops the world's render resolution 10% at a time while frames run under ~30 fps, back up when there's room, never below 70%; or a fixed 100/85/70/55%. A 30 fps cap saves battery.
+**Auto resolution** — M7: Settings → Graphics → Resolution "auto" (`Stage.autoRes`) drops the world's render resolution 10% at a time while frames run under ~30 fps, back up when there's room, never below 80% (M9; it was 70%, and the soft picture was much of why the game looked worse than the **Look lab**); or a fixed 100/85/70/55%. The grade pass sharpens (`sharpen`, more the lower the resolution). A 30 fps cap saves battery.
 
-**Autosave** — Every 2 or 5 minutes (setting), and when the tab is hidden; written to IndexedDB slot `AUTO` (`src/save/store.ts`). An empty map is not autosaved. Saves are per browser origin, port included.
+**Auto village** — **M9** `src/sim/autovillage.ts` (`AutoVillage.build(seed)`: an avenue grid, `BLOCK` 14, block corners free so crossings get traffic lights, a square of shops and civic buildings, services, homes, works, farms, a power plant, ~150 villagers) and `askAuto/buildAuto/autoFrame` in `src/main.ts`, panel `#auto`. The landing's "Auto village" or Menu → Auto village; the camera drifts between views (drag turns, wheel zooms, H hides the panel). Pins: season and weather (`Weather.pin`), festival (`Festivals.pinDay`), pace. "Play this village" hands it over at the Lodge.
+
+**Autosave** — Every 2 or 5 minutes (setting), when the tab is hidden, and (M9) when the graphics card resets; written to IndexedDB slot `AUTO` (`src/save/store.ts`). An empty map is not autosaved. Saves are per browser origin, port included.
 
 ---
 
@@ -46,6 +50,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Blackouts** — See **Power**. Districts go dark (windows, signs, lamps, traffic lights) via `src/render/powermap.ts`.
 
 **Booking a shift** — The phone's Jobs app routes you to the workplace; the shift starts when you reach the door (`shifts.go()`, `shifts.booked`).
+
+**Boot and rescue** — **M9** `boot()` in `src/main.ts`: each boot sets `localStorage['pixelville-nd-boot']` and clears it after 30 s of frames or on `pagehide`. A mark found with an autosave means the last boot crashed or hung, so `#ld-rescue` offers: open it again; open it with lighter graphics (Low for that load, via `QUALITY_ONCE`); or start a new village with the old one kept as save `RESCUE` ("Kept safe" in Load). A graphics reset (`webglcontextlost`) autosaves and shows `#gpu-lost` with a Reload button.
 
 **Buildings (catalog)** — `src/sim/catalog.ts` (`CAT`): 97 V1 entries — 87 placeable building types (5 fast-food chains among them), 2 house upgrade levels and 8 tools/terrain — with footprint, jobs, opening hours, visit type and residents. Rendered by procedural builders in `src/render/buildings.ts` using the architecture **Kit**; finished buildings merge per 16×16-tile chunk.
 
@@ -89,6 +95,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Counter** — Inside a shop: buy the place's own wares (`WARES` in `src/interiors/plan.ts`) at the staff's price for you; also the place for a shop shift's orders. `src/ui/counter.ts`.
 
+**County grant** — **M9** `COUNTY_GRANT` in `src/sim/economy.ts`: $6 a resident a day into the village fund (`Gov.grantToday`), shown in the mayor's report.
+
 **Crime** — V1 burglaries at night (more with unemployment), disputes and crashes by day (`Life.tickCrime`, `tickIncidents`); the Founder's own crimes raise the **Wanted level**.
 
 **Curtain** — The full-screen black card for Busted / Wasted while hours pass.
@@ -96,6 +104,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 ---
 
 ## D
+
+**Debts** — **M9** A bill a household can't pay (a hospital stay, a fine) is owed to whoever is due (`b.debts`, `Economy.bill/owe`) and repaid in `Economy.daily` as money comes in; the Founder's are `Wallet.bills` (`charge`, `settle`, shown in the Wallet app).
 
 **Debug handle** — `window.PV` (see HANDOFF §4 for the full list).
 
@@ -115,7 +125,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## E
 
-**Economy** — V1 wages per day by workplace (`WAGES`), prices per visit (`PRICES`), household funds, savings, taxes into `Gov.treasury`, business funds and failure, loans, the stock exchange. The Founder's money follows the **Money rule**.
+**Economy** — V1 wages per day by workplace (`WAGES`), prices per visit (`PRICES`), household funds, savings, taxes into `Gov.treasury`, business funds and failure, loans, the stock exchange. **M9** `src/sim/economy.ts`: wages are paid from the workplace's till (`Economy.payday`), filled by sales and by its trade beyond the map (`trade(type)`); public places run on daily budgets from the fund (`Economy.budgets`); the **County grant**; **Debts**; site budgets (`commission`, `b.siteFunds`); a Founder-placed workplace opens with a few days' wages (`openingCapital`); a villager's business that can't pay its staff for six days closes. Building cards and the mayor's report show tills, wages, trade and the fund. Everything follows the **Money rule**.
 
 **Education** — `src/sim/education.ts`: none / school certificate / degree; graduate-only posts pay 45% more; skilled families move in for posts nobody can fill.
 
@@ -153,7 +163,9 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Founder's Lodge** — The player's home and garage; the drive is always legal parking.
 
-**Frame loop** — `frame()` in `src/main.ts` (order in HANDOFF §5).
+**Frame loop** — `frame()` in `src/main.ts` (order in HANDOFF §5). **M9**: `frame()` wraps `runFrame()` and each part runs in `guard(part, fn)`, so one exception is logged and skipped instead of stopping the game.
+
+**freeAfterUpload** — **M9** `src/gfx/architecture.ts`: static meshes (terrain chunks, gates, mountains, lamp posts, merged building chunks) drop their attribute arrays once uploaded to the GPU. Never use it on geometry that is raycast, merged or rebuilt from its arrays.
 
 ---
 
@@ -171,17 +183,23 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **GPS** — `src/player/gps.ts`: road-following routes, re-planning, amber chevrons on the road (`src/render/gpsarrows.ts`), a pill with the distance.
 
+**God view** — **M9** `G` (Action `god`) or `#btn-god` in the Planner; `Settings.godView`; `Stage.clearView`/`clearK` turn the Planner's sky to a clear day through any weather while the sim's weather carries on (the ground still answers the real weather).
+
+**Gridlock relief** — **M9** A villager's car held up 100 s (`GIVE_UP_AFTER`, `Sim.leaveCar`) is left and the driver walks on; visitors' cars, cabs and trucks give up after 150 s (`STUCK_RELIEF` in `src/sim/life.ts`) and take another way. No jam can freeze the town.
+
 **Groq** — The LLM provider for **AI chat** (free tier). Default model: a small Llama, else a current model from Groq's own list (`openai/gpt-oss-20b` on this account).
 
 ---
 
 ## H
 
-**Health** — `src/sim/health.ts`: health 0–100, colds/flu/stomach bugs/pneumonia and injuries; serious cases lie down until an ambulance comes by road; the ward (12 beds when staffed); recovery fastest in hospital; bills. Nobody dies of an injury.
+**Health** — `src/sim/health.ts`: health 0–100, colds/flu/stomach bugs/pneumonia and injuries; serious cases lie down until an ambulance comes by road; the ward (12 beds when staffed); recovery fastest in hospital; bills ($14 a day, $12 for the ambulance: the household pays what it can, the fund covers the rest while it has money, the remainder becomes a **Debt** to the hospital, `Health.charge`). Nobody dies of an injury.
+
+**hash2** — `src/render/kit.ts`: an unsigned 32-bit hash. Shift it with `>>>`, never `>>`: signed shifts went negative for half the inputs and threw rooftop AC units into the sky and trees onto the roads (both fixed in **M9**).
 
 **Hooks** — How the client plugs into the headless sim: `Game.founderHooks`, `Traffic.guests`, `Traffic.onHonk`, `Life.onEvent`, `Life.claim`, `Life.runwayHeld`, `Supply.founderLoad`, `Health`/`Power` dispatch via claims.
 
-**HUD** — `src/ui/hud.ts` + `index.html`: the two-part frosted top bar, the street HUD (wallet, reputation, alerts, speedometer, fuel, GPS), toasts, PVTV, the minimap with R/C/I demand, the task book, the Planner palette, the shift card. Line icons are SVG symbols in `index.html`.
+**HUD** — `src/ui/hud.ts` + `index.html`: the two-part frosted top bar, the street HUD (wallet, reputation, alerts, speedometer, fuel, GPS), toasts, PVTV, the minimap with R/C/I demand, the task book, the Planner palette, the shift card. Line icons are SVG symbols in `index.html`. **M9**: `Hud.fitTop` keeps the top bar one row (classes `tb-c1`…`tb-c3` shed labels step by step, `tb-rows` only when nothing else fits), and `autoScale()` in `src/ui/access.ts` scales the whole interface (`--ui`) down on smaller screens.
 
 ---
 
@@ -213,6 +231,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Journal** — The village task book and news log (`J`; `src/sim/tasks.ts`).
 
+**Junction boxes** — **M9** `src/sim/traffic.ts`: a junction is reserved whole, each tile for the quarters its swept path covers (`MASKS`), and only with room on the far side; crossing movements take turns, the longest-waiting first (`outranks`); straight on from both sides or two right turns share it. With every vehicle's real length and width at any angle, nothing drives through anything (`tests/traffic.test.ts` busy grid, `tests/jams.test.ts`).
+
 ---
 
 ## K
@@ -243,7 +263,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Mind** — `src/sim/mind.ts`: each villager's traits, memories, friends, known and loved places, opinions; saved with them.
 
-**Money rule** — Money is never conjured or destroyed: purchases are a business's income, rewards come from a household or the village fund, shift pay comes from the fund (public services) or the workplace's till. When the fund is empty it **owes** shift wages and pays them as taxes arrive.
+**Money rule** — Money is never conjured or destroyed: purchases are a business's income, rewards come from a household or the village fund, shift pay comes from the fund (public services) or the workplace's till. When the fund is empty it **owes** shift wages and pays them as taxes arrive. Since **M9** the whole village follows it (see **Economy**): tills pay wages, budgets run public places, and an unpaid bill becomes a **Debt**, never a free service.
 
 **Motoring** — `src/player/motoring.ts`: fuel at gas stations, repairs at the auto garage, parking rules, tickets, towing, the impound, the Lodge garage.
 
@@ -297,7 +317,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## Q
 
-**Quality tiers** — `detectQuality()`: low / medium / high (see **Performance**); a setting overrides, applied after reload.
+**Quality tiers** — `detectQuality()`: low / medium / high (see **Performance**); a setting overrides, applied after reload. **M9**: **Ultra** is only ever chosen in Settings; a graphics reset lowers the preset for the next load only (`QUALITY_ONCE` in `src/render/stage.ts`; it used to stick for good, and settings lowered that way were moved back to Auto once, `Settings.qualityFix`).
 
 **Queues** — Anonymous riders waiting at bus stops and taxi ranks (`Life.stopQueues`), longer at rush hour.
 
@@ -319,13 +339,13 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## S
 
-**Saves** — v5 format: the world, buildings, people, government, systems, and the Founder (`FounderSave`); 3 slots + autosave + export/import; V1 saves import into the centre. Stolen cars go home and shifts end on load.
+**Saves** — v5 format: the world, buildings, people, government, systems, and the Founder (`FounderSave`); 3 slots + autosave + export/import; V1 saves import into the centre. Stolen cars go home and shifts end on load. **M9**: the `rescue` slot ("Kept safe") holds a village put aside at a **Boot and rescue** prompt; `Stage.settleSeason()` sets snow, ice and grass for the season on every load.
 
 **Scenarios** — New-map modes: sandbox, The First Hundred, The Rail Age, A Year Without Loss.
 
 **Seasons** — See **Clock**; trees, crops, snow cover, ice, festivals follow them.
 
-**Settings** — `src/sim/settings.ts` (kept in this browser): village name, growth pace, Christmas lock, autosave, volume; quality, resolution, frame cap, FOV; look sensitivity, invert, key bindings; interface size, subtitles, colour vision, shake, head bob, reduce motion; whether the guide was seen. Four tabs in the modal (M7).
+**Settings** — `src/sim/settings.ts` (kept in this browser): village name, growth pace, Christmas lock, autosave, volume; quality (Auto, Low, Medium, High, **Ultra**), resolution, frame cap, FOV (60° by default since M9), god view; look sensitivity, invert, key bindings; interface size, subtitles, colour vision, shake, head bob, reduce motion; whether the guide was seen. Four tabs in the modal (M7).
 
 **Shifts** — `src/player/shifts.ts`: start at the workplace or from the phone; the workplace lends its vehicle at the kerb; the job loop runs; tasks pay into the shift; stars 1–5; up to 8 hours (14 for the pilot) with a little overtime to finish; clock off for pay = (hourly × hours + task pay) × (0.7 + 0.1 × stars). See **Jobs (Founder)**, **Claims**, **Money rule**.
 
@@ -337,17 +357,18 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Sim** — `src/sim/agents.ts` (`Sim`): the people: families, schedules, trips, commuting, wages, savings, ambitions, businesses, weddings, births, ageing; plus stats.
 
-**Sounds** — `src/audio/sounds.ts`: V1's procedural audio. One-shots are positional (`Snd.at`): the sim's `Snd.siren(at)` etc. carry a place, heard quieter with distance and panned to their side of the listener (`Snd.listen`, set from the camera each frame); ambience is all around.
+**Sounds** — `src/audio/sounds.ts`: V1's procedural audio. One-shots are positional (`Snd.at`): the sim's `Snd.siren(at)` etc. carry a place, heard quieter with distance and panned to their side of the listener (`Snd.listen`, set from the camera each frame). **M9**: a new synthesised engine (street, room and UI buses, reverb) and `src/audio/scape.ts`, the ambience from what's around the listener (wind, leaves, rain, water, traffic, crowds, birds by species, insects, sites, works, fires), engine voices, the Founder's engine, tyres and footsteps by surface, and each building's sounds indoors.
 
 **Subtitles** — M7 (`Subs` in `src/ui/access.ts`): villagers' street lines with their names (every greeting) and, if chosen, captions for horns, sirens, thunder, bells, crashes, fireworks; lower centre (lower left on narrower windows).
 
 **Spec** — A vehicle's handling (`src/player/fleet.ts`): top speed, acceleration, range, tank, contact circles, repair cost, turn rate, length in traffic; `specOf(v)` covers work vehicles.
 
-**Stage** — `src/render/stage.ts`: the renderer, physical sky, sun, moon, stars, clouds, environment lighting, post-processing (HDR, bloom, grading, auto-exposure), weather, the water reflection.
-
+**Stage** — `src/render/stage.ts`: the renderer, physical sky, sun, moon, stars, clouds, environment lighting, post-processing (HDR, bloom, grading, auto-exposure), weather, the water reflection. **M9**: god view (`clearView`), the thaw and ice (`drift`, `ice`, `settleSeason`), the wet-street mirror limited to 320 m and to cameras below 90 m (except on **Ultra**), `onLost` for graphics resets.
 **Stars (shift)** — How a shift is going, 1–5; up with good work, down 0.6 with each failure. Not to be confused with **Wanted** stars.
 
 **Stealing a car** — `F` beside a family's car in its drive (crime). Ends any shift.
+
+**Street trees** — **M9** `Terrain.updateStreetTrees`: a lime, oak or birch every other tile on the open verge of every straight road (both sides, one kind per street, clear of junctions, side streets and reserved festival ground), rebuilt when roads, buildings or trees change; trunks are solid (`TRUNKS`, found by `postsNear`).
 
 **Supply** — `src/sim/supply.ts`: four goods (food, materials, textiles, products), producers' yards, shop shelves (thin = dearer, bare = no sale), delivery trucks, the warehouse, freight trains, daily import allowances, exports, sites eating materials, shortages in the news.
 
@@ -359,15 +380,19 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Templates (dialogue)** — `src/ai/templates.ts`: greetings by opinion and time, topics from the villager's life and the news; the fallback when AI chat is off or fails.
 
-**Terrain** — `src/render/terrain.ts`: textured grass/sand/rock, kerbed roads, bridges, ballasted rails, lamps, animated water with foam and ice, trees in two LODs (32k), streamed grass, hills and the sea beyond the map.
+**Terrain** — `src/render/terrain.ts`: textured grass/sand/rock, kerbed roads, bridges, ballasted rails, lamps (built per chunk, M9), animated water with foam and ice, trees in four LODs (32k), **Street trees**, streamed grass, banded shores, hills and the sea beyond the map. Tree positions come from `treeSpot` (shared with collisions; M9 fixed a signed shift that put some on the roads).
 
-**Tests** — Vitest in `tests/`, one file per system (sim, traffic, founder, wanted, reputation, photo, interiors, chat, health, power, education, supply, deeper, travel, shifts, V1 import); `tests/town.ts` builds towns. 118 tests at M7 (`controls.test.ts` added).
+**Tests** — Vitest in `tests/`, one file per system (sim, traffic, founder, wanted, reputation, photo, interiors, chat, health, power, education, supply, deeper, travel, shifts, V1 import); `tests/town.ts` builds towns. 118 tests at M7 (`controls.test.ts` added), 130 at M8 (`polish.test.ts`), 152 in M9 (`collisions`, `jams`, `economy` among the new files).
+
+**Thaw** — **M9** The spring thaw and the ice: `pvSnowField/pvSnowLine/pvSnowCover` in `src/gfx/env.ts` (drifts tens of metres across), `ENV.melt` (wet margins), `ENV.thaw` (flattened, straw-pale grass for a day and a half), the `plough` and `thaw` surface options, the melt on the sim clock in `Stage.drift`, and `Stage.ice` (lakes freeze in winter and thaw from the banks in floes, `gfx/water.ts`).
 
 **Tickets** — Machine tickets kept in the bag (`src/player/tickets.ts`): singles, day returns, week rovers, ferry, island day trip, flights, the air taxi, the sightseeing flight.
 
 **Time** — See **Clock**. The street runs at 1×; the Planner allows up to 8×.
 
-**Traffic** — `src/sim/traffic.ts`: every vehicle looks ahead along its path, keeps its distance, stops for people, brakes for red lights and gates, takes turns at junctions, overtakes stopped vehicles when clear, and sees the Founder (`Traffic.guests`).
+**Top bar** — See **HUD**.
+
+**Traffic** — `src/sim/traffic.ts`: every vehicle looks ahead along its path, keeps its distance, stops for people, brakes for red lights and gates, takes turns at junctions, overtakes stopped vehicles when clear, and sees the Founder (`Traffic.guests`). **M9**: **Junction boxes**, real vehicle sizes, people standing in the road only hold up their own lane (`PED_AFTER` 6 s for walkers), waiting villagers stand on the pavement, twins on one spot take turns, **Gridlock relief**, traffic from beyond the edge (**Approach**). The traffic lights stay on wall-clock 8 s phases (tying them to game time killed junction capacity).
 
 **Train driver** — M6 job (train station): drive the village line's passenger service (the local first); `W` power, `S` brake; stop with the cab at each platform (doors open, riders on and off); overrunning a platform or hitting the buffers counts against you; timetable bonus.
 
@@ -380,6 +405,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 ## U
 
 **UI language** — The V2 frosted-glass design: glass panels, line icons, overline/title/pills/facts cards, toasts with a lead emoji set apart, accent gold `#f0c27a`.
+
+**Ultra** — **M9** The fourth quality preset, only ever chosen in Settings → Graphics: High plus every small shadow (`SHADOW_DETAIL.tiny`, `castsShadow` in `src/gfx/architecture.ts`: kerbs, pavements, sashes, door brass, pots) and full mirrors (`fullMirrors`: the water however little is in view, wet streets at any range and height). The **Look lab** always draws the small shadows.
 
 **Undo** — `Ctrl+Z` in the Planner (`Game.undo`).
 
@@ -407,7 +434,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Wasted** — A violent crash: patched up at the hospital (a bill), hours pass, the car towed. Ends any shift.
 
-**Weather** — `src/sim/weather.ts` (`clear, clouds, rain, heavy, snow`) driving wet streets with reflections, puddles, settling snow with tyre tracks, lightning, fog and leaf fall.
+**Weather** — `src/sim/weather.ts` (`clear, clouds, rain, heavy, snow`) driving wet streets with reflections, puddles, settling snow with tyre tracks, lightning, fog and leaf fall. **M9**: `Weather.pin` (the **Auto village**'s season and weather), **God view**, the **Thaw**.
 
 **Work vehicle** — Lent by the workplace for a shift (`founder.work`, `takeWork/dropWork`); drawn as the village's own; your own car waits where you left it.
 

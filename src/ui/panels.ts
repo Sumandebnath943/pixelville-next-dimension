@@ -506,7 +506,11 @@ export class Panels {
       ['set-invert', 'invertY', (e) => e.checked],
     ];
     for (const [id, key, read] of live) $(id).addEventListener('change', (ev) => { Settings.set(key, read(ev.target as HTMLInputElement & HTMLSelectElement)); this.api.settingsChanged?.(); });
-    $('set-quality').addEventListener('change', () => { $('set-gfx-note').textContent = 'Quality changes after a reload (save first, or it picks up from the autosave).'; });
+    $('set-quality').addEventListener('change', () => {
+      const ultra = ($('set-quality') as HTMLSelectElement).value === 'ultra';
+      // (V2: Ultra is never picked for you: it asks the most of the graphics card)
+      $('set-gfx-note').textContent = (ultra ? 'Ultra draws every kerb, sash and flower pot’s shadow and every reflection in full: for a strong graphics card. ' : '') + 'Quality changes after a reload (save first, or it picks up from the autosave).';
+    });
     $('set-keys-reset').addEventListener('click', () => { Input.resetBinds(); $('set-keys-note').textContent = 'Back to the defaults.'; this.renderKeys(); });
     $('set-tour').addEventListener('click', () => { this.close('settings'); this.api.startTour?.(); });
   }

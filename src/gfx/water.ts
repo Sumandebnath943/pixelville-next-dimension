@@ -233,6 +233,8 @@ export class WaterSystem {
   }
 
   private mirrorOn = true;
+  /** V2: mirror however little of the water is in view (Ultra graphics, and the look lab) */
+  fullMirror = false;
   /** V2: about how much of the screen the water's boxes cover (0 … 1; all of it when one reaches behind the eye) */
   private coverage(): number {
     let sum = 0;
@@ -278,7 +280,7 @@ export class WaterSystem {
     if (!vis) { this.mirrored = false; return; }
     // V2: the mirror is a second drawing of the whole scene (up to half the frame from the Planner); a pond in a corner
     // of the view, or the sea as a sliver on the horizon, gets the sky's colour instead (frozen water needs none)
-    const cover = ice > 0.98 ? 0 : this.coverage();
+    const cover = ice > 0.98 ? 0 : this.fullMirror ? 1 : this.coverage();
     this.mirrorOn = cover > (this.mirrorOn ? 0.025 : 0.045);
     u.uReflOn.value = this.reflection.enabled && this.mirrorOn ? 1 : 0;
     if (!this.mirrorOn) { this.mirrored = false; return; }
@@ -296,6 +298,7 @@ export class River extends WaterSystem {
   mesh: THREE.Mesh;
   constructor(scene: THREE.Scene, public x0: number, public x1: number, public z0: number, public z1: number, level: number) {
     super(level, 0.5);
+    this.fullMirror = true; // (the look lab's river is the scene: always mirrored)
     const w = x1 - x0, d = z1 - z0;
     const geo = new THREE.PlaneGeometry(w, d, Math.ceil(w / 1.2), Math.ceil(d / 0.8));
     geo.rotateX(-Math.PI / 2);

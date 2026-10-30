@@ -32,7 +32,10 @@ const DIST_FRAG = /* glsl */ `
   varying float vDist;
   void main() { gl_FragColor = vec4(vDist, 0.0, 0.0, 1.0); }`;
 
-export type Quality = 'high' | 'medium' | 'low';
+/** V2: 'ultra' is High plus every small shadow and full mirrors: only ever chosen by the player, never detected */
+export type Quality = 'ultra' | 'high' | 'medium' | 'low';
+/** High or above (full-size textures, the longest views, the most headlamps) */
+export const isHigh = (q: Quality): boolean => q === 'high' || q === 'ultra';
 
 /** pick a preset from the GPU: integrated and mobile GPUs get the medium tier */
 export function detectQuality(): Quality {
@@ -57,11 +60,18 @@ export interface QualityProfile {
   grassPerM2: number; grassRange: number; reflScale: number; waterReflScale: number; reflectActors: boolean;
   /** refresh shadows / mirrors every n-th frame */
   shadowEvery: number; reflEvery: number;
+  /** V2: the smallest things cast shadows too (kerbs, pavements, sashes, door brass, pots): Ultra only */
+  tinyShadows: boolean;
+  /** V2: the water mirrors however little of it is in view, and wet streets mirror the whole town from any height:
+   *  Ultra only (lighter presets skip what barely shows) */
+  fullMirrors: boolean;
 }
+const HIGH: QualityProfile = { dpr: 1.5, msaa: 4, shadow: 4096, ao: true, pointLights: 6, spotLights: 2, grassPerM2: 6.5, grassRange: 62, reflScale: 0.5, waterReflScale: 0.5, reflectActors: true, shadowEvery: 1, reflEvery: 1, tinyShadows: false, fullMirrors: false };
 export const PROFILES: Record<Quality, QualityProfile> = {
-  high: { dpr: 1.5, msaa: 4, shadow: 4096, ao: true, pointLights: 6, spotLights: 2, grassPerM2: 6.5, grassRange: 62, reflScale: 0.5, waterReflScale: 0.5, reflectActors: true, shadowEvery: 1, reflEvery: 1 },
-  medium: { dpr: 1, msaa: 0, shadow: 2048, ao: false, pointLights: 4, spotLights: 0, grassPerM2: 3.2, grassRange: 38, reflScale: 0.3, waterReflScale: 0.35, reflectActors: false, shadowEvery: 2, reflEvery: 2 },
-  low: { dpr: 0.85, msaa: 0, shadow: 1024, ao: false, pointLights: 0, spotLights: 0, grassPerM2: 1.4, grassRange: 22, reflScale: 0, waterReflScale: 0.25, reflectActors: false, shadowEvery: 3, reflEvery: 3 },
+  ultra: { ...HIGH, tinyShadows: true, fullMirrors: true },
+  high: HIGH,
+  medium: { dpr: 1, msaa: 0, shadow: 2048, ao: false, pointLights: 4, spotLights: 0, grassPerM2: 3.2, grassRange: 38, reflScale: 0.3, waterReflScale: 0.35, reflectActors: false, shadowEvery: 2, reflEvery: 2, tinyShadows: false, fullMirrors: false },
+  low: { dpr: 0.85, msaa: 0, shadow: 1024, ao: false, pointLights: 0, spotLights: 0, grassPerM2: 1.4, grassRange: 22, reflScale: 0, waterReflScale: 0.25, reflectActors: false, shadowEvery: 3, reflEvery: 3, tinyShadows: false, fullMirrors: false },
 };
 /** objects on this layer are skipped by reflections (grass, rain) */
 export const LAYER_NO_REFLECT = 1;
@@ -149,6 +159,21 @@ export class Pipeline {
       this.gtao.blendIntensity = 0.85;
       this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.0, samples: 12, screenSpaceRadius: false });
       this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
+      // V2: only solid, shaded surfaces go into the AO's normal pass: a mesh with no normals (the street lamps' pools
+      // of light) came out of it as NaN and blacked out a square round every lamp; glows, light pools and rain make
+      // no contact shadows either
+      const g = this.gtao as unknown as { _overrideVisibility: () => void; _visibilityCache: THREE.Object3D[]; scene: THREE.Scene };
+      const hidePointsAndLines = g._overrideVisibility.bind(g);
+      g._overrideVisibility = () => {
+        hidePointsAndLines();
+        g.scene.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (!m.isMesh || !m.visible) return;
+          const mat = m.material as THREE.Material | THREE.Material[];
+          const see = !Array.isArray(mat) && !!mat && (mat.transparent || !mat.depthWrite || mat.blending === THREE.AdditiveBlending);
+          if (see || !m.geometry?.getAttribute('normal')) { m.visible = false; g._visibilityCache.push(m); }
+        });
+      };
       this.composer.addPass(this.gtao);
     }
     // V2 (Milestone 8): gentler (it was 0.18 strength, 0.4 radius): the sunlit haze and shop windows haloed over

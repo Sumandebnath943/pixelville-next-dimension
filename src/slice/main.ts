@@ -12,7 +12,7 @@ import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, detectQuality } 
 import { SkySystem } from '../gfx/sky';
 import { ENV } from '../gfx/env';
 import { setAnisotropy, setTextureScale, texturesReady } from '../gfx/textures';
-import { interiorDay, lightsOn } from '../gfx/architecture';
+import { interiorDay, lightsOn, SHADOW_DETAIL } from '../gfx/architecture';
 import { GLOW } from '../gfx/props';
 import { Precipitation } from '../gfx/precip';
 import { flushBeams, setGlare, VIEW } from '../gfx/car';
@@ -78,6 +78,8 @@ async function main(): Promise<void> {
   let groundReady = false;
   if (off.has('shadow')) renderer.shadowMap.enabled = false;
   setTextureScale(quality === 'high' ? 1 : 0.5);
+  // (the look lab is one street, the reference scene: every small shadow at any quality)
+  SHADOW_DETAIL.tiny = true;
   const sky = new SkySystem(renderer, scene, pipe.shadowSize);
 
   const street: Street = await buildStreet(scene, progress, P.grassPerM2, off);

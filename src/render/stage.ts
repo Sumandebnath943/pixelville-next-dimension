@@ -14,12 +14,12 @@ import { Festivals } from '../sim/festivals';
 import { Calamity } from '../sim/calamity';
 import { Settings } from '../sim/settings';
 import { GW, GH } from '../sim/world';
-import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, detectQuality, QualityProfile } from '../gfx/pipeline';
+import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, detectQuality, QualityProfile, isHigh } from '../gfx/pipeline';
 import { SkySystem } from '../gfx/sky';
 import { ENV } from '../gfx/env';
 import { Precipitation } from '../gfx/precip';
 import { setTextureScale } from '../gfx/textures';
-import { interiorDay, lightsOn } from '../gfx/architecture';
+import { interiorDay, lightsOn, SHADOW_DETAIL } from '../gfx/architecture';
 import { GLOW } from '../gfx/props';
 import { leafFall } from '../gfx/vegetation';
 import { flushBeams, setGlare, VIEW } from '../gfx/car';
@@ -85,12 +85,15 @@ export class Stage {
     this.pipe = new Pipeline(canvas, this.quality, this.scene, this.camera);
     this.profile = this.pipe.profile;
     this.renderer = this.pipe.renderer;
-    setTextureScale(this.quality === 'high' ? 1 : 0.5);
+    setTextureScale(isHigh(this.quality) ? 1 : 0.5);
+    // V2: Ultra (the player's choice) brings back every small shadow; set before the town is built
+    SHADOW_DETAIL.tiny = this.profile.tinyShadows;
     this.sky = new SkySystem(this.renderer, this.scene, this.pipe.shadowSize);
     this.precip = new Precipitation(this.scene);
     this.groundRefl = new PlanarReflection(0.03, this.profile.reflScale || 0.25);
-    // (V2: wet streets mirror what's near: the far town was a second drawing of the whole map every other frame)
-    this.groundRefl.maxFar = 320;
+    // (V2: wet streets mirror what's near: the far town was a second drawing of the whole map every other frame;
+    // Ultra mirrors it all)
+    if (!this.profile.fullMirrors) this.groundRefl.maxFar = 320;
     for (let i = 0; i < this.profile.pointLights; i++) {
       const l = new THREE.PointLight(0xffc68a, 0, 28, 2);
       this.scene.add(l);
@@ -118,7 +121,7 @@ export class Stage {
       e.preventDefault();
       this.lost = true;
       // come back one preset lighter on the next load (V2: that load only: it used to stick for good)
-      try { sessionStorage.setItem(QUALITY_ONCE, this.quality === 'high' ? 'medium' : 'low'); } catch { /* private mode */ }
+      try { sessionStorage.setItem(QUALITY_ONCE, this.quality === 'ultra' ? 'high' : this.quality === 'high' ? 'medium' : 'low'); } catch { /* private mode */ }
       console.error('[stage] WebGL context lost; the next load is one preset lighter');
       this.onLost?.();
     });
@@ -132,13 +135,13 @@ export class Stage {
   static pickQuality(): Quality {
     let once: string | null = null;
     try { once = sessionStorage.getItem(QUALITY_ONCE); sessionStorage.removeItem(QUALITY_ONCE); } catch { /* private mode */ }
-    if (once === 'low' || once === 'medium') return once;
+    if (once === 'low' || once === 'medium' || once === 'high') return once;
     const q = Settings.get('quality');
-    if (q === 'low' || q === 'medium' || q === 'high') return q;
+    if (q === 'low' || q === 'medium' || q === 'high' || q === 'ultra') return q;
     return detectQuality();
   }
   viewDistance(): number {
-    return this.quality === 'high' ? 2600 : this.quality === 'medium' ? 2000 : 1400;
+    return isHigh(this.quality) ? 2600 : this.quality === 'medium' ? 2000 : 1400;
   }
 
   resize(): void {
@@ -371,7 +374,7 @@ export class Stage {
 
   render(): void {
     // the headlamps lighting the street, once everything has moved this frame (none indoors)
-    flushBeams(this.camera.position, this.indoor ? 0 : this.sky.nightK, this.quality === 'high' ? 8 : this.quality === 'medium' ? 6 : 3);
+    flushBeams(this.camera.position, this.indoor ? 0 : this.sky.nightK, isHigh(this.quality) ? 8 : this.quality === 'medium' ? 6 : 3);
     if (this.lost) return;
     if (this.indoor) {
       this.camera.updateMatrixWorld();
@@ -400,7 +403,7 @@ export class Stage {
     this.waterUpdate?.(this.renderer, this.scene, this.camera, this.sky.ambient, doWater);
     // (V2: and not from high above, where a wet street at that steep an angle shows the sky's light, which the
     // environment map already gives it)
-    if (ENV.wet.value > 0.04 && P.reflScale > 0 && this.camera.position.y < 90) {
+    if (ENV.wet.value > 0.04 && P.reflScale > 0 && (P.fullMirrors || this.camera.position.y < 90)) {
       if (doGround || !this.groundReady) {
         this.groundRefl.update(this.renderer, this.scene, this.camera);
         ENV.reflMat.value.copy(this.groundRefl.textureMatrix);

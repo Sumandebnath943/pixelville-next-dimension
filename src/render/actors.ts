@@ -1140,7 +1140,7 @@ export class Actors {
         this.fireFX.fire(bx, h * 0.45, bz, b.w * TM * 0.55, b.h * TM * 0.55, h, Math.min(1.6, 0.8 + b.w * b.h * 0.08));
       } else {
         const hv = hash2(b.id, 3);
-        this.fireFX.plume(bx + ((hv % 100) / 100 - 0.5) * b.w * 3, h, bz + (((hv >> 8) % 100) / 100 - 0.5) * b.h * 3, 1 + b.w * 0.15);
+        this.fireFX.plume(bx + ((hv % 100) / 100 - 0.5) * b.w * 3, h, bz + (((hv >>> 8) % 100) / 100 - 0.5) * b.h * 3, 1 + b.w * 0.15);
       }
     }
     this.fireFX.end(interiorDay.value / 0.07);

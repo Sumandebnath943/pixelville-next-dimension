@@ -676,6 +676,13 @@ function dropArray(this: THREE.BufferAttribute): void {
  *  shade) and the smallest details (sashes, door brass, lead, pots). Each was a draw call more in every shadow pass,
  *  and with them the pass was the heaviest part of a frame over a big village */
 export const NO_SHADOW = new Set(['glass', 'roadPaint', 'asphalt', 'paving', 'granite', 'gravel', 'grass', 'sand', 'soil', 'shingle', 'trail', 'brass', 'lead', 'pot', 'sash', 'sashBar']);
+/** V2: Ultra graphics (the player's choice) brings every small shadow back; set before anything is built */
+export const SHADOW_DETAIL = { tiny: false };
+/** does a mesh of this material cast a shadow? */
+export function castsShadow(key: string): boolean {
+  if (key === 'glass' || key === 'roadPaint' || key.startsWith('sign')) return false;
+  return SHADOW_DETAIL.tiny || !NO_SHADOW.has(key);
+}
 
 /** join packed lists per material into meshes (glass joins glass with the same attributes) */
 export function meshesFromParts(pal: Palette, parts: Map<string, Packed[]>, parent: THREE.Object3D, shadows = true): THREE.Mesh[] {
@@ -703,7 +710,7 @@ export function meshesFromParts(pal: Palette, parts: Map<string, Packed[]>, pare
       }
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, pal.mat(key));
-      mesh.castShadow = shadows && !NO_SHADOW.has(key) && !key.startsWith('sign');
+      mesh.castShadow = shadows && castsShadow(key);
       mesh.receiveShadow = true;
       mesh.name = key;
       parent.add(mesh);

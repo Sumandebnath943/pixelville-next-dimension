@@ -1,6 +1,6 @@
 # PixelVille – Next Dimension: Game Info
 
-Oct 26, 2026 · Suman Debnath
+Oct 30, 2026 · Suman Debnath
 
 ## At a glance
 
@@ -19,6 +19,7 @@ It is the sequel to the original 2D, top-down PixelVille. Every one of the origi
 | Time | 1 game minute per real second; a day is about 24 real minutes; a year is 28 days in four seasons |
 | Villagers | Every person simulated individually: traits, memories, friends, jobs, health, schooling, opinion of you |
 | Tech | TypeScript, Three.js, Vite, Vercel; AI villager chat through Groq |
+| Graphics | Low, Medium and High picked for your device; Ultra (every small shadow, full reflections) when you choose it |
 | Assets | None downloaded: every building, person, vehicle, texture, tree and sound is generated in code |
 
 ### Design pillars
@@ -35,7 +36,7 @@ You found a village from the sky, then live in it at street level: build what it
 
 ### Your first session
 
-1. **Open the game.** A landing screen shows the logo over a slow cinematic flight across your own village (the world keeps running behind it). Choose **Continue**, **Found a new village**, **Load**, **Controls** or **Settings**. Enter continues.
+1. **Open the game.** A landing screen shows the logo over a slow cinematic flight across your own village (the world keeps running behind it). Choose **Continue**, **Found a new village**, **Auto village**, **Load**, **Controls** or **Settings**. Enter continues.
 2. **Pick a map mode.** Sandbox, or one of three scenarios (table below). A new village always starts on a clear morning so the first build is easy to see.
 3. **Follow the first-day guide.** Nine short steps, worded for the device you are using (keyboard, gamepad or touch), each one ringing the button to press and moving on by itself when done:
    1. *Welcome, Founder:* look around.
@@ -69,11 +70,15 @@ You found a village from the sky, then live in it at street level: build what it
 
 A lost scenario never ends the game: the map carries on as a sandbox.
 
+**Auto village.** One press lays out and fills a whole village (an avenue grid with a square of shops, the town hall and church, services round the blocks, homes with gardens, works, farms and a power plant, about 150 villagers moving in) and then shows it from the air, the camera drifting from one view of it to the next. Drag turns the view, the wheel comes closer, H hides the panel. The panel pins a **season** (or follows the calendar), a **weather** (or lets it change), a **festival** (New Year, Easter, Diwali, Christmas: its decorations go up, and the fireworks after dark) and the **pace** (pause to 8×; Christmas keeps its own 1× pace). *Another view*, *New village*, or *Play this village* to take it over from the Lodge.
+
 ### Saving
 
 - Three named save slots, plus an autosave every 2 or 5 minutes and whenever the browser tab is hidden.
 - Export and import a village as a file. Saves from the original 2D PixelVille import too: the old village is placed in the centre of the bigger map with matching terrain around it, and its people, minds, ownership and mayor carry on.
 - The game continues your last village when you return.
+- **A village that won't open is never a dead end.** If the last visit crashed or hung while the village was loading (a browser short of memory, a graphics card that reset), the loading screen asks how to go on: open it again, open it with lighter graphics for this visit, or start a new village with the old one kept safe (Load village → Kept safe).
+- If the graphics card resets during play, the village is saved at once and a notice offers a reload (the next load uses a lighter preset, once).
 
 ## Controls
 
@@ -114,6 +119,7 @@ Every input goes through one action map, so keyboard, gamepad and touch drive th
 | Game speed: pause, 1×, 2×, 4×, 8× | Keys 1–5 | X pauses | Speed buttons |
 | Undo | Ctrl+Z | — | — |
 | Inspect a building or villager | Click it | A | Tap it |
+| God view: see the village clearly through storm, mist and fog | G | — | Eye button |
 
 ### In photo mode
 
@@ -176,12 +182,15 @@ The village sits on a generated 2 km map whose land, water, sky, seasons and cal
 - **Rainbows** appear when rain stops in daylight.
 - **Lightning** flashes in heavy storms and can strike a power substation.
 - **Puddles** form in heavy rain (up to 220 across the map), grow while it pours, and evaporate in dry weather.
-- **Surfaces react:** wet streets with mirror reflections, settling snow with tyre tracks, height fog, wind in trees and grass, leaf fall in autumn, winter ice on water.
+- **Surfaces react:** wet streets with mirror reflections, settling snow (an even dusting first, then drifts), roads ploughed to grey slush, height fog, wind in trees and grass, leaf fall in autumn, winter ice on lakes and rivers.
+- **God view.** In the Planner, G (or the eye button) clears the view of rain, snow, mist and fog so you can build; the weather itself carries on, and the streets still get wet and the snow still settles.
 - Bad weather adds gloom to daylight; storms darken the sky by up to 20%.
 
 ### Seasons
 
 The world recolours each season: spring blossom, summer green, autumn leaves, winter snow cover and ice. Farms slow in winter, crops follow the seasons, and fireflies flash low over the grass at the woods' edge on warm nights.
+
+**The spring thaw** runs on the village's clock and takes most of the first day of spring, quicker in the afternoon sun: the snow retreats into drifts tens of metres across, shrinking from their soft edges, with soaked dark ground round them; the roads clear first; the grass comes out flattened and straw-pale and greens again over a day and a half. Lakes and rivers freeze over a few hours into winter and thaw a day or so after the snow: the open water opens along the banks first and the rest breaks into floes, going grey and wet before it's gone.
 
 ### Calamities
 
@@ -295,7 +304,8 @@ Every adult has a lifestyle that sets how much they save and what they dream of:
 
 ### Household economy
 
-- **Wages** by workplace ($8 a day at a tea stall to $28 at a skyscraper), raises, promotions to senior staff and management posts.
+- **Wages** by workplace ($8 a day at a tea stall to $28 at a skyscraper), raises, promotions to senior staff and management posts. Wages are paid out of the workplace's own till; a place whose trade is too thin to pay its staff in full says so, and a villager's own business that can't pay its people for a week closes.
+- **Debts:** a bill a household can't pay (the hospital, a fine) becomes a debt to whoever is owed, paid off as money comes in.
 - **Savings** go to house upgrades: an extra floor at $250 saved, a villa at $600, even a mansion that brings the street out to stare.
 - **Purchases:** a car, a motorcycle from the showroom, a fishing boat that brings in extra income from the catch.
 - **Landlords:** well-off families build rental homes.
@@ -325,7 +335,7 @@ A villager who stays low for days withdraws, and the neighbours notice. Family, 
 - **Illness:** colds, flu, stomach bugs and pneumonia, more in autumn and winter, more for the old, the young and the poor, passed round the household. A flu wave arrives once a winter with a PVTV bulletin.
 - **Injuries** come from what already happens: car crashes (worse at a dark junction), fires (people carried out with smoke in their lungs), collapses, earthquakes, tornadoes, street fights, and vehicles hitting people on foot (scaled by speed and vehicle size, from a motorbike to a bus). Nobody dies of an injury.
 - **Ambulances:** a serious case lies down where it happened; the nearest hospital sends an ambulance by road, two paramedics treat them at the scene, then drive them to the ward on blue lights. With no hospital or no road, neighbours help them home.
-- **The ward:** 12 beds when fully staffed; a full ward treats people in casualty and sends them home. Recovery is fastest on the ward, slower at home, slowest in a town with no hospital, where the family frets. Patients pay $14 a day (the village fund covers what they can't). The sick stay off work and school; a pharmacy takes the edge off a cold.
+- **The ward:** 12 beds when fully staffed; a full ward treats people in casualty and sends them home. Recovery is fastest on the ward, slower at home, slowest in a town with no hospital, where the family frets. Patients pay $14 a day (plus $12 for the ambulance): the household pays what it can, the village fund covers the rest while it has the money, and anything left becomes the household's debt to the hospital. The sick stay off work and school; a pharmacy takes the edge off a cold.
 
 ### Education
 
@@ -399,6 +409,8 @@ The town runs on interlocking systems (building, government, money, goods, power
 - **Village tiers,** each celebrated with a charter when first reached: Hamlet, Village (21 residents), Town (61), City (121), Metropolis (201).
 - **Land prices** follow the market: central plots near the town hall cost up to seven times a field at the map's edge, waterfront +30%. Places are named by band: town centre, inner district, outskirts, far countryside.
 - **Growth pace** is a setting; Cozy damps growth as the town fills out.
+- **Street trees** grow by themselves: a lime, oak or birch every other tile on the open verge of every straight street, both sides, one kind all along a street, coming and going with the roads and buildings.
+- **A workplace you place** opens with a few days' wages in its till (building is free for the Founder, so it costs the village nothing).
 - **R/C/I demand** on the minimap shows the pull for residential, commercial and industrial building.
 
 ### Government and elections
@@ -428,7 +440,13 @@ The town runs on interlocking systems (building, government, money, goods, power
 
 ### The money rule
 
-Money is never conjured or destroyed. What you spend in a business is its income; a household's thank-you comes from its savings; public-service wages come from the village fund. When the fund is empty it owes you and pays as taxes arrive. Wages per workplace, prices per visit, household funds, business tills and the treasury are one closed economy.
+Money is never conjured or destroyed; it only enters or leaves at the map's edge (exports and imports, visitors, the county).
+
+- **Every place pays its people from its own till,** filled by what it sells to villagers and visitors and by its trade beyond the map (an office's clients, a mill's buyers, a bank's accounts across the valley, a gas station's highway customers).
+- **Public places** (the school, hospital, police, fire station and the rest of the civic list) run on daily budgets from the village fund, which taxes fill and the **county grant** tops up with $6 for every resident each day.
+- **Nobody gets a service for nothing:** a cab quotes its fare before the meter starts and won't take a fare that can't pay it; shops sell nothing to an empty purse and only order stock they can pay for; loans and casino wins come out of real tills; building sites have budgets that pay for their materials.
+- **A bill nobody can pay becomes a debt**, a household's or yours, paid off as money comes in.
+- What you spend in a business is its income; a household's thank-you comes from its savings; when the village fund is empty it owes you and pays as taxes arrive. Building cards show each place's till, wages and trade; the mayor's report shows the fund and the grant.
 
 ### Supply chain
 
@@ -458,10 +476,14 @@ Money is never conjured or destroyed. What you spend in a business is its income
 
 ### Traffic
 
-- **Every vehicle looks ahead** along its own path: it keeps its distance in queues, stops for people on the carriageway, brakes for red lights and lowered crossing gates at the stop line, and takes turns at unsignalled junctions, first come, first through.
+- **Every vehicle looks ahead** along its own path at its real length and width, at any angle: it keeps its distance in queues, brakes for red lights and lowered crossing gates at the stop line, and nothing ever drives through anything.
+- **Junctions are boxes.** A driver reserves the whole junction ahead (each tile for the part its path sweeps) and only enters when there's room on the far side, so nobody stops inside it; movements that cross take turns, the one waiting longest first; straight on from both sides, or two right turns, share it.
 - **Speeds follow stopping distance,** so traffic pulls away and closes up smoothly at any game speed.
-- **Jams resolve themselves:** stuck behind crossing traffic, a driver edges out after 6 s; stuck behind something parked, it squeezes past after 10 s.
-- **Overtaking:** a driver behind a stopped vehicle pulls into the oncoming lane only when the road runs straight with no junction, lights or crossing ahead and nothing coming.
+- **People in the road:** a driver waits for walkers crossing in its path, and for people standing in its own lane; after 6 s it waits only for walkers in its own lane, and goes round anyone standing. Waiting villagers stand on the pavement (cab waiters at their own door, bus queues at the shelter, onlookers on the kerb).
+- **Gridlock relief:** a villager whose car has been stuck for 100 s leaves it and walks on; a visitor's car, a cab or a truck stuck for 150 s takes another way. A jam can never freeze the town.
+- **Overtaking:** only on a clear straight with no junction, lights or crossing ahead, nothing coming and a gap to pull back into.
+- **Traffic from out of town:** the roads off the map carry on along a valley to the horizon; visitors, delivery trucks and the county's van drive in from 1.1 km out on the right-hand row and join only when there's room; what leaves drives away out of sight.
+- **Emergency vehicles** drive in the traffic on blue lights: through red lights, first across junctions, past queues.
 - **Real lanes and bends:** vehicles keep right, follow quarter-circle arcs through corners (tight rights, wide lefts), slow for bends, and swing round dead ends.
 - **Keeping right on avenues:** route planning penalises turns and the oncoming carriageway, so routes are straight and legal; buses run one-way loops; service vehicles plan their own way back.
 - **Parking:** cars wait in their drive for a gap, pull out on a curve, and reverse into their spot at the end of the trip. Venues and workplaces have bays across the front of the plot; cabs queue along the kerb at the rank.
@@ -472,7 +494,7 @@ Money is never conjured or destroyed. What you spend in a business is its income
 
 ### Pedestrians
 
-Walkers keep to the pavement on their door's side, cross side-street mouths on the crossing line, round corners on the kerb, wait at the kerb for a gap before crossing, each at their own pace and line, stepping aside to pass. People waiting to cross stand a step apart.
+Walkers keep to the pavement on their door's side, cross side-street mouths on the crossing line, round corners on the kerb, wait at the kerb for a gap before crossing, each at their own pace and line, stepping aside to pass. People waiting to cross stand a step apart. Nobody walks through anybody, the Founder included; walkers go round cars standing on the pavement, wait for cars crossing it, and step back to the kerb rather than stand in the road.
 
 ### Public transport
 
@@ -589,7 +611,7 @@ Shifts run on the simulation's real events. Start from the phone's Jobs app (it 
 
 - **Departures board:** F at a stop, station, dock, rank, airport or heliport shows what leaves next and the fare.
 - **Bus, train, ferry:** wait at the kerb until the village's own vehicle pulls in; pay the fare or punch a ticket; the camera rides along; get off at any stop, or automatically at your chosen or GPS stop.
-- **Cabs:** call from the phone or take one at a rank; a real cab drives to you through traffic; the meter is $3 plus a little per tile.
+- **Cabs:** call from the phone or take one at a rank; a real cab drives to you through traffic; the fare ($3 plus a little per tile) is quoted before you set off, and a driver won't take a ride you can't pay for. A cab won't come out for under the price of a short ride.
 - **Tickets** from machines: singles, day returns, week rovers, ferry tickets, an island day trip, flights, the air taxi and the sightseeing flight.
 - **The sightseeing flight** ($60): up to 75 m in a wide circle round the village.
 - **GPS:** road-following routes that re-plan when you stray, amber chevrons on the road ahead, the route on the minimap, a pill with the distance. "Go there" and pinned toasts set routes.
@@ -663,40 +685,42 @@ The whole game ships with zero image, model or audio files: every building, pers
 
 - A **physically based Preetham sky** with drifting clouds, overcast greying, horizon haze matched to the fog, stars and a moon. The same sky model runs on the CPU, so the sun's colour, fog, ground bounce and auto-exposure always agree with what the sky shows.
 - The sky is captured into an environment map that lights and reflects off every physically based material.
-- **HDR pipeline:** MSAA, ground-truth ambient occlusion, bloom whose threshold tracks exposure (lamps glow at night but walls never do by day), filmic tone mapping, and a final grade (contrast, saturation, tint, vignette, grain) set by the weather.
+- **HDR pipeline:** MSAA, ground-truth ambient occlusion (High and Ultra; glows, light pools and rain stay out of it), bloom whose threshold tracks exposure (lamps glow at night but walls never do by day), filmic tone mapping, and a final grade (contrast, saturation, tint, vignette, grain, and a light sharpening that keeps edges crisp) set by the weather.
 - Auto-exposure meters the sky in view so a sunrise stays gold instead of blowing out.
 - In a blackout, districts go dark through a per-tile power map read by the window, sign and lantern shaders.
 
 ### Surfaces and weather
 
-- **One shared surface shader** for every material adds world-space anti-tiling, wetness (darker and glossier), puddles with rain ripples and a planar reflection of the street, and snow that settles on upward faces, thins with noise, is cleared by tyres and feet, and sparkles in the sun.
+- **One shared surface shader** for every material adds world-space anti-tiling (natural ground samples its texture twice, turned, so no repeat shows from above), wetness (darker and glossier), puddles with rain ripples and a planar reflection of the street, and snow that settles on upward faces as an even dusting, lies in drifts, thaws from their edges with wet ground round them, is ploughed off the roads, cleared by tyres and feet, and sparkles in the sun.
+- **Headlamps light the street** through the same shader: a dipped beam, cut off on the oncoming side and reaching further on the kerb side, lighting road, kerb, walls, people and the car ahead in their own colour and gloss.
 - Height fog that warms toward the sun.
 - GPU rain and snow; lightning; autumn leaf fall; wind that drives trees, grass, smoke and waves together.
 
 ### Water
 
-Gerstner waves that grow with the wind, ripples drifting along each river's own current, rain rings, Fresnel-weighted mirror reflections, sun glitter, shore foam and winter ice. The same wave maths runs on the CPU, so boats and ducks float, pitch and roll on exactly the waves you see.
+Gerstner waves that grow with the wind, ripples drifting along each river's own current, rain rings, Fresnel-weighted mirror reflections, sun glitter, shore foam and winter ice that forms from the banks out and thaws back to them in floes. The same wave maths runs on the CPU, so boats and ducks float, pitch and roll on exactly the waves you see. Banks are cut into smooth bands (grass or sand, a strand of shingle or wet sand, the bed) with stones along the waterline, bushes on banks, reeds in the shallows and dune grass behind beaches. Boats keep to open water and never pass under a low bridge.
 
 ### Architecture
 
 - A procedural kit: walls cut around openings with real reveals; sash windows with frames, glazing bars, stone sills and lintels; panelled doors with fanlights and steps; tiled roofs with fascias, gutters, downpipes, parapets and chimneys.
 - **Interior-mapped windows:** glass shows a room behind it (walls, floor, a ceiling lamp, furniture, curtains) that lights up at night.
 - Brick, render or stone walls with world-projected UVs, so brick courses line up from house to house; curtain-wall glass towers; lit name signs.
+- Thin window frames and glazing bars fade into the glass once smaller than a pixel, so distant facades don't flicker.
 - Finished buildings merge per 16 × 16-tile chunk for speed; all 98 building types generate in 0.18 s.
 
 ### People and vehicles
 
 - **Skinned people** with real proportions, a shaped head, hair and clothes, and weights blended across every joint. Animation is procedural from gait data: hip, knee and ankle curves, pelvis bob and sway, counter-rotating shoulders, arm swing, idle breathing and weight shifts, looking both ways at a kerb, an umbrella in the rain, and work poses (hammering, carrying, pedalling).
 - The nearest 32 villagers are full skinned models; the rest are instanced.
-- **Cars** built from extruded profiles (hatch, sedan, estate, SUV) with taxi signs and police light bars; motorcycles that lean; the nearest 22 are full models.
+- **Cars** built from extruded profiles (hatch, sedan, estate, SUV) with taxi signs and police light bars; motorcycles that lean; the nearest 22 are full models. Headlamps sit on the nose (a swept lens, projector bulbs, a running-light strip) with a soft glare seen head-on.
 - 21 instanced vehicle types: car, taxi, police, fire engine, ambulance, truck, van, tractor, bus, motorcycle, locomotive, coach, wagon, boat, ferry, raft, helicopter, plane, balloon, UFO and Santa's sleigh.
 - Thought bubbles, one per head, show where someone is going or how they feel.
 
 ### Nature
 
-- **Procedural trees** grown by recursive branching with bark and leaf cards, in species including spruce, Scots pine, Nordmann fir and birch; one in nine grows a third taller.
+- **Procedural trees** grown by recursive branching with bark and leaf cards, in species including spruce, Scots pine, Nordmann fir and birch; one in nine grows a third taller. Streets are lined with trees on their verges, and every tree stands clear of the road.
 - Whole trees bend in gusts, branches swing, leaves flutter, grass ripples as gust fronts roll across it; leaves turn and fall for winter; grass shrinks under snow.
-- Three levels of detail for forests (up to 32,000 trees), streamed grass around the camera, and haze that takes the far woods.
+- Four levels of detail cut from the same tree (leaf cards thinning continuously, so no tree changes shape as you move), up to 32,000 trees, streamed grass around the camera, and haze that takes the far woods. After dark, leaves and grass take the light as a whole instead of glittering card by card.
 
 ### Fire and effects
 
@@ -704,25 +728,30 @@ GPU fire and smoke with no per-particle CPU work: flickering flames, rising embe
 
 ### Sound
 
-- **Fully synthesised with WebAudio**, no audio files. Ambience follows the world: wind, rain, crickets, birdsong.
+- **Fully synthesised with WebAudio**, no audio files: a sound engine with street, room and interface buses and reverb.
+- **Ambience from what's around you:** wind and leaves, rain, water, traffic, crowds, birds by species, time and season, insects, building sites, road works and fires, each from where it is.
+- **Vehicles:** engine voices and sirens on the village's traffic; your own engine through the gears, tyres, wind and skids; footsteps by surface.
 - **Positional one-shots:** sirens, crashes, church bells, fireworks and horns come from where they happen, quieter with distance and panned to their side. Each sound has its own reach: a crash 170 m, a siren 340 m, the church bells 750 m, fireworks 1.1 km.
-- The 09:00 and 18:00 bells ring from the church or temple. A car engine hum while you drive.
+- **Indoors**, each building has its own sounds and music. The 09:00 and 18:00 bells ring from the church or temple.
 - Subtitles caption only what's actually heard.
 
 ### Performance
 
-- **Automatic quality tiers:** integrated GPUs get Medium (no MSAA or AO, 2K shadows, half-resolution textures); discrete GPUs get High; phones and tablets start on Low.
-- **Auto resolution** drops render resolution 10% at a time below about 30 fps and raises it when there's room, never below 70%; or fixed 100/85/70/55%. A 30 fps cap saves battery.
+- **Quality presets:** integrated GPUs get Medium (no MSAA or AO, 2K shadows, half-resolution textures); discrete GPUs get High; phones and tablets start on Low. **Ultra** is never picked for you: High plus every small shadow (kerbs, pavements, window sashes, door brass, flower pots) and full reflections (water however little is in view, wet streets at any distance and height), for a strong graphics card. Changes apply after a reload.
+- **Auto resolution** drops render resolution 10% at a time below about 30 fps and raises it when there's room, never below 80% (the picture stays sharp); or fixed 100/85/70/55%. A 30 fps cap saves battery.
+- **Only what shows is drawn:** the water's mirror is skipped when water is a sliver of the view, wet streets mirror only what's near, flat ground and the smallest details cast no shadows on the lighter presets, and street lamps are culled with the ground they stand on.
+- **Memory:** static ground, banks, mountains and lamp posts keep no copy in the page once on the graphics card (about 150 MB less for a 95-building village); a two-day soak at 8× stays flat.
 - **Fast loading:** the town builds behind a progress bar a slice at a time; textures are painted in parallel Web Workers and cached; every shader is compiled before the first frame, so nothing stutters mid-game.
-- **Measured on an Intel UHD laptop:** about 9 ms of GPU time a frame on Medium with an 81-villager town; memory flat over long sessions at 8×.
+- **Never a frozen screen:** a part of the frame that fails is skipped and reported while the rest runs on; a graphics card that resets says so and offers a reload; a village that crashed while loading offers a lighter or fresh start next time.
+- **Measured on an Intel UHD laptop (Medium):** about 9 ms to draw a frame at street level and 15 ms from the Planner; the simulation takes under 1 ms a frame even at 8×.
 - The production build is about 470 KB gzipped for the whole game.
 
 ### Accessibility
 
-- **Interface size:** compact, standard, large, extra large.
+- **Interface size:** compact, standard, large, extra large. On a smaller screen (a 1366 × 768 laptop, a 125% Windows scale, a tablet) the interface comes down a size by itself, and the top bar gives up labels a step at a time rather than wrapping.
 - **Subtitles** for street speech with the speaker's name, and optional captions for horns, sirens, thunder, bells, crashes and fireworks.
 - **Colour vision modes:** red–green safe (blue and orange) or blue–yellow safe (teal and pink); struggling stats are also underlined, so status is never colour alone.
-- **Motion:** camera shake on or off, first-person head bob, reduce motion (no slides, blinks, photo flash or scrolling ticker; dimmer lightning), and field of view.
+- **Motion:** camera shake on or off, first-person head bob, reduce motion (no slides, blinks, photo flash or scrolling ticker; dimmer lightning), and field of view (60° by default, 55–95°).
 - Fully rebindable keys; gamepad navigation through every menu; touch controls.
 
 ## A–Z index
@@ -737,9 +766,10 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Airfield | 372 m runway, taxiway, four stands; one plane on the runway at a time | Medium |
 | Ambulances | Dispatched by road from the nearest hospital; treat at the scene, carry to the ward | Medium |
 | Approval | The mayor's standing from quality of life, builds, scandals, grievances | Small |
-| Auto resolution | Render resolution follows frame rate, never below 70% | Small |
+| Auto resolution | Render resolution follows frame rate, never below 80%, sharpened | Small |
+| Auto village | A whole village built and moved into at a press, watched from the air; pin season, weather, festival and pace; take it over | Medium |
 | Auto-road | A\* road builder with terrain costs and turn penalty joins every new building | Medium |
-| Autosave | Every 2 or 5 minutes and when the tab hides | Small |
+| Autosave | Every 2 or 5 minutes, when the tab hides, and when the graphics card resets | Small |
 | Bag | Up to 16 carried items: food, tickets, souvenirs | Small |
 | Bank loans | Daily repayments, payoff, default, foreclosure | Small |
 | Bucket brigade | Neighbours fight a fire when there is no brigade | Small |
@@ -759,9 +789,11 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Community self-building | Villagers pool savings to build what the mayor ignores | Medium |
 | Contacts | Phone list of villagers you've met; call or find them | Small |
 | Controls | One action map for keyboard, gamepad and touch; prompts name your device's buttons | Medium |
+| County grant | $6 a resident a day into the village fund | Small |
 | Coverage | Stations reach a set radius; the mayor fills gaps | Small |
 | Crime and justice | Burglaries, disputes, crashes, arrests, trials, verdicts | Big |
 | Day and night | Physical sky, sun, moon, stars, lit windows, lamps, headlamps | Medium |
+| Debts | A bill a household (or you) can't pay is owed and paid off as money comes in | Small |
 | Decisions | Venues chosen by scoring knowledge, taste, price, distance, friends, fear | Big |
 | Departures board | What leaves from here and the fare | Small |
 | Despair and support | Withdrawn villagers are noticed and supported by family, friends, neighbours | Medium |
@@ -781,14 +813,17 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Friendship | Bonds from meetings, cooling without contact, firm friends announced | Medium |
 | Fuel | Drains with distance; gas stations; empty-tank crawl | Small |
 | Gamepad menus | Navigate any on-screen menu by reading what's there | Small |
+| God view | The Planner's view cleared of storm, mist and fog (G) | Small |
 | Gossip | Places and stories passed on when villagers meet | Big |
 | GPS | Road-following routes, re-planning, chevrons on the road | Medium |
 | Grievances | Concrete reasons people protest; riots never random | Medium |
+| Gridlock relief | A car stuck 100–150 s gives up and takes another way; no jam freezes the town | Small |
 | Health | 0–100 health, seasonal illness, injuries, recovery | Big |
 | Household economy | Wages, savings, upgrades, purchases, rentals, bills | Big |
 | Imports and exports | Daily allowance growing with the village; surplus sold on | Medium |
-| Interiors | 81 enterable types from 12 themed templates with real occupants | Big |
+| Interiors | 81 enterable types, a room of its own for each kind of business, with real occupants | Big |
 | Intercity Express | National railway every three hours | Medium |
+| Junction boxes | Junctions reserved whole, entered only with room beyond; crossing movements take turns | Medium |
 | Knocking | Meet a household that won't ask you in yet at the door | Small |
 | Land prices | Central and waterfront plots cost more | Small |
 | Landing screen | Live cinematic flight over your own village | Small |
@@ -797,7 +832,7 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Lottery | A rare $400 household win | Small |
 | Mayors | Four personalities with their own build lists and honesty | Big |
 | Memory | 14-entry episodic diary per villager; fades unless strong | Big |
-| Money rule | No money conjured or destroyed; one closed economy | Big |
+| Money rule | No money conjured or destroyed: tills pay wages, budgets run public places, debts instead of free services | Big |
 | Mood | Daily feeling from work, money, safety, home, fun, friends, memories | Medium |
 | Motorcycles | Quicker, sharper, lean in turns | Small |
 | Mountain peak | 117 m massif with switchback trail, summit cairn, bike hire | Medium |
@@ -816,9 +851,10 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Power grid | Demand vs capacity, rolling blackouts, faults, repair crews, dark districts | Big |
 | Puddles | Born in heavy rain, evaporate in dry weather | Small |
 | PVTV | The village channel, headlines from real events, stock ticker | Medium |
-| Quality tiers | Low, Medium, High chosen by the GPU | Small |
+| Quality tiers | Low, Medium, High chosen by the GPU; Ultra when you choose it | Small |
 | Rainbows | After rain stops in daylight | Small |
 | Reputation | Per-villager opinion of you, spread by gossip and TV, setting prices and reactions | Big |
+| Rescue | A village that crashed while loading opens again, lighter, or is kept safe while you start afresh | Small |
 | Riots | Protests at the town hall over the top grievance | Medium |
 | Road rules | Lanes, bends, keeping right, wrong-row fines | Medium |
 | Saves | Three slots, autosave, export, import of original PixelVille saves | Medium |
@@ -828,22 +864,26 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Shifts | 13 playable jobs on the simulation's real events | Big |
 | Side gigs | 22 seasonal odd jobs for villagers between careers | Small |
 | Sightseeing flight | A helicopter circle round the village | Small |
+| Sound engine | Synthesised ambience from what's around you, engines, footsteps, rooms | Medium |
 | Stock market | Five hometown tickers moved by the real village | Small |
+| Street trees | A tree every other tile on the verges of every straight street | Small |
 | Subtitles | Street speech with names, optional sound captions | Small |
 | Supply chain | Four goods from producer yards by truck and train to shelves and sites | Big |
 | Taxes | Low, normal, high, set by you; moods and treasury respond | Small |
 | Taxis | Real cabs from ranks; ride or drive them | Medium |
 | Templates | Mind-driven dialogue when AI is off | Medium |
+| Thaw | Snow retreats in drifts on the village's clock; flattened grass greens; lake ice breaks up from the banks | Small |
 | Tiers | Hamlet, Village, Town, City, Metropolis | Small |
-| Traffic | Look-ahead driving, distance keeping, lights, gates, junction turns, self-clearing jams | Big |
+| Traffic | Look-ahead driving at real sizes, junction boxes, lights, gates, lanes, parking, traffic from beyond the map, gridlock relief | Big |
 | Trains | Local, commuter, express, freight on player-laid track with timetables | Big |
 | Travel | Leave by road, rail, sea or air; journey screen; city; while you were away | Big |
-| Trees | Procedural species, wind, seasons, three LODs | Medium |
+| Trees | Procedural species, wind, seasons, four levels of detail that keep each tree's shape, street trees | Medium |
+| Ultra graphics | Every small shadow and full reflections, chosen in Settings | Small |
 | Undo | Ctrl+Z in the Planner | Small |
 | Visitors | Arrive by train, plane, ferry and spend in town | Small |
 | Wanted level | 1–5 stars, real police by road, roadblocks, spikes, helicopter | Big |
-| Water | Gerstner waves, currents, reflections; boats float on the real waves | Medium |
-| Weather | Five states, seasonal tables, wet and snowy streets, lightning | Big |
+| Water | Gerstner waves, currents, reflections, banded shores, ice that thaws in floes; boats float on the real waves | Medium |
+| Weather | Five states, seasonal tables, wet and snowy streets, the spring thaw, lightning | Big |
 | While you were away | What changed during your trip | Small |
 | Witnesses | Who saw an offence decides if it counts, and they remember | Medium |
 | Zero assets | Every model, texture and sound generated in code | Big |
@@ -859,7 +899,7 @@ PixelVille – Next Dimension is a full simulation first and a 3D game second: a
 3. **Minds, not scripts.** Each villager has a personality, a fading diary, friends, favourite places and fears, and chooses venues by scoring them. News, places and stories about you travel by gossip.
 4. **AI with guardrails.** Free conversation with any villager through a language model, grounded in that villager's real memories and the village's real news, with in-world rules kept on the server and every effect clamped so chat can never break the simulation. Template dialogue takes over seamlessly when AI is unavailable.
 5. **Consequences that feel fair.** An offence only counts if a squad car, a road camera or a villager actually saw it; police drive from real stations by real roads; witnesses remember; reputation spreads three hops by gossip and sets prices, greetings and who calls the police.
-6. **A closed economy.** Money is never conjured or destroyed: your purchases are a business's income, your wages come from the village fund or a till, and an empty fund owes you.
+6. **A closed economy.** Money is never conjured or destroyed: every workplace pays its people from its own till, public services run on budgets from the village fund, your purchases are a business's income, and a bill nobody can pay becomes a debt rather than a free service.
 7. **Jobs built on live events.** All 13 shifts run on what the simulation is doing right now: real fires, real casualties, real customers, real shortages.
 8. **Zero assets.** Every building, person, car, tree, texture and sound is generated in code, yet it reaches a semi-realistic, physically lit look that runs on an integrated laptop GPU and on phones.
 9. **Plays anywhere.** Keyboard and mouse, gamepad through every menu, touch with an installable phone layout, rebindable keys, and a full accessibility suite.
@@ -897,10 +937,10 @@ In one test a thunderstorm's lightning strikes a substation, the junction's ligh
 | Festivals | New Year, Easter, Diwali, a Christmas tradition from day 15 into the new year |
 | Phone apps | 11 |
 | Hometown stock tickers | 5 |
-| Automated tests | 130, including multi-day simulation soak runs |
-| Game source | About 37,000 lines of TypeScript |
+| Automated tests | 152, including multi-day simulation soak runs, a busy-grid traffic test and an economy audit |
+| Game source | About 41,500 lines of TypeScript |
 | Image, model and audio files | 0 |
-| GPU time per frame on an Intel UHD laptop | About 9 ms |
+| Time to draw a frame on an Intel UHD laptop (Medium) | About 9 ms at street level, 15 ms from the Planner |
 
 ### Under the hood
 

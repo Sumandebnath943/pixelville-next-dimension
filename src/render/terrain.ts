@@ -14,7 +14,8 @@ import { Approach, Gate } from '../sim/approach';
 import { Weather } from '../sim/weather';
 import { Calamity } from '../sim/calamity';
 import { MAT, hash2 } from './kit';
-import { Kit, Palette, sharedPalette, freeAfterUpload, NO_SHADOW } from '../gfx/architecture';
+import { Kit, Palette, sharedPalette, freeAfterUpload, castsShadow } from '../gfx/architecture';
+const GROUND = new Set(['grass', 'sand', 'soil', 'shingle']);
 import * as P from '../gfx/props';
 import { WaterSystem } from '../gfx/water';
 import { TreeLayer, TreeInstance, GrassStream, Species, BushInstance } from '../gfx/vegetation';
@@ -294,7 +295,10 @@ export function treeSpot(tx: number, ty: number): { x: number; z: number; s: num
   const h = hash2(tx * 3 + 1, ty * 5 + 2);
   return {
     x: tx * TM + 4 + ((h % 1000) / 1000 - 0.5) * 4.4,
-    z: ty * TM + 4 + (((h >> 10) % 1000) / 1000 - 0.5) * 4.4,
+    // (V2: an unsigned shift: the signed one went negative for half the trees and moved them up to 6.6 m north, out of
+    // their tile and onto the road beside it, where the Founder walked into them too)
+    z: ty * TM + 4 + (((h >>> 10) % 1000) / 1000 - 0.5) * 4.4,
+    // (the sizes stay as they always were, signed shift and all: the forest's look as approved)
     s: 0.85 + ((h >> 20) % 100) / 250,
   };
 }
@@ -368,6 +372,7 @@ export class Terrain {
     P.registerGlow(this.pal);
     for (let i = 0; i < NCX * NCY; i++) this.chunks.push({ sig: '', meshes: [] });
     this.water = new WaterSystem(WATER_Y, this.profile.waterReflScale, 9); // (the town's water is a 4 m mesh)
+    this.water.fullMirror = this.profile.fullMirrors;
     // (V2 (Milestone 8): the forest thins out with the quality: the far crowns go cheap sooner, and the haze
     // takes the farthest woods on the lighter presets)
     const q = this.profile.grassRange > 40 ? 'high' : this.profile.grassRange > 30 ? 'medium' : 'low';
@@ -609,7 +614,7 @@ export class Terrain {
       const hv = hash2(Math.floor(x * 3), Math.floor(z * 3));
       const species = SPEC[hash2(line, 17) % SPEC.length];
       const tint = spring && species !== 'birch' ? new THREE.Color(1.1, 1.15, 0.85) : undefined;
-      list.push({ x, z, y: heightAt(x, z), species, scale: 0.62 + ((hv >> 4) % 100) / 900 + k * 0.04, rot: (hv % 628) / 100, tint });
+      list.push({ x, z, y: heightAt(x, z), species, scale: 0.62 + ((hv >>> 4) % 100) / 900 + k * 0.04, rot: (hv % 628) / 100, tint });
       addPost(x, z, 0.32, TRUNKS);
     };
     const IN = 1.7; // metres in from the road tile's edge: the verge just behind the pavement
@@ -701,7 +706,8 @@ export class Terrain {
     kit.base = new THREE.Matrix4();
     ch.meshes = kit.build(this.group, true);
     freeAfterUpload(ch.meshes);
-    for (const m of ch.meshes) m.castShadow = !NO_SHADOW.has(m.name);
+    // (the ground itself never: it lies on what it would shade)
+    for (const m of ch.meshes) m.castShadow = castsShadow(m.name) && !GROUND.has(m.name);
     this.buildWater(cx, cy, ch);
   }
 
@@ -1154,6 +1160,8 @@ export class Terrain {
     }
     for (const pk of World.peaks as Peak[]) this.buildPeak(kit, pk);
     this.mtnMeshes = kit.build(this.group, true);
+    // (a mountain's grass and trail are slopes, not flat ground: they shade the land below as they always have)
+    for (const m of this.mtnMeshes) m.castShadow = true;
     freeAfterUpload(this.mtnMeshes);
   }
 

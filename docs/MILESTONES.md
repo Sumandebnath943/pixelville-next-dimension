@@ -11,7 +11,9 @@
 | 4 | **Deeper village** | Health, supply chain, education, power |
 | 5 | **Going places** | Ride every transit line; travel off-map |
 | 6 | **Work shifts** | All playable jobs (done) |
-| 7 | **Launch polish** | Mobile tuning, performance, balance, accessibility, launch (built; the deploy waits on the owner) |
+| 7 | **Launch polish** | Mobile tuning, performance, balance, accessibility, launch (done; live at [pixelvillenextdimension.houseofnamus.com](https://pixelvillenextdimension.houseofnamus.com/), every push to `main` deploys) |
+| 8 | **The owner's polish list** | 33 points from the first full play (done 2026-10-26) |
+| 9 | **Live play fixes** | The owner's batches since launch: traffic, the look, money, an Auto village, saves that always open, a lighter frame (2026-10-26 → 10-30) |
 
 ---
 
@@ -448,6 +450,66 @@ Stretched over the village year: day 15–16 the head gardener scouts by helicop
 ### Checked
 - 130 tests pass (`tests/polish.test.ts` new: pavements and corners, a family walking apart, the timetable, villagers' tickets, hits, the peak and its trail, the tree's year and its lighting hours; `traffic.test.ts`: bends in lane and clear of kerbs, keeping right on avenues, straight routes, slowing for turns); typecheck clean; the production build builds.
 - In the Browser pane: 15 s of traffic in the test town with no car over a pavement or inside another; the sunrise, the Planner at night, the river banks, a rail bend, the peak from its trailhead, the tree's haul and lighting night, the loading, landing and controls screens. 61 shader programs at boot on a fresh origin (65 before), none added in play apart from the post-processing passes; no console errors.
+
+---
+
+## Milestone 9 · Live play fixes (2026-10-26 → 10-30, straight onto `main`)
+
+After launch the owner played the live game and sent fixes in batches; each batch was built, checked in the Browser pane and committed to `main` (which deploys) when the owner said so.
+
+### 9a · Elections on the ground (`80419d7`, 10-26)
+Rallies and polling rebuilt as `src/sim/hustings.ts`: a rally on a green in the candidate's own neighbourhood before dark (18:00 in summer, afternoons in winter), never on the road; a polling station by the town hall, open 08:00–18:00, real villagers queuing and voting when their day allows.
+
+### 9b · Headlights (`de84603`, 10-26)
+- The light on the road was an 11 m additive sprite that showed as a white rectangle. Each lit car's lamps now light the street through the surface shader (`gfx/surface.ts` `BEAMS`): a dipped beam, cut off on the oncoming side, reaching further on the kerb side, wide near the car and narrowing down the road, lighting road, kerb, walls, people and the car ahead in their own colour and gloss. The nearest 3/6/8 lamps (low/medium/high) are sent each frame (`flushBeams`) and summed into one light. Dry tarmac keeps only a sheen of the specular; wet roads keep it all.
+- The headlamps are laid on the nose (a swept lens in a dark seam, two projector bulbs, a running-light strip); the glare is a soft core-and-halo sized by how squarely the eye faces the lamp, never seen from behind or the driver's seat.
+
+### 9c · Traffic that never jams or drives through itself (`2f336c0`, 10-26)
+- **Junction boxes** (`src/sim/traffic.ts`): a junction is reserved whole (each tile for the quarters its swept path covers, `MASKS`) and only with room on the far side, so nobody stops inside it; crossing movements take turns, the longest-waiting first (`outranks`). Every vehicle has its real length and width at any angle; nothing drives through anything. Overtaking only on a clear straight with a gap to pull back into; hops between an avenue's rows wait for room; a blocked car backs into its drive; trucks, vans, fire engines, squad cars and parking cars stop in line on the near row; emergency vehicles drive in the traffic on blue lights.
+- Crashing: the car is pushed fully clear and only bounces when driving into what it hit; the Wasted/Busted curtain runs its hours in small slices (no more apparent freeze).
+- Night sky: no Milky Way streaks, steady stars; headlamps light grass and leaves evenly; the sky round a low sun eases off short of white. Construction sites get a real tower crane.
+
+### 9d · Shores, boats, windows, traffic from beyond the edge, the peak (`71cbb70`, 10-27)
+- **Shores** cut into smooth bands: grass or a beach's sand, a strand (shingle on rivers and lakes, wet sand on beaches), then the bed; stones and boulders along the waterline, bushes on banks, reeds in the shallows, dune grass behind beaches.
+- **Boats** on open water only: rowboats on straight legs clear of the banks, nothing under a low bridge, the ferry and steamer on a smoothed course (a bridge that blocks the ferry's only way says so).
+- **Steady windows**: sub-pixel frames and glazing bars fade into the glass's tone, and far rooms lose their fine detail (about 80% fewer flickering pixels on distant facades).
+- **Traffic from out of town** (`src/sim/approach.ts`): the roads off the map carry on along a valley to the horizon; visitors, delivery trucks and the county's van drive in from 1.1 km out and join only when there's room.
+- **The peak**: ridges, gullies, ledges, cliff bands and crags; the trail rounded at the bends and cut into the slope as a level bench (steepest about 1 in 3). Smaller mountains rugged too.
+- **Loading screen** with the key art under a cinematic shade and the build's five stages.
+
+### 9e · Lanes past the edge, roofs, a new landing, a finished trail (`2038b59`, 10-27)
+- Arrivals come in on the right-hand row of a road beyond the edge, departures leave on the other.
+- Rooftop AC units were thrown up to 17 m into the air by a signed shift of an unsigned hash: now unsigned.
+- The key art is a 200 KB WebP preloaded by the page; the landing screen redesigned (the village as a card, one big Continue, the rest as a quiet list, a "live" mark).
+- The trail: one smooth gravel ribbon, earth verges, a log edge on drops, a bench 2.6 m either side. Leaves, bushes and grass take the light as a whole after dark (no cyan and yellow glitter).
+
+### 9f · Nothing through anything, trees that keep their shape, real sound, real shops (`7b14f80`, 10-27)
+- **Collisions**: walkers keep to the pavement, go round cars standing on it and cross only when the road is clear; the Founder and villagers never walk through each other; chases and the Christmas convoy drive in the traffic; wrecks, road works, casualties, queues, visitors, Santa and the burglar are seen by drivers. `tests/collisions.test.ts` counts no overlaps.
+- **Trees**: four levels of detail cut from the same tree, leaf cards thinning continuously, so no tree changes shape as the camera moves.
+- **Sound** (`src/audio/`): a new synthesised engine (street, room and UI buses, reverb); ambience from what's around the listener (`audio/scape.ts`: wind, leaves, rain, water, traffic, crowds, birds by species, insects, sites, works, fires); engine voices and sirens; the Founder's engine through the gears, tyres, skids, footsteps by surface; each building's own sounds indoors.
+- **Interiors**: a room of its own for each kind of business (`interiors/rooms.ts`); shop windows show the shop behind them (`pvShopSeen`).
+- **Shops sell something useful**: food and remedies mend, clothes are worn, a haircut makes an impression, gifts are given, the garage services cars.
+
+### 9g · God view, money that comes from somewhere, an Auto village, traffic that never locks (`7d98372`, 10-29/30)
+- **God view** (`G`, or the eye button in the Planner; `Settings.godView`): `Stage.clearView`/`clearK` turn the Planner's view to a clear sky through any storm, mist or fog; the weather itself goes on (streets still get wet, snow still settles).
+- **Money** (`src/sim/economy.ts`): wages come out of the workplace's own till (`Economy.payday`), filled by its sales and its trade beyond the map; public (civic) places run on daily budgets from the village fund (`Economy.budgets`), topped up by a **county grant** of $6 a resident a day; households carry **debts** (`b.debts`: a hospital bill they can't pay, paid off as money comes in) and so does the Founder (`Wallet.charge/settle/bills`); building sites have budgets (`Economy.commission`, `b.siteFunds`); a workplace the Founder places opens with a few days' wages (`openingCapital`). Closed leaks: free cab rides, hospital bills from nowhere, goods without payment, free restocks, conjured loans and casino wins, forgiven fines. Building cards and the mayor's report show tills, wages and the fund.
+- **Auto village** (`src/sim/autovillage.ts`, `main.ts askAuto/buildAuto/autoFrame`, panel `#auto`): a whole village laid out (an avenue grid, corners free for signalled crossings, a power plant) and moved into at a press, then watched from the air; the season, weather, festival and pace can be pinned (`Weather.pin`, `Festivals.pinDay`); "Play this village" hands it over at the Lodge.
+- **The traffic deadlock** that came in with 9f: people standing in the road hold up only their own lane and can be passed; cab waiters stand at their own door, bus queues (`Life.queueSpot`) and onlookers (`crowdSpots`) on the pavement; walkers step back to the kerb; after 6 s (`PED_AFTER`) a driver waits only for walkers in its own lane; twins on one spot take turns; casualties are helped home after 120 game minutes; **gridlock relief**: a villager's car stuck 100 s (`GIVE_UP_AFTER`) is left and the driver walks, visitors, cabs and trucks give up after 150 s (`STUCK_RELIEF`). In the game at 8× over 1.6 days, at most three vehicles were held up at any moment, never the same one twice running. `tests/jams.test.ts`, `tests/economy.test.ts`.
+
+### 9h · The look, the top bar, saves that always open, a lighter frame, the thaw (`6f9d68e`, 10-30)
+- **Why the look lab looked better than the game** and what changed: the game dropped to 70% resolution whenever frames ran long (`Stage.autoRes` now stops at 80%, and the grade pass sharpens: `sharpen`/`px`); its field of view was 70° against the lab's 55° (now 60°, a stored 70 migrates once); its streets ran past bare lawns (now **street trees**, `Terrain.updateStreetTrees`: a lime, oak or birch every other tile on the open verge of every straight road, one kind per street, solid via `TRUNKS`); the grass texture's 8 m repeat showed from above (the `antiTex` surface option samples it twice, turned); a strip of lawn ran between shop paving and the pavement (lot inset 0.02 m).
+- **Top bar**: `autoScale()` (`src/ui/access.ts`) brings the whole interface down a size on smaller screens (about 0.9 at 1366 wide, floor 0.8; touch 0.9; phones unscaled), and `Hud.fitTop` steps classes `tb-c1`…`tb-c3` then `tb-rows` so the bar never wraps its right half under the left.
+- **Saves that always open**: each boot leaves a mark (`pixelville-nd-boot`) until the village has run 30 s; a mark at the next boot (the last one crashed or hung) offers *Open it again*, *Open it with lighter graphics* (Low for that load only) or *Start a new village* (the old one kept as save `rescue`, "Kept safe" in Load). A graphics reset shows `#gpu-lost` with a Reload button (autosaving first) and lowers quality for the next load only (`QUALITY_ONCE`; it used to stick for good, and settings lowered that way go back to Auto once). One failing part of a frame no longer stops the game (`guard()` in `main.ts`).
+- **A lighter frame**: static terrain, mountain and lamp meshes drop their page copy once on the GPU (`freeAfterUpload`; about 150 MB less for a 95-building village); a sunken bank tile is one quad; lamp posts are culled by chunk; the water mirror is skipped when water covers under ~4% of the view (`WaterSystem.coverage`); flat ground and the smallest details cast no shadows (`NO_SHADOW`); wet streets mirror only the nearest 320 m and not from above 90 m. In rain over the Planner, draw calls fell from ~1,390 to 650–820 a frame; a 2-day soak at 8× kept the heap flat (263–302 MB).
+- **The thaw**: snow lies in drifts tens of metres across (`pvSnowField/pvSnowLine/pvSnowCover` in `gfx/env.ts`) that shrink from their edges with wet ground round them, on the village's clock (most of a spring day); roads plough to slush (`plough`); grass comes out flattened and straw-pale and greens over a day and a half (`ENV.thaw`, `thaw`); lakes freeze and thaw from the banks out, in floes (`Stage.ice`).
+
+### 9i · Ultra graphics, trees off the roads (10-30)
+- **Ultra** (Settings → Graphics → Quality; never picked automatically): High plus every small shadow (kerbs, pavements, sashes, door brass, pots: `SHADOW_DETAIL.tiny`, `castsShadow`) and full mirrors (water however little is in view, wet streets at any range and height: `QualityProfile.tinyShadows`, `fullMirrors`). Applies after a reload, like every preset. The look lab always draws every small shadow.
+- **Trees on the road**: `treeSpot` placed each tree within its tile with a signed shift of an unsigned hash, so half the map's trees moved up to 6.6 m north, some onto the road beside them (with an invisible collision there); the same bug threw park trees out of their parks and rubble off its plot. All unsigned now (tree sizes kept as they were). Every tree now stands at least 1.7 m clear of the road's edge.
+- **Black squares on High**: the lamps' light pools have no normals, and the ambient-occlusion pass drew them into its normal buffer as NaN, blacking out a square round every street lamp. That pass now skips meshes without normals and see-through or glowing ones.
+
+### Checked
+- 152 tests pass; typecheck clean; production build builds. In the Browser pane: the traffic run above; god view, the Auto village panel, the cab refusal, the hospital debt; the top bar at 1366, 1093, 1024 and 768 wide; the rescue prompt and the graphics-reset notice; the thaw and lake ice; street trees and FOV at street level; Ultra's kerb shadows at low sun with no black squares; no console errors.
 
 ---
 
