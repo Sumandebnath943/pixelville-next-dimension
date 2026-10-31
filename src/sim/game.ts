@@ -348,6 +348,8 @@ export const Game = {
     if (!r) return false;
     if (r.kind === 'building') {
       Sim.onBuildingRemoved(r.b);
+      // V2: and the access lane that led only to it (Ctrl+Z lays it again with the building)
+      World.pruneLane(r.b.door);
       this.toast(`${CAT[r.b.type].name} demolished 🚜 — Ctrl+Z to undo`);
     }
     this.recordBulldoze(r, x, y);

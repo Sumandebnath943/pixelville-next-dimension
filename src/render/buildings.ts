@@ -640,7 +640,11 @@ function buildHouse(c: Ctx, level: number): void {
 
 function buildMansion(c: Ctx): void {
   c.lot('#8fbd68');
-  c.fence(-c.hw + 0.3, -c.hd + 0.3, c.hw - 0.3, c.hd - 0.3, '#3a3a3a', 1.3);
+  // (V2: gates for a gravel drive down either side, past the wings, where the family's cars stand: it had none, and
+  // its cars stood at the front gate)
+  c.fence(-c.hw + 0.3, -c.hd + 0.3, c.hw - 0.3, c.hd - 0.3, '#3a3a3a', 1.3, [[-1.6, 1.6], [c.hw - 4.8, c.hw], [-c.hw, -c.hw + 4.8]]);
+  for (const s of [1, -1]) c.body.box(s > 0 ? c.hw - 3.1 : -c.hw + 0.6, 0.1, 2.6, s > 0 ? c.hw - 0.6 : -c.hw + 3.1, 0.13, c.hd - 0.3, c.c('#b9b2a2'));
+  for (const s of [1, -1]) c.body.box(s > 0 ? c.hw - 4.8 : -c.hw + 0.4, 0.1, c.hd - 2.2, s > 0 ? c.hw - 0.4 : -c.hw + 4.8, 0.13, c.hd - 0.3, c.c('#b9b2a2'));
   const top = c.block(-7, -8, 7, 4, 0.1, 2, '#efe6d2', { door: true, band: '#d8ccb4' });
   c.body.pyramid(-7.5, 7.5, top, top + 3.4, -8.5, 4.5, c.c('#5a6a7a'), 4);
   c.block(-10.5, -6, -7, 2, 0.1, 1, '#e8dcc6');
@@ -651,7 +655,8 @@ function buildMansion(c: Ctx): void {
   c.body.box(-3.6, 6.3, 3.9, 3.6, 6.7, 5.2, c.c('#efe6d2'));
   c.body.cyl(0, 0.1, 8, 1.2, 0.5, 10, c.c('#c8c2b6'));
   c.body.cyl(0, 0.6, 8, 0.25, 1.2, 6, c.c('#a8b8c8'));
-  c.tree(-9, 8, 0.9); c.tree(9, 8, 0.9);
+  // (in the back corners, behind the wings: at the front they hung over the drives, and hid the cars)
+  c.tree(-9.5, -9.8, 0.9); c.tree(9.5, -9.8, 0.9);
   c.height = top + 3.4;
 }
 
@@ -659,12 +664,17 @@ function buildApartment(c: Ctx): void {
   c.lot('#b8b4a8');
   const floors = 5 + (c.hv % 3);
   const wall = ['#d8cfc0', '#c9d2dc', '#e0c8b8'][c.b.variant % 3 || 0];
-  const top = c.block(-c.hw + 1.5, -c.hd + 1.5, c.hw - 1.5, c.hd - 2.5, 0.1, floors, wall, { door: true, band: shade(wall, -0.15).getStyle() });
+  // (V2: set back behind a forecourt where the residents' cars stand, nose to the street: the block came to within
+  // two and a half metres of the pavement, and its cars stood at the front door)
+  const z1 = c.hd - 7;
+  const top = c.block(-c.hw + 1.5, -c.hd + 1.5, c.hw - 1.5, z1, 0.1, floors, wall, { door: true, band: shade(wall, -0.15).getStyle() });
+  c.body.box(-c.hw + 0.4, 0.1, z1 + 0.6, c.hw - 0.4, 0.12, c.hd - 0.3, c.c('#4a4c50')); // the forecourt
+  c.body.box(-1.6, 0.1, z1, 1.6, 0.14, c.hd - 0.3, c.c('#b8b0a0')); // the path to the door
   // balconies on the front
   for (let f = 1; f < floors; f++)
     for (const x of [-c.hw + 4, 0, c.hw - 4])
-      c.body.box(x - 1.2, 0.1 + f * FLOOR - 0.1, c.hd - 2.5, x + 1.2, 0.1 + f * FLOOR + 0.9, c.hd - 1.6, c.c('#9aa0a8'));
-  c.flatRoof(-c.hw + 1.5, -c.hd + 1.5, c.hw - 1.5, c.hd - 2.5, top);
+      c.body.box(x - 1.2, 0.1 + f * FLOOR - 0.1, z1, x + 1.2, 0.1 + f * FLOOR + 0.9, z1 + 0.9, c.c('#9aa0a8'));
+  c.flatRoof(-c.hw + 1.5, -c.hd + 1.5, c.hw - 1.5, z1, top);
 }
 
 function buildRowhouse(c: Ctx): void {
@@ -1290,34 +1300,39 @@ function buildLodge(c: Ctx): void {
   c.sign(0, z1 + 1.85, 3.9, 3.2, '#c9a64a', 0.5);
 }
 
-/* V2: a public car park: nine marked bays along the back, backed into from the aisle in front, a kerb round it, a
-   pay machine, lamps and the blue P */
+/* V2: a public car park: eight marked bays along the back, backed into from the aisle in front, a kerb round it, and
+   down one side, out of every car's way in and out (a strip with no bay in front of it), the pay machine, the lamps and
+   the blue P. (Nine bays filled its width, so the sign and the lamps stood in front of bays, and cars drove through
+   them.) */
 function buildCarPark(c: Ctx): void {
   c.lot('#3c3e42', 0.05);
-  const bz = -c.hd + 3.2, n = 9, step = 2.6;
+  const bz = -c.hd + 3.2, n = 8, step = 2.6, x0 = -c.hw + 0.6; // (the bays' left edge; the strip is right of them)
   const line = c.c('#e8e8e2');
   for (let k = 0; k <= n; k++) {
-    const x = -((n * step) / 2) + k * step;
+    const x = x0 + k * step;
     c.body.force = 'paint';
     c.body.box(x - 0.06, 0.1, -c.hd + 0.6, x + 0.06, 0.115, bz + 2.4, line);
     c.body.force = null;
   }
-  for (let k = 0; k < n; k++) c.bays.push([-((n - 1) * step) / 2 + k * step, bz, 0]);
+  for (let k = 0; k < n; k++) c.bays.push([x0 + step / 2 + k * step, bz, 0]);
   // the kerb and a low hedge down the sides and the back
   for (const [x0, z0, x1, z1] of [[-c.hw + 0.1, -c.hd + 0.1, c.hw - 0.1, -c.hd + 0.5], [-c.hw + 0.1, -c.hd + 0.1, -c.hw + 0.5, c.hd - 0.6], [c.hw - 0.5, -c.hd + 0.1, c.hw - 0.1, c.hd - 0.6]] as [number, number, number, number][]) {
     c.body.box(x0, 0.1, z0, x1, 0.62, z1, c.c('#4f7a3a'));
     c.solid(x0, z0, x1, z1, 0.62);
   }
-  // the pay machine, two lamps, the sign
-  c.body.box(c.hw - 2.4, 0.1, c.hd - 1.6, c.hw - 1.8, 1.5, c.hd - 1.2, c.c('#2a4a7a'));
-  c.solid(c.hw - 2.4, c.hd - 1.6, c.hw - 1.8, c.hd - 1.2, 1.5);
-  for (const x of [-c.hw + 1.2, c.hw - 1.2]) {
-    c.body.cyl(x, 0.1, 0, 0.07, 5, 6, c.c('#1e2224'));
-    c.glow.box(x - 0.25, 5, -0.15, x + 0.25, 5.25, 0.15, c.c('#fff2d8'));
+  // in the strip: the pay machine by the entrance, two lamps, the post with the P
+  const sx = (x0 + n * step + c.hw - 0.5) / 2; // (the strip's middle)
+  c.body.box(sx - 0.3, 0.1, c.hd - 2.2, sx + 0.3, 1.5, c.hd - 1.8, c.c('#2a4a7a'));
+  c.solid(sx - 0.3, c.hd - 2.2, sx + 0.3, c.hd - 1.8, 1.5);
+  for (const z of [-c.hd + 2.5, 1.5]) {
+    c.body.cyl(sx, 0.1, z, 0.07, 5, 6, c.c('#1e2224'));
+    c.glow.box(sx - 0.25, 5, z - 0.15, sx + 0.25, 5.25, z + 0.15, c.c('#fff2d8'));
+    c.solid(sx - 0.1, z - 0.1, sx + 0.1, z + 0.1, 5);
   }
-  c.body.box(-c.hw + 1.1, 0.1, c.hd - 1.2, -c.hw + 1.25, 2.6, c.hd - 1.05, c.c('#3a3a3a'));
-  c.glow.box(-c.hw + 0.55, 2.6, c.hd - 1.16, -c.hw + 1.8, 3.6, c.hd - 1.09, c.c('#1f5fbf'));
-  c.sign(-c.hw + 4.2, c.hd - 0.6, 0.2, 3.2, '#1f5fbf', 0.55);
+  c.body.box(sx - 0.08, 0.1, c.hd - 1.2, sx + 0.08, 2.6, c.hd - 1.05, c.c('#3a3a3a'));
+  c.glow.box(sx - 0.62, 2.6, c.hd - 1.16, sx + 0.62, 3.6, c.hd - 1.09, c.c('#1f5fbf'));
+  c.solid(sx - 0.1, c.hd - 1.2, sx + 0.1, c.hd - 1.05, 2.6);
+  c.sign(sx, c.hd - 0.6, 0.2, 1.8, '#1f5fbf', 0.55);
   c.height = 5.3;
 }
 
@@ -1328,7 +1343,9 @@ function buildCarPark(c: Ctx): void {
    front first, then the sides. Lawns, parks, plazas and the like take no cars at all (they use the car parks). */
 const NO_PARKING = new Set(['park', 'grandpark', 'plaza', 'zoo', 'playground', 'pool', 'stadium', 'amusement', 'busstop', 'taxistand', 'lodge']);
 function findParking(c: Ctx, b: any, key: string): Ctx['parking'] {
-  const d = CAT[key] || CAT[b.type];
+  // (V2: an upgraded house is built as 'house2'/'house3', whose catalogue entries aren't homes: every one of them had
+  // its spots taken for visitors' bays, and no drive)
+  const d = CAT[key.replace(/\d+$/, '')] || CAT[key] || CAT[b.type];
   const out: Ctx['parking'] = { park: [], drive: [] };
   if (!d || NO_PARKING.has(b.type) || b.construction > 0) return out;
   if (c.bays.length) { out.park = c.bays.slice(); return out; }
@@ -1568,6 +1585,18 @@ export class BuildingLayer {
   constructor(scene: THREE.Scene) {
     scene.add(this.group);
     Lots.of = (b) => this.lots.get(b.id) ?? null;
+    // (a car's outline, as points down its sides and across its ends, against what was built)
+    Lots.blocked = (x, z, yaw) => {
+      const fx = Math.sin(yaw), fz = Math.cos(yaw);
+      for (const [x0, z0, x1, z1] of this.solidsNear(x, z, 3)) {
+        for (let k = -2; k <= 2; k++) for (const w of [-0.85, 0, 0.85]) {
+          if (w === 0 && Math.abs(k) < 2) continue;
+          const px = x + fx * k * 1.1 + fz * w, pz = z + fz * k * 1.1 - fx * w;
+          if (px > x0 && px < x1 && pz > z0 && pz < z1) return true;
+        }
+      }
+      return false;
+    };
   }
 
   /** the coarse look signature: rebuild only when it changes */

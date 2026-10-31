@@ -14,7 +14,7 @@ import { Gov } from '../sim/gov';
 import { Festivals } from '../sim/festivals';
 import { Calamity } from '../sim/calamity';
 import { Weather } from '../sim/weather';
-import { World } from '../sim/world';
+import { World, GW } from '../sim/world';
 import { CAT } from '../sim/catalog';
 import { InstancedPool, MAT, MeshBuilder, hex, hash2 } from './kit';
 import { Power } from '../sim/power';
@@ -31,7 +31,7 @@ import { Crowd, castLoaded, outfitFor, rigFor } from '../gfx/people';
 import { Animal, Herd, beast, dogBreed, zooLoaded, type BeastPose } from '../gfx/animals';
 import { Fauna } from './fauna';
 import { drivewayCars, DrivewayCar, CAR_COLORS as PARKED_COLORS, styleForPaint } from './parked';
-import { baySpot, bayCount, carDrawPose } from '../sim/parking';
+import { baySpot, standingBays, carDrawPose } from '../sim/parking';
 import { trailhead } from '../sim/peak';
 import { Traffic, lanePose, railPose, workZone, FOOT_PX, LANE_PX } from '../sim/traffic';
 import { ENV } from '../gfx/env';
@@ -419,6 +419,7 @@ export class Actors {
     this.collectSystems(now);
     this.collectSignals();
     this.collectTransit();
+    this.collectCrossings();
     this.collectCrowds();
     this.collectNature();
     this.collectFestive(night);
@@ -470,7 +471,7 @@ export class Actors {
       if (!this.near(x, z, 40)) continue;
       const t = p.trip;
       const hint = dirYaw(p.dirx || 0, p.diry || 0);
-      if ((t.car || t.taxi) && t.joined === false && !(t.from && this.spotFree(p.at, t.from))) {
+      if ((t.car || t.taxi) && t.joined === false && !(t.from && this.spotFree(t.fromB || p.at, t.from))) {
         // V2: waiting at the kerb for the cab to come (or for a gap, with no drive to wait in): the villager stands on
         // the pavement by their door. (Each one was drawn as a car of its own standing in the lane, a family's worth
         // stacked on one spot, with the traffic driving through them)
@@ -553,6 +554,7 @@ export class Actors {
     return ok;
   }
 
+  private bayList: [number, number][] = [];
   /* cars at home in the driveway, and at venues while their drivers are inside */
   private collectParked(): void {
     for (const b of World.buildings) {
@@ -577,10 +579,11 @@ export class Actors {
           this.vehicle('moto', x, 0.1, z, yaw, CAR_COLORS[(b.id * 3) % CAR_COLORS.length], { parked: true });
         }
       } else if (b.parked > 0 && !d.res) {
-        // V2 (Milestone 8): in marked bays across the front of the plot, nose in (sim/parking.ts)
-        for (let k = 0; k < Math.min(bayCount(b), b.parked); k++) {
+        // V2 (Milestone 8): in marked bays across the front of the plot, nose in (sim/parking.ts) (V2: each car in the
+        // bay it holds, in its own paint)
+        for (const [k, seed] of standingBays(b, this.bayList)) {
           const s = baySpot(b, k);
-          if (s && this.spotFree(b, s)) this.vehicle('car', s.x, 0.13, s.z, s.yaw, CAR_COLORS[(b.id + k * 3) % CAR_COLORS.length], { parked: true });
+          if (s && this.spotFree(b, s)) this.vehicle('car', s.x, 0.13, s.z, s.yaw, CAR_COLORS[seed % CAR_COLORS.length], { parked: true });
         }
       }
       // construction crews on site (V2: idle by an empty yard while they wait for materials)
@@ -814,6 +817,34 @@ export class Actors {
     if (extra.bucket) this.prop('bucket', x, y, z, yaw);
   }
 
+  /* V2: the level crossings' half barriers: a post on the near side of each way in, its two red lamps flashing in
+     turn while a train is coming, and its boom swinging down across the lane (sim/life.ts tickGates) */
+  private collectCrossings(): void {
+    if (!World.crossings.size) return;
+    const lit = Math.floor(this.t * 2.2) % 2, red = hex('#ff3018').multiplyScalar(3.2);
+    for (const k of World.crossings as Set<number>) {
+      const tx = k % GW, ty = (k / GW) | 0, cx = (tx + 0.5) * TM, cz = (ty + 0.5) * TM;
+      if (!this.near(cx, cz, 40)) continue;
+      const g = Life.gates.get(k) || { warn: 0, lower: 0 };
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        // a way in from (dx, dy): traffic heading (−dx, −dy), the post at the kerb on its right
+        if (!World.isRoad(tx + dx, ty + dy) || World.crossings.has(World.idx(tx + dx, ty + dy))) continue;
+        const rx = dy, ry = -dx;
+        if (World.isRoad(tx + rx, ty + ry)) continue; // (no kerb on that side: the other row's post covers it)
+        const px = cx + dx * 5.3 + rx * 3.05, pz = cz + dy * 5.3 + ry * 3.05;
+        const yaw = Math.atan2(dx, dy);
+        this.prop('xgatePost', px, 0.02, pz, yaw);
+        // the boom: out from its pivot across the lane, raised straight up, lowered level
+        const by = Math.atan2(ry, -rx), roll = (1 - g.lower) * (Math.PI / 2 - 0.06);
+        this.props.xboom?.add(px - rx * 0.1, 1.05, pz - ry * 0.1, by, 1, null, 0, roll);
+        if (g.warn > 0) {
+          const ox = lit ? 0.36 : -0.36, c = Math.cos(yaw), s = Math.sin(yaw);
+          this.prop('xlamp', px + c * ox, 2.25, pz - s * ox, yaw, 1, red);
+        }
+      }
+    }
+  }
+
   /* buses, cabs, trains, tourists, campaign cars, boats and the ferry */
   private collectTransit(): void {
     for (const bus of Life.buses) {
@@ -847,26 +878,36 @@ export class Actors {
     for (const tr of Life.intercity ? Life.trains.concat([Life.intercity]) : Life.trains) {
       if (tr.hidden || !tr.route) continue;
       const lane = (tr.lane || 0) * PX;
-      const n = (tr.cars || 3) + 1;
+      // V2: the commuter and the express are multiple units, railcars with a driving cab at either end and no
+      // locomotive; the local, the sleeper, the intercity and freight are hauled (every train was the same engine and
+      // coaches in a different paint)
+      const emu = tr.type === 'commuter' || tr.type === 'express';
+      const n = (tr.cars || 3) + (emu ? 0 : 1);
       // V2 (Milestone 9): each car spaced by its model's real length (a locomotive, the railcars or wagons behind)
       let off = 0, prevLen = 0;
       for (let k = 0; k < n; k++) {
-        const kt = k === 0 ? 'loco' : tr.type === 'freight' ? 'wagon' : 'coach';
+        const kt = k === 0 && !emu ? 'loco' : tr.type === 'freight' ? 'wagon' : 'coach';
         const len = (this.modelFor(kt, hex('#ffffff'))?.dims.L ?? 9.0) + 0.5;
         if (k > 0) off += (prevLen + len) / 2 / TM;
         prevLen = len;
         const prog = tr.prog - tr.dir * off;
         if (prog < -0.4 || prog > tr.route.length - 0.6) continue;
         // V2 (Milestone 8): every car round the curve on the train's own track (it used to swap tracks at a bend)
-        const pt = railPose(tr.route, Math.max(0, Math.min(tr.route.length - 1, prog)), lane / PX);
-        const x = pt.x * PX, z = pt.y * PX;
+        // V2: on its two bogies, each on the rails, the body along the line between them (set by its middle at the
+        // curve's heading, its ends hung off the track on every bend)
+        const last = tr.route.length - 1, bog = (len * 0.35) / TM;
+        const pa = railPose(tr.route, Math.max(0, Math.min(last, prog + tr.dir * bog)), lane / PX);
+        const ax = pa.x, ay = pa.y;
+        const pb = railPose(tr.route, Math.max(0, Math.min(last, prog - tr.dir * bog)), lane / PX);
+        const x = ((ax + pb.x) / 2) * PX, z = ((ay + pb.y) / 2) * PX;
         if (!this.near(x, z, 60)) continue;
-        const yaw = Math.atan2(pt.hx * tr.dir, pt.hy * tr.dir);
+        let yaw = Math.hypot(ax - pb.x, ay - pb.y) > 0.5 ? Math.atan2(ax - pb.x, ay - pb.y) : Math.atan2(pb.hx * tr.dir, pb.hy * tr.dir);
+        // (a railcar's cab is at its back: the leading one of a multiple unit runs turned round, cab first)
+        if (emu && k === 0) yaw += Math.PI;
         const onBridge = World.ground[World.idx(Math.floor(x / TM), Math.floor(z / TM))] === 1;
         const y = onBridge ? 0.5 : 0.38;
-        const type = k === 0 ? 'loco' : tr.type === 'freight' ? 'wagon' : 'coach';
-        const paint = tr.type === 'freight' ? hex(k === 0 ? '#3a4a3a' : '#8a5a3a') : tr.type === 'express' ? hex('#c8ccd4') : tr.type === 'nightliner' ? hex('#2a3a6a') : tr.type === 'intercity' ? hex(k === 0 ? '#e8e4da' : '#2a5a9a') : hex('#c0392b');
-        this.vehicle(type, x, y, z, yaw, paint);
+        const paint = tr.type === 'freight' ? hex(k === 0 ? '#3a4a3a' : '#8a5a3a') : tr.type === 'express' ? hex('#c8ccd4') : tr.type === 'nightliner' ? hex('#2a3a6a') : tr.type === 'intercity' ? hex(k === 0 ? '#e8e4da' : '#2a5a9a') : tr.type === 'commuter' ? hex('#2e7d4f') : hex('#c0392b');
+        this.vehicle(kt, x, y, z, yaw, paint);
       }
     }
     Life.boats.forEach((b: any, i: number) => this.boat(b, 'boat', hex('#f4f0e4'), i));

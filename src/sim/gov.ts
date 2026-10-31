@@ -305,7 +305,7 @@ export const Gov: any = {
         const x = rx + dx, y = ry + dy;
         if (!World.inB(x, y)) continue;
         const i = World.idx(x, y);
-        if (World.ground[i] === G_GRASS && !World.roadMap[i] && !World.railMap[i] && !World.bmap[i] && !World.reserved[i]) { spot = { x, y }; break; }
+        if (World.ground[i] === G_GRASS && !World.roadMap[i] && !World.railMap[i] && !World.curveTile(i) && !World.bmap[i] && !World.reserved[i]) { spot = { x, y }; break; }
       }
       if (!spot) continue;
       if (banners.some(bn => Math.abs(bn.x - spot.x) + Math.abs(bn.y - spot.y) < 7)) continue;

@@ -14,7 +14,7 @@
    Positions are V1 pixels (16 a tile, tile centres at +8).
    ============================================================ */
 import { World } from './world';
-import { Traffic, FOOT_PX, turnAt, lanePose } from './traffic';
+import { Traffic, FOOT_PX, turnAt, lanePose, zebraAt, ZEBRA_AT } from './traffic';
 
 const T = 16;
 /** how far (px) a walker steps aside to pass someone */
@@ -39,7 +39,15 @@ export interface WalkState {
   done: number;
   /** V2: seconds left stepping round something standing on the pavement (the line may leave the pavement) */
   wide?: number;
+  /** V2: waiting at the kerb, how far out from the road's middle (px) their place in the queue is */
+  slotLat?: number;
+  /** V2: which kerb's queue they're in, and the traffic tick they were last there */
+  qKey?: string; qTick?: number;
+  /** V2: how far back from the crossing line (path steps) they cross: the second of two crossing abreast */
+  xOff?: number;
 }
+/** V2: the people waiting at each kerb to cross (keyed by where), in the order they came: each has a place of their own */
+const KERB = new Map<string, any[]>();
 
 /** V2: how far from the road's centreline (px) a walker's middle keeps: clear of the kerb (2.6 m, plus a body),
  *  and no further out than the back of the pavement */
@@ -94,11 +102,17 @@ export const Walk = {
   nextCrossing(t: any): void {
     const w: WalkState = t.walk, path: number[][] = t.path, n = path.length;
     let s = w.side;
-    for (let k = Math.max(1, Math.ceil(t.prog + 0.51), Math.floor(w.done + 0.5) + 1); k < n - 1; k++) {
+    // (V2: past the junction of the crossing just made, which is now up to a tile ahead of it, on the zebra)
+    for (let k = Math.max(1, Math.ceil(t.prog + 0.51), Math.floor(w.done + 1) + 1); k < n - 1; k++) {
       const turn = turnAt(path, k, 1);
       if (turn === 2) { s = -s; continue; } // turning back on the same pavement: it's now on the other hand
       const [dx, dy] = dirAt(path, k, false);
-      if ((turn && turn !== s) || (!turn && twinSide(path[k][0], path[k][1], dx, dy, s))) { w.crossAt = k - 0.5; w.crossTo = -s; return; }
+      if ((turn && turn !== s) || (!turn && twinSide(path[k][0], path[k][1], dx, dy, s))) {
+        // (V2: on the zebra across the junction's mouth, back from its edge, where the drivers stop short of it)
+        const p0 = path[k - 1];
+        w.crossAt = k - 0.5 - (p0 && zebraAt(p0[0], p0[1], dx, dy) ? ZEBRA_AT : 0); w.crossTo = -s;
+        return;
+      }
     }
     if (t.endSide !== s && w.done < n - 1.5) { w.crossAt = n - 1 - 0.01; w.crossTo = -s; return; }
     w.crossAt = -1;
@@ -175,17 +189,47 @@ export const Walk = {
       }
     }
     if (blockedBy) v = 0;
+    // V2: a level crossing ahead: wait at the barrier while its lights flash, never out on the tracks when a train comes
+    if (World.crossings.size) {
+      const k0 = Math.floor(t.prog + 0.5), cur = t.path[k0], nx = t.path[k0 + 1];
+      if (cur && nx && !World.crossings.has(World.idx(cur[0], cur[1])) && Traffic.gateDown(nx[0], nx[1])) {
+        const edge = k0 + 0.3; // (a couple of metres short of the tracks)
+        if (t.prog + v * dt > edge) v = Math.max(0, (edge - t.prog) / dt);
+      }
+    }
     // a crossing ahead: walk up to the kerb, wait for a gap, cross straight over
     if (w.crossAt >= 0 && t.prog + v * dt >= w.crossAt) {
-      // (people waiting to cross stand a step apart at the kerb, not on one spot)
-      const step = Math.max(0, w.crossAt - t.prog - ((((p.seed >>> 0) || 1) % 5) * 0.045));
+      // (V2: people waiting to cross take places of their own at the kerb, two abreast and a step apart, in the order
+      // they came: they used to stand a hair apart, most of them inside one another)
+      // (and, crossing, those who set off side by side keep a step apart along the road: they walk over abreast, not
+      // through one another)
+      let back = w.lat === null ? 0 : w.xOff || 0, row = 0;
+      if (w.lat === null) {
+        const c = t.path[Math.max(0, Math.min(t.path.length - 1, Math.round(w.crossAt)))];
+        const key = `${c[0]},${c[1]},${w.crossAt % 1 > 0.6 ? 1 : 0},${w.side},${w.crossTo},${t.path[Math.max(0, Math.floor(w.crossAt))]?.join(',')}`;
+        // (those still waiting here: each renews its place every tick, so anyone gone on, or gone in, drops out)
+        const now = Traffic.now();
+        w.qKey = key; w.qTick = now;
+        const q = (KERB.get(key) || []).filter((o: any) => o === p || (o.trip?.walk?.qKey === key && now - o.trip.walk.qTick <= 1 && o.trip.walk.lat === null));
+        if (!q.includes(p)) q.push(p);
+        KERB.set(key, q);
+        const i = q.indexOf(p);
+        row = i >> 1;
+        back = row * 0.18 + (i % 2) * 0.09;
+        w.xOff = (i % 2) * 0.09;
+        w.slotLat = i % 2 ? PAVE_IN + 1.9 : PAVE_IN + 0.4;
+        if (KERB.size > 300) for (const [k2, l] of KERB) if (!l.length) KERB.delete(k2);
+      }
+      const step = Math.max(0, w.crossAt - back - t.prog);
       const from = Walk.offset(t, w.side), to = Walk.offset(t, w.crossTo);
       const sp = speed * w.pace * T * 1.15; // (a brisker step over the road, px/s)
       if (w.lat === null) {
         // at the kerb: nothing standing across the way over, and nothing coming that would reach us before we're
         // across (V2: after a long wait, anything that can still stop for us in time; never into a moving car)
-        if (!Walk.clearToCross(p, t, from, to, sp, w.wait >= KERB_WAIT)) { w.wait += dt; return step; }
+        // (V2: and from the front of the queue: those behind wait their turn)
+        if (row > 0 || !Walk.clearToCross(p, t, from, to, sp, w.wait >= KERB_WAIT)) { w.wait += dt; return step; }
         w.lat = from;
+        w.slotLat = undefined;
       }
       const dir = Math.sign(to - w.lat);
       // (V2: and never step into something that has stopped across the way meanwhile: back to the kerb they set out
@@ -252,6 +296,7 @@ export const Walk = {
    *  (V2: never in towards the carriageway, where the cars' wing mirrors pass: out onto the verge instead) */
   offset(t: any, s: number): number {
     const w: WalkState = t.walk;
+    if (w.slotLat !== undefined && s === w.side) return s * w.slotLat; // (their place in the queue at the kerb)
     const lat = s * (FOOT_PX + w.line) + (w.dodge || 0);
     // (round a car standing on the pavement, a step either side of it is allowed)
     return (w.wide || 0) > 0 ? s * Math.max(0.6, Math.min(PAVE_OUT + 2, lat * s)) : s * Math.max(PAVE_IN, Math.min(PAVE_OUT, lat * s));

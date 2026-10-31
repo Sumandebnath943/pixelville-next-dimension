@@ -8,7 +8,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { GW, GH, G_GRASS, G_WATER, G_SAND, G_ROCK, MSIZE, World } from '../sim/world';
-import { PAVEMENT_M, railBend } from '../sim/traffic';
+import { PAVEMENT_M, railBend, railCurved, zebraAt, ZEBRA_IN, ZEBRA_OUT, STOP_LINE } from '../sim/traffic';
 import { PEAK_R, Peak, peakHeight, peakTrail, peakTrailHeights, trailhead } from '../sim/peak';
 import { Approach, Gate } from '../sim/approach';
 import { Weather } from '../sim/weather';
@@ -605,7 +605,7 @@ export class Terrain {
     const open = (x: number, y: number): boolean => {
       if (!World.inB(x, y)) return false;
       const i = World.idx(x, y);
-      return World.ground[i] === G_GRASS && !World.roadMap[i] && !World.railMap[i] && !World.bmap[i] && !World.tree[i] && !World.reserved[i] && !inShore(x, y) && !inMountain(x, y) && !inPeak(x, y);
+      return World.ground[i] === G_GRASS && !World.roadMap[i] && !World.railMap[i] && !World.curveTile(i) && !World.bmap[i] && !World.tree[i] && !World.reserved[i] && !inShore(x, y) && !inMountain(x, y) && !inPeak(x, y);
     };
     const R = (x: number, y: number): boolean => World.isRoad(x, y);
     const SPEC: Species[] = ['lime', 'lime', 'oak', 'lime', 'birch'];
@@ -1042,6 +1042,21 @@ export class Terrain {
     if (e && !w && !R(tx + 2, ty) && (n || s) && !R(tx + 1, ty - 1) === !n && !R(tx + 1, ty + 1) === !s) {
       for (const dz of [1.0, 5.0]) dash(x1 - 0.07, z0 + dz, x1 + 0.07, z0 + dz + 2.4);
     }
+    // V2: the zebra across the mouth of a junction, and the stop line behind it (sim/traffic.ts zebraAt: the same
+    // places the walkers cross and the drivers stop)
+    if (!bridge) for (const [dx, dz] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      if (!zebraAt(tx, ty, dx, dz)) continue;
+      const ex = x0 + 4 + dx * 4, ez = z0 + 4 + dz * 4, ax = -dz, az = dx; // (the junction's edge; across, to the right)
+      const right = R(tx + ax, ty + az), left = R(tx - ax, ty - az);
+      const hi = right ? 4 : 4 - SW - 0.1, lo = left ? -4 : -(4 - SW - 0.1);
+      const rect = (a0: number, a1: number, c0: number, c1: number): void => {
+        const px = [ex - dx * a0 + ax * c0, ex - dx * a1 + ax * c1], pz = [ez - dz * a0 + az * c0, ez - dz * a1 + az * c1];
+        dash(Math.min(...px), Math.min(...pz), Math.max(...px), Math.max(...pz));
+      };
+      for (let c = lo + 0.3; c + 0.5 <= hi - 0.2; c += 1.0) rect(ZEBRA_IN * TM, ZEBRA_OUT * TM, c, c + 0.5);
+      // (across the lane coming in: the right-hand half of a street, all of an avenue's row)
+      rect(STOP_LINE * TM - 0.15, STOP_LINE * TM + 0.15, right || left ? lo : 0.1, hi);
+    }
   }
 
   private railTile(kit: Kit, tx: number, ty: number, overWater: boolean, crossing: boolean): void {
@@ -1059,9 +1074,9 @@ export class Terrain {
     // V2 (Milestone 8): a bend is a curve (through half of each neighbour where the track runs straight on, as the
     // trains take it: sim/traffic.ts railBend); its neighbours leave those halves to it
     const bend = railBend(tx, ty);
-    if (bend) { this.railCurve(kit, tx, ty, bend.a, bend.b, bend.wide ? 1 : 0.5, base, overWater, crossing, ballast, sleeper, steel); return; }
+    if (bend) { this.railCurve(kit, tx, ty, bend.a, bend.b, bend.R, base, overWater, crossing, ballast, sleeper, steel); return; }
     for (const [dx, dz] of dirs) {
-      if (railBend(tx + dx, ty + dz)?.wide) continue;
+      if (railCurved(tx, ty, dx, dz)) continue; // (V2: a wide bend's curve runs through this half)
       const ax = cx, az = cz, bx = cx + dx * 4, bz = cz + dz * 4;
       const lo = Math.min, hi = Math.max;
       const horiz = dx !== 0;

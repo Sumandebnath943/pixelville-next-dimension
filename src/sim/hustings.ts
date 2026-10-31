@@ -67,7 +67,7 @@ interface Pt { x: number; y: number }
 function clear(x: number, y: number): boolean {
   if (!World.inB(x, y)) return false;
   const i = World.idx(x, y), g = World.ground[i];
-  return (g === G_GRASS || g === G_SAND) && !World.roadMap[i] && !World.railMap[i] && !World.bmap[i] && !World.reserved[i] && !World.tree[i];
+  return (g === G_GRASS || g === G_SAND) && !World.roadMap[i] && !World.railMap[i] && !World.curveTile(i) && !World.bmap[i] && !World.reserved[i] && !World.tree[i];
 }
 /** a point on the ground (px): `k` tiles in from the road tile (0.5 its near edge, 3.5 its far edge), `j` tiles across */
 export function onGround(g: Ground, k: number, j: number): Pt {

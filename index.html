@@ -308,7 +308,9 @@
       <div id="autoui" class="modal"><div class="modal-card glass">
         <header class="m-head"><h1>Auto village</h1><button class="ib" data-close="autoui" title="Close"><svg><use href="#i-close" /></svg></button></header>
         <p class="note">A bustling, ready-made village to sit back and watch: its people go about their day, and it grows on its own. Choose the season, the weather and the festival whenever you like.</p>
-        <p class="note">This replaces the village you're in. Your save slots are kept: save this village first if you want to come back to it.</p>
+        <div class="set-row"><label>Size</label><div class="seg" id="au-size"><button data-s="0">Hamlet</button><button data-s="1" class="on">Village</button><button data-s="2">Town</button><button data-s="3">Full</button></div></div>
+        <p class="note" id="au-size-note"></p>
+        <p class="note" id="au-replace">This replaces the village you're in. Your save slots are kept: save this village first if you want to come back to it.</p>
         <div class="row-end"><button data-close="autoui">Cancel</button><button id="au-save"><svg><use href="#i-save" /></svg>Save this village first</button><button class="primary" id="au-go">Build it</button></div>
       </div></div>
 

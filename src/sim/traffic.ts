@@ -141,36 +141,49 @@ export function turnAt(path: number[][], k: number, dir: number): number {
 }
 /* ---------- V2 (Milestone 8): railway bends ----------
    A rail bend (two arms at right angles) is a curve, not a corner. Where straight track runs
-   on from both arms, the curve sweeps through half of each neighbouring tile too (a radius
-   of a whole tile for the middle track); otherwise it turns within its own tile. The three
-   tracks of the mainline stay side by side through the curve (inner, middle, outer), so a
-   train on one track is still on it after the bend. The terrain draws the same curves. */
+   on from both arms, the curve sweeps out along them (V2: up to three tiles, a 24 m radius for
+   the middle track, where the ground inside the corner is open: World.bendRadius); otherwise
+   it turns within its own tile. The three tracks of the mainline stay side by side through the
+   curve (inner, middle, outer), so a train on one track is still on it after the bend. The
+   terrain draws the same curves. */
 const ARMS: [number, number, number][] = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];
-const armBit = (dx: number, dy: number): number => (dy < 0 ? 1 : dx > 0 ? 2 : dy > 0 ? 4 : 8);
-/** the rail tile (x, y) as a bend: its two arms, and whether the curve may sweep through the neighbours */
-export function railBend(x: number, y: number): { a: [number, number]; b: [number, number]; wide: boolean } | null {
+/** the rail tile (x, y) as a bend: its two arms, and the radius (tiles) of its curve for the middle track: half a
+ *  tile within its own tile, or (V2) out along its arms where they run straight, up to three tiles (World.bendRadius) */
+export function railBend(x: number, y: number): { a: [number, number]; b: [number, number]; wide: boolean; R: number } | null {
   const m = World.railMask(x, y);
   const arms = ARMS.filter(([, , bit]) => m & bit);
   if (arms.length !== 2) return null;
   const [a, b] = arms;
   if (a[0] === -b[0] && a[1] === -b[1]) return null;
-  // the neighbour along an arm carries straight on (or ends): it isn't a bend or a junction itself
-  const runsOn = (dx: number, dy: number): boolean => {
-    const mm = World.railMask(x + dx, y + dy), back = armBit(-dx, -dy), on = armBit(dx, dy);
-    return (mm & back) !== 0 && (mm & ~(back | on)) === 0;
-  };
-  return { a: [a[0], a[1]], b: [b[0], b[1]], wide: runsOn(a[0], a[1]) && runsOn(b[0], b[1]) };
+  const R = World.bendRadius(x, y) || 0.5;
+  return { a: [a[0], a[1]], b: [b[0], b[1]], wide: R >= 1, R };
+}
+/** V2: is the half of rail tile (x, y) towards (dx, dy) part of a bend's curve (drawn by the bend, not as straight)? */
+export function railCurved(x: number, y: number, dx: number, dy: number): boolean {
+  // a bend ahead whose curve reaches back to here, or one behind whose curve reaches on past here
+  for (let k = 1; k <= 3; k++) {
+    const r = railBend(x + dx * k, y + dy * k);
+    if (r) return r.R >= k;
+    if (!World.isRail(x + dx * k, y + dy * k)) break;
+  }
+  for (let k = 1; k <= 3; k++) {
+    const r = railBend(x - dx * k, y - dy * k);
+    if (r) return r.R > k;
+    if (!World.isRail(x - dx * k, y - dy * k)) break;
+  }
+  return false;
 }
 /** where a train is `prog` steps along a rail `path`, `lat` px right of the line (as the path runs: a train
  *  going back along it stays on the same track), round the bends on their curves */
 export function railPose(path: number[][], prog: number, lat: number, out: Pose = _pose): Pose {
   const n = path.length, s = Math.max(0, Math.min(n - 1, prog)), k0 = Math.round(s);
-  for (const kc of [k0, k0 - 1, k0 + 1]) {
+  // (V2: a bend's curve reaches up to three tiles along its arms)
+  for (const kc of [k0, k0 - 1, k0 + 1, k0 - 2, k0 + 2, k0 - 3, k0 + 3]) {
     if (kc <= 0 || kc >= n - 1) continue;
     const turn = turnAt(path, kc, 1);
     if (turn !== 1 && turn !== -1) continue;
     const bend = railBend(path[kc][0], path[kc][1]);
-    const R = bend?.wide ? 1 : 0.5;
+    const R = bend?.R ?? 0.5;
     if (Math.abs(s - kc) > R) continue;
     const [ax, ay] = stepDir(path, kc, 1, true), [bx, by] = stepDir(path, kc, 1, false);
     const L = lat / T, cx = path[kc][0] + 0.5, cy = path[kc][1] + 0.5;
@@ -204,7 +217,8 @@ interface Over { o: unknown; os: unknown[]; lens: number[]; t: number }
 interface Run { path: number[][]; k0: number; k1: number; keys: number[]; m: number[]; d: number[]; x: number[] }
 /** per-vehicle state kept on its trip object: speed, time stuck, the overtake under way, its lane, V2: the junction
  *  box it holds, and how long it has waited at one (since which tick) */
-export interface Drive { v?: number; wait?: number; honk?: number; lat?: number; over?: Over | null; box?: Run | null; jw?: number; js?: number; pw?: number }
+/** (V2: `stopAt`: a point along the path, in steps as travelled, to come to a stop at, a bus's next stop) */
+export interface Drive { v?: number; wait?: number; honk?: number; lat?: number; over?: Over | null; box?: Run | null; jw?: number; js?: number; pw?: number; stopAt?: number }
 /** the Founder as the sim sees them: V1 pixels, a heading, at the wheel or on foot */
 export interface Guest { x: number; y: number; dx: number; dy: number; car: boolean; still: boolean; len?: number }
 
@@ -321,6 +335,16 @@ function twinStep(a: number[], b: number[]): boolean {
   const i = World.idx(a[0], a[1]);
   if (armsMemo[i] < 0) armsMemo[i] = arms(a[0], a[1]);
   return !(armsMemo[i] & (1 << dirOf(b[0] - a[0], b[1] - a[1])));
+}
+/* V2: zebra crossings. Every street into a junction has one across its mouth, on the line the pavements of the street
+   it meets run on (where those walking along that street cross it): a band of stripes from ZEBRA_IN to ZEBRA_OUT tiles
+   back from the junction's edge (negative: inside the junction); people turning off cross on its middle (ZEBRA_AT), and
+   drivers waiting to go into the junction, or at a red light, stop at the line behind it (STOP_LINE). (People crossed
+   on the junction's very edge, where the cars waiting at the lights stood, and walked through them.) */
+export const ZEBRA_IN = -0.19, ZEBRA_OUT = 0.06, ZEBRA_AT = -0.065, STOP_LINE = 0.22;
+/** is there a zebra on road tile (x, y), at its edge towards (dx, dy)? (the street runs on behind it into a junction) */
+export function zebraAt(x: number, y: number, dx: number, dy: number): boolean {
+  return World.isRoad(x - dx, y - dy) && boxKind(x, y) === 0 && boxKind(x + dx, y + dy) === 1;
 }
 /** V2: what kind of box (x, y) is part of: 0 none, 1 a junction, 2 a plain bend */
 function boxKind(x: number, y: number): number {
@@ -448,7 +472,7 @@ export const Traffic = {
     filled.length = 0;
     used = 0;
     paveN = 0;
-    gateClosed = (tx, ty) => life.trainNearTile(tx, ty, 5);
+    gateClosed = (tx, ty) => (life.gateClosed ? life.gateClosed(tx, ty) : life.trainNearTile(tx, ty, 5));
     // "still" marks what is parked on the road for a while (a bus at its stop, a squad car at a
     // scene, a wreck): traffic queues behind it, then passes it
     // (V2: with how fast each is going, and whether it is out in the other lane overtaking)
@@ -485,7 +509,7 @@ export const Traffic = {
       if (t.joined === false) continue; // (still in the drive, waiting to pull out)
       if (t.car || t.taxi || t.moto) put(p, p.x, p.y, p.dirx, p.diry, true, t.moto ? 0.3 : CAR_LEN, (t.parkT || 0) > 0, 0, t.v ?? -1, !!t.over);
       else put(p, p.x, p.y, p.dirx, p.diry, false, 0);
-      if (t.car && ((t.from && t.prog < 1) || ((t.parkT || 0) > 0 && t.to))) {
+      if (t.car && ((t.from && t.out && t.outT !== undefined) || ((t.parkT || 0) > 0 && t.to))) {
         const q = carDrawPose(p, t, anySpot, PAVE_POSE);
         const ob = pave[paveN] || (pave[paveN] = { o: null, x: 0, y: 0, dx: 0, dy: 0, hx: 1, hy: 0, car: true, len: CAR_LEN, w: HALF_W, v: 1, still: false, wide: 0, pass: false });
         paveN++;
@@ -598,6 +622,8 @@ export const Traffic = {
     const n0 = path.length;
     /** (V2: the first sideways hop between the rows of an avenue ahead: how far to it, and the room it needs) */
     let hop: { entry: number; room: number; b: number[]; d: number } | null = null;
+    /** (V2: the next level crossing ahead: how far to it, and how much room it takes to be right over it) */
+    let xing: { entry: number; need: number } | null = null;
     for (const { a, b, base, dx, dy, end } of segs) {
       const ax = a[0] + 0.5, ay = a[1] + 0.5;
       const nx = -dy, ny = dx; // right-hand normal (y runs south)
@@ -657,7 +683,9 @@ export const Traffic = {
             const f = s - half - 0.35;
             if (f < free) { free = f; byTraffic = true; byStill = true; byFounder = false; blocker = ob; ahead = 0; }
           } else {
-            if (Math.abs(c) > ON_ROAD) continue;
+            // (V2: or within our own width of our line: a bus's side reaches past where the carriageway's middle ends,
+            // and it drove into people stepping off the kerb in front of it)
+            if (Math.abs(c) > ON_ROAD && Math.abs(c - lat) > myW + 0.03) continue;
             pedNear = true;
             // (V2: the jam breaker: held a while by people on foot, a driver edges on past anyone not in its own lane)
             if ((st.pw || 0) > PED_AFTER && Math.abs(c - lat) > myW + 0.1) continue;
@@ -674,14 +702,28 @@ export const Traffic = {
       const canStop = v * v / (2 * DEC_MAX) <= entry + 0.05;
       if (entry > -0.05 && entry < LOOK) {
         // a red light where the signalled crossing begins (V2: dark in a blackout; blue lights go through)
-        if (!urgent && World.signals.size && World.signalOn(key) && !World.signals.has(World.idx(a[0], a[1])) && (dy !== 0) !== World.nsGreen() && canStop) hold(entry - 0.05, false);
+        // (V2: at the stop line, behind the zebra; one that can't stop by the line goes on through, as on an amber,
+        // rather than pulling up on the crossing; only one already crawling stops short of the junction itself)
+        if (!urgent && World.signals.size && World.signalOn(key) && !World.signals.has(World.idx(a[0], a[1])) && (dy !== 0) !== World.nsGreen() && canStop) {
+          const line = zebraAt(a[0], a[1], dx, dy) ? STOP_LINE : 0.05;
+          if (v * v / (2 * DEC_MAX) <= entry - line + 0.05) hold(entry - line, false);
+          else if (v < 0.3) hold(entry - 0.05, false);
+        }
         if (World.crossings.size && World.crossings.has(key) && canStop && gateClosed(b[0], b[1])) hold(entry - 0.1, false);
+        // V2: and the tracks are kept clear: onto a level crossing only with room to be right over it (the first one)
+        if (!xing && World.crossings.size && World.crossings.has(key) && !World.crossings.has(World.idx(a[0], a[1]))) {
+          let span = 1;
+          while (span < 4 && World.crossings.has(World.idx(b[0] + dx * span, b[1] + dy * span))) span++;
+          xing = { entry, need: entry + span + len + GAP * 0.5 };
+        }
         // V2: a spot on the road someone is hopping into from the twin row of an avenue is kept clear for them
         if (!isBox(b[0], b[1]) && canStop)
           for (const c of claims.get(key) || []) if (c.o !== me && c.tick >= tick - 1 && c.d !== dirOf(dx, dy)) { hold(entry - 0.05, true); break; }
       }
       if (!hop && sideways && entry < 1.5) hop = { entry, room: base + 0.55 + half, b, d: dirOf(dx, dy) };
     }
+    // (a queue backed up over the tracks is how a train meets a car: wait short of them until there's room past them)
+    if (xing && xing.entry > -0.05 && xing.entry < 1.6 && free < xing.need) hold(xing.entry - 0.1, true);
     // V2: hopping across from one row of an avenue to its twin (to a door on the far side, or setting off from one):
     // wait for a gap in the traffic along that row, as when pulling out of a drive, and for room to be all the way in
     // it (half across, a car blocks both rows); then claim the spot we're hopping into, as a junction tile is claimed,
@@ -705,8 +747,12 @@ export const Traffic = {
     if (held) {
       const ent = held.k0 - 0.5 - s0 - half;
       const red = !urgent && ent > 0.02 && World.signalOn(held.keys[0]) && (held.d[0] % 2 === 0) !== World.nsGreen();
+      // (V2: only if it can still stop at the line, behind the zebra: past the line, it goes on through, as on an amber,
+      // rather than stopping on the crossing)
+      const pre = held.k0 > 0 ? at(path, held.k0 - 1, dir) : null;
+      const line = pre && zebraAt(pre[0], pre[1], DX4[held.d[0]], DY4[held.d[0]]) ? STOP_LINE : 0;
       // (and if someone has got in between us and it, it's theirs to ask for, not ours to hold)
-      if ((red && v * v / (2 * DEC_MAX) <= ent + 0.05) || (ent > 0.02 && blocker && free < ent - 0.3)) { held = null; findBox(); }
+      if ((red && v * v / (2 * DEC_MAX) <= ent - line + 0.05) || (ent > 0.02 && blocker && free < ent - 0.3)) { held = null; findBox(); }
     }
     st.box = held;
     const long = len >= 0.85;
@@ -725,8 +771,10 @@ export const Traffic = {
       }
       // where we wait: a little short of the box, further back while a long vehicle turns out of it towards us (its
       // nose swings wide across our side of the road)
-      let back = 0.22;
-      for (const c of claims.get(R.keys[0]) || []) if (c.o !== me && c.tick >= tick - 1 && c.l && c.x === (R.d[0] + 2) % 4) back = 0.5;
+      // (V2: behind the zebra across the junction's mouth, where there is one)
+      const pre = kb > 0 ? at(path, kb - 1, dir) : null;
+      let back = pre && zebraAt(pre[0], pre[1], DX4[R.d[0]], DY4[R.d[0]]) ? STOP_LINE : 0.22;
+      for (const c of claims.get(R.keys[0]) || []) if (c.o !== me && c.tick >= tick - 1 && c.l && c.x === (R.d[0] + 2) % 4) back = Math.max(back, 0.5);
       const front = free >= entB - back - 0.08; // (nobody between us and the line)
       const red = !urgent && World.signalOn(R.keys[0]) && (R.d[0] % 2 === 0) !== World.nsGreen();
       const since = st.jw ? st.js ?? tick : tick;
@@ -782,6 +830,9 @@ export const Traffic = {
     const changing = Math.abs((st.over ? -LANE : LANE) - lat) > 0.05;
     let room = Math.max(0, free);
     if (changing) room = Math.min(room, 0.6); // ease along while crossing the road
+    // (V2: a stop to make ahead, braked for: the bus used to halt dead from 37 km/h at its shelter. Only the speed: it
+    // isn't something in the way, which would keep it out of a junction it has room to cross)
+    if (st.stopAt !== undefined && st.stopAt > s0 - 0.05) room = Math.min(room, Math.max(0, st.stopAt - s0));
 
     // V2 (Milestone 8): slow for the next bend (and through it): brake down to the turn's own speed by the
     // time the arc begins, as a driver would, instead of swinging round the corner at full speed
@@ -950,9 +1001,10 @@ export const Traffic = {
    * V2 (Milestone 8): is there room for `me` to pull out onto the first tile of `path`? Nothing on the
    * spot itself, and (unless `relax`: it has waited a long while) nothing moving that's bearing down on it from
    * within a couple of tiles. (V2: the spot is the car's own outline in its lane, against each vehicle's own; `force`:
-   * after a very long wait, something parked there doesn't stop it, but a car in the traffic always does.)
+   * after a very long wait, something parked there doesn't stop it, but a car in the traffic always does. `at`: how
+   * far along the path it comes into the lane, swinging out of its drive (sim/parking.ts outPlan): room there too.)
    */
-  roomToJoin(me: unknown, path: number[][], relax = false, force = false): boolean {
+  roomToJoin(me: unknown, path: number[][], relax = false, force = false, at = 0): boolean {
     const t0 = path[0];
     if (!t0) return true;
     const k0 = World.idx(t0[0], t0[1]);
@@ -968,18 +1020,31 @@ export const Traffic = {
         for (const ob of grid.get(World.idx(t[0], t[1])) || [])
           if (ob.o !== me && ob.car && Math.hypot(ob.x - t1[0] - 0.5, ob.y - t1[1] - 0.5) < 0.5 + ob.len / 2 + CAR_LEN / 2) return false;
     }
-    const p = lanePose(path, 0, LANE_PX, 1, JOIN);
+    const p = lanePose(path, at, LANE_PX, 1, JOIN);
+    const qx = p.x / T, qy = p.y / T, qfx = p.hx, qfy = p.hy;
+    lanePose(path, 0, LANE_PX, 1, p);
     const px = p.x / T, py = p.y / T, fx = p.hx, fy = p.hy;
-    for (let j = -2; j <= 2; j++)
-      for (let i = -2; i <= 2; i++) {
+    /** does `ob` stand in the car's outline in its lane at (x, y) heading (hx, hy)? */
+    const inside = (ob: Ob, x: number, y: number, hx: number, hy: number): boolean => {
+      const rx = ob.x - x, ry = ob.y - y, along = rx * hx + ry * hy, c = rx * -hy + ry * hx;
+      const ca = Math.abs(ob.hx * hx + ob.hy * hy), cn = Math.abs(ob.hx * -hy + ob.hy * hx);
+      return Math.abs(c) < HALF_W + (cn * ob.len) / 2 + ca * ob.w + 0.05 && Math.abs(along) < CAR_LEN / 2 + (ca * ob.len) / 2 + cn * ob.w + 0.15;
+    };
+    for (let j = -6; j <= 6; j++)
+      for (let i = -6; i <= 6; i++) {
+        const near = Math.abs(i) <= 2 && Math.abs(j) <= 2;
         for (const ob of grid.get(World.idx(t0[0] + i, t0[1] + j)) || []) {
           if (ob.o === me || !ob.car) continue;
-          const rx = ob.x - px, ry = ob.y - py, along = rx * fx + ry * fy, c = rx * -fy + ry * fx;
-          const ca = Math.abs(ob.hx * fx + ob.hy * fy), cn = Math.abs(ob.hx * -fy + ob.hy * fx);
-          if (Math.abs(c) < HALF_W + (cn * ob.len) / 2 + ca * ob.w + 0.05 && Math.abs(along) < CAR_LEN / 2 + (ca * ob.len) / 2 + cn * ob.w + 0.15 && !(force && ob.still)) return false;
-          if (relax || ob.still) continue;
+          const rx = ob.x - px, ry = ob.y - py;
+          if (near && (inside(ob, px, py, fx, fy) || (at > 0.05 && inside(ob, qx, qy, qfx, qfy))) && !(force && ob.still)) return false;
+          if (ob.still) continue;
           const v = ob.v >= 0 ? ob.v : 1;
-          if (v > 0.1 && Math.hypot(rx, ry) < 2.6 && -rx * ob.hx - ry * ob.hy > 0) return false;
+          // V2: a gap of three seconds or so in the traffic, either way along the street (a car pulling out crosses the
+          // near lane to turn left); after a long wait, the gap a crawling or standing queue leaves, but never in front
+          // of anything still moving at speed (it used to pull out into anything after twenty seconds)
+          if (relax && v < 0.35) continue;
+          const ahead = -rx * ob.hx - ry * ob.hy, side = Math.abs(rx * ob.hy - ry * ob.hx), d = Math.hypot(rx, ry);
+          if (v > 0.1 && ahead > 0 && (d < 2.6 || (side < 0.9 && d < v * 3.2 + 0.8))) return false;
         }
       }
     // (V2: pulling out inside a junction box: only once the way across it is clear, and then it's ours)
@@ -1048,6 +1113,8 @@ export const Traffic = {
             for (const pd of grid.get(World.idx(tx + i, ty + j)) || []) {
               if (pd.car) continue;
               const q: any = pd.o;
+              // (V2: someone not yet out on the pavement, setting off from their door this tick, isn't in the road)
+              if (q?.state === 'walk' && q.trip && !q.trip.car && !q.trip.taxi && !q.trip.moto && !q.trip.walk) continue;
               const px = isFounder(q) ? pd.x : (q.x ?? pd.x * T) / T, py = isFounder(q) ? pd.y : (q.y ?? pd.y * T) / T;
               const rx = px - vx, ry = py - vy;
               if (Math.abs(rx * fx + ry * fy) > ob.len / 2 + 0.05 || Math.abs(rx * -fy + ry * fx) > 0.15) continue;
@@ -1059,6 +1126,16 @@ export const Traffic = {
       }
     }
     if (struck.size > 400) for (const [k, t] of struck) if (t < now - 200) struck.delete(k);
+  },
+
+  /** V2: the traffic's tick count (things kept a tick at a time, as the queues at the kerbs, lapse with it) */
+  now(): number {
+    return tick;
+  },
+
+  /** V2: are the level crossing's lights flashing, or its booms down, at tile (x, y)? (people on foot wait too) */
+  gateDown(x: number, y: number): boolean {
+    return World.crossings.has(World.idx(x, y)) && gateClosed(x, y);
   },
 
   /**

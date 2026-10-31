@@ -18,6 +18,7 @@ import { World } from './world';
 import { Sim } from './agents';
 import { Life } from './life';
 import { Traffic } from './traffic';
+import { leaveBay } from './parking';
 import { Mind } from './mind';
 import { Weather } from './weather';
 import { Tasks } from './tasks';
@@ -123,11 +124,14 @@ export const Health = {
     let spot = at;
     if (p.state === 'walk' && p.trip) {
       if (p.trip.car) p.trip.car.free = true; // the car is towed home
+      // (V2: and the bays it held let go)
+      if (p.trip.fromB) leaveBay(p.trip.fromB, p);
+      if (p.trip.toB) leaveBay(p.trip.toB, p);
       spot = spot || { x: p.x, y: p.y };
     } else if (p.state === 'in' && p.at) {
       if (p.at !== p.home) {
         p.at.inside = Math.max(0, p.at.inside - 1);
-        if (p.carHeld) p.at.parked = Math.max(0, p.at.parked - 1);
+        if (p.carHeld) { leaveBay(p.at, p); if (p.carLotId !== undefined) leaveBay(World.buildings.find((b: any) => b.id === p.carLotId), p); }
       }
       if (!spot) { const d = doorPx(p.at); spot = { x: d.x + (Math.random() - 0.5) * 8, y: d.y + 5 }; }
     }

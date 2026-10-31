@@ -27,7 +27,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, '../../assets-src/vehicles');
 const OUT = join(HERE, '../../public/models/vehicles');
 const FLEET = JSON.parse(readFileSync(join(HERE, 'fleet.json'), 'utf8'));
-const ATLAS = 1024;
+/* V2: the atlas's size, per vehicle: 1024, or 2048 for the big ones (buses, trucks, trains, the ferry, planes) whose
+   prints fill the screen (set as each is built) */
+let ATLAS = 1024;
+const BIG = new Set(['bus', 'coach', 'loco', 'wagon', 'ferry', 'plane', 'truck', 'fire', 'ambulance', 'tow', 'utility', 'heli']);
 
 /* what a part is, by its node's and material's names */
 const RE = {
@@ -180,7 +183,8 @@ async function build(entry, io) {
         const key = `${root.listTextures().indexOf(tex)}:${alpha ? 'a' : 'o'}`;
         if (!slots.has(key)) {
           const im = await image(tex);
-          slots.set(key, { tex, alpha, size: Math.max(32, Math.min(512, Math.max(im.w, im.h) / 4)) });
+          // (V2: at half the source's size, not a quarter: their prints and liveries came out blurred)
+          slots.set(key, { tex, alpha, size: Math.max(64, Math.min(1024, Math.max(im.w, im.h) / 2)) });
         }
         slot = key;
       } else if (!flat.has(tex)) flat.set(tex, await average(tex));
@@ -193,8 +197,11 @@ async function build(entry, io) {
     plans.push({ kind, glow, tex, slot, uvAttr: uv, rough: Math.min(1, Math.max(0.05, rough)), metal: Math.min(1, Math.max(0, metal)), factor: emisLook ? [...mat.getEmissiveFactor(), 1] : tex && dark ? [1, 1, 1, 1] : fac0, inside: RE.inside.test(label) });
   }
 
-  /* pack the atlas (shelves; everything halves until it fits) */
+  /* pack the atlas (shelves; everything halves until it fits; V2: a big vehicle's atlas grows to 2048 first) */
   let list = [...slots.entries()].sort((a, b) => b[1].size - a[1].size);
+  ATLAS = 1024;
+  const area = list.reduce((a, [, s]) => a + s.size * s.size, 0);
+  if (BIG.has(entry.kind) && area > 1024 * 1024 * 0.8) ATLAS = 2048;
   for (let tries = 0; tries < 6; tries++) {
     let x = 0, y = 0, rowH = 0, ok = true;
     for (const [, s] of list) {

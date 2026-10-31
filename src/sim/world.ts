@@ -364,7 +364,7 @@ export const World: any = {
       const k = this.idx(x + i, y + j);
       const g = this.ground[k];
       const groundOk = g === G_GRASS || (d.sandOk && g === G_SAND);
-      if (!groundOk || this.bmap[k] || this.roadMap[k] || this.railMap[k]) return false;
+      if (!groundOk || this.bmap[k] || this.roadMap[k] || this.railMap[k] || this.curveTile(k)) return false;
     }
     if (d.needsWater) { // docks must touch water on at least one side
       let wet = false;
@@ -565,6 +565,86 @@ export const World: any = {
     if (this.isRail(x - 1, y)) m |= 8;
     return m;
   },
+
+  /* ---------- V2: wide rail bends ----------
+     A bend's curve has as wide a radius as the line allows, up to three tiles (24 m, for the middle track): its arms
+     must run on straight that far, with no crossing on them, and the ground inside the corner the curve sweeps
+     across must be open (no building, road, other track, water or rock). That ground is then kept for the track: no
+     building or road goes on it (World.curveTile). Two bends close together share the straight between them. Worked
+     out afresh whenever the rails change. (A bend was a half-tile or one-tile curve, 4 or 8 m round, and the 14 to 16 m
+     carriages swung round it like a door on a hinge.) */
+  _bendR: new Map<number, number>(),
+  _curveTiles: new Set<number>(),
+  _bendStamp: -1,
+  /** the radius (tiles) of the bend at rail tile (x, y): 0.5, 1, 2 or 3; 0 if it isn't a bend */
+  bendRadius(x: number, y: number): number {
+    if (this._bendStamp !== this.railStamp) this.computeBends();
+    return this._bendR.get(this.idx(x, y)) ?? 0;
+  },
+  /** is tile i inside a wide bend, under its curve (kept clear)? */
+  curveTile(i: number): boolean {
+    if (this._bendStamp !== this.railStamp) this.computeBends();
+    return this._curveTiles.has(i);
+  },
+  computeBends() {
+    this._bendStamp = this.railStamp;
+    this._bendR.clear(); this._curveTiles.clear();
+    const bit = (dx: number, dy: number): number => (dy < 0 ? 1 : dx > 0 ? 2 : dy > 0 ? 4 : 8);
+    const bends: { i: number; x: number; y: number; arms: number[][]; R: number }[] = [];
+    for (let i = 0; i < this.railMap.length; i++) {
+      if (!this.railMap[i]) continue;
+      const x = i % GW, y = (i / GW) | 0, m = this.railMask(x, y);
+      const arms = DX4.map((dx, k) => [dx, DY4[k]]).filter(([dx, dy]) => m & bit(dx, dy));
+      if (arms.length !== 2 || (arms[0][0] === -arms[1][0] && arms[0][1] === -arms[1][1])) continue;
+      // how far each arm runs on straight (plain track, carrying on or ending, no crossing)
+      const run = (dx: number, dy: number): number => {
+        let k = 1;
+        for (; k <= 3; k++) {
+          const tx = x + dx * k, ty = y + dy * k;
+          if (!this.isRail(tx, ty) || this.roadMap[this.idx(tx, ty)]) break;
+          const mm = this.railMask(tx, ty), back = bit(-dx, -dy), on = bit(dx, dy);
+          if ((mm & ~(back | on)) !== 0) break;
+          if (!(mm & on)) { k++; break; } // (the line ends here: as far as this tile)
+        }
+        return k - 1;
+      };
+      const reach = Math.min(run(arms[0][0], arms[0][1]), run(arms[1][0], arms[1][1]));
+      let R = reach >= 1 ? 1 : 0.5;
+      for (const r of [3, 2]) if (r <= reach && this.sweptClear(x, y, arms[0], arms[1], r)) { R = r; break; }
+      bends.push({ i, x, y, arms, R });
+    }
+    // two bends along one straight share it: their curves may not overlap
+    const at = new Map(bends.map((b) => [b.i, b]));
+    for (let pass = 0; pass < 3; pass++)
+      for (const b of bends)
+        for (const [dx, dy] of b.arms)
+          for (let k = 1; k <= 6; k++) {
+            const o = at.get(this.idx(b.x + dx * k, b.y + dy * k));
+            if (!o) continue;
+            while (b.R + o.R > k && Math.max(b.R, o.R) > 0.5) { if (b.R >= o.R) b.R = b.R > 1 ? b.R - 1 : 0.5; else o.R = o.R > 1 ? o.R - 1 : 0.5; }
+            break;
+          }
+    for (const b of bends) {
+      this._bendR.set(b.i, b.R);
+      if (b.R >= 2) this.sweptClear(b.x, b.y, b.arms[0], b.arms[1], b.R, this._curveTiles);
+    }
+    for (const k of this._curveTiles) this.tree[k] = 0;
+  },
+  /** is the ground inside the corner of the bend at (x, y) that a curve of radius R tiles sweeps across open? (and, given
+   *  `into`, add those tiles to it) */
+  sweptClear(x: number, y: number, a: number[], b: number[], R: number, into?: Set<number>): boolean {
+    for (let i = 1; i <= R; i++)
+      for (let j = 1; j <= R; j++) {
+        // (the curve's centre is R tiles along each arm from the bend: tiles within its ballast's reach of it)
+        if (Math.abs(Math.hypot(R - i, R - j) - R) > 1.1) continue;
+        const tx = x + a[0] * i + b[0] * j, ty = y + a[1] * i + b[1] * j;
+        if (!this.inB(tx, ty)) return false;
+        const k = this.idx(tx, ty), g = this.ground[k];
+        if (!into && (this.bmap[k] || this.roadMap[k] || this.railMap[k] || g === G_WATER || g === G_ROCK || this.reserved[k])) return false;
+        into?.add(k);
+      }
+    return true;
+  },
   railPath(ax: number, ay: number, bx: number, by: number) {
     if (!this.isRail(ax, ay) || !this.isRail(bx, by)) return null;
     return this._bfs(ax, ay, bx, by, (x: number, y: number) => this.isRail(x, y));
@@ -711,6 +791,7 @@ export const World: any = {
     if (this.bmap[i]) return Infinity;
     if (this.roadMap[i]) return 0.15;
     if (this.reserved[i]) return Infinity; // festival ground — roads go around
+    if (this.curveTile(i)) return Infinity; // (V2: and round a wide rail bend's curve)
     const g = this.ground[i];
     if (g === G_ROCK) return Infinity;
     if (g === G_WATER) return 7;
@@ -740,6 +821,11 @@ export const World: any = {
       }
       return true;
     }
+
+    // V2: a tidy access lane, one tile wide: straight out from the door to the nearest street, meeting it square-on;
+    // failing that, with one turn. (The routed spur below snaked round the plots, two tiles wide, into odd junctions.)
+    const lane = this.accessLane(b);
+    if (lane) { for (const [x, y] of lane) this.setRoad(x, y); return true; }
 
     // Dijkstra over (tile, direction) states with a small turn penalty
     const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
@@ -800,10 +886,69 @@ export const World: any = {
     return true;
   },
 
+  /** V2: the tiles of a straight lane (or one with a single turn) from b's door to a street, the last step square on to
+   *  the street it meets; null if there's none within reach. Over open ground only (a bridge is the routed road's job). */
+  accessLane(b: Building): number[][] | null {
+    const d = b.door, cx = b.x + b.w / 2 - 0.5, cy = b.y + b.h / 2 - 0.5;
+    const ox = Math.sign(d.x - cx) * (Math.abs(d.x - cx) >= Math.abs(d.y - cy) ? 1 : 0), oy = ox ? 0 : Math.sign(d.y - cy);
+    const open = (x: number, y: number): boolean => {
+      if (!this.inB(x, y)) return false;
+      const i = this.idx(x, y), g = this.ground[i];
+      return !this.bmap[i] && !this.railMap[i] && !this.reserved[i] && !this.curveTile(i) && (g === G_GRASS || g === G_SAND);
+    };
+    // run from (x, y) heading (hx, hy): the tiles laid, until the next tile is a street met square on (null: none)
+    const run = (x: number, y: number, hx: number, hy: number, max: number): number[][] | null => {
+      const out: number[][] = [];
+      for (let k = 0; k < max; k++) {
+        const tx = x + hx * k, ty = y + hy * k;
+        if (this.isRoad(tx, ty)) {
+          // (square on: the street runs across our way here, not along it)
+          return k > 0 && (this.isRoad(tx - hy, ty + hx) || this.isRoad(tx + hy, ty - hx)) ? out : null;
+        }
+        if (!open(tx, ty)) return null;
+        out.push([tx, ty]);
+      }
+      return null;
+    };
+    let best: number[][] | null = run(d.x, d.y, ox, oy, 14);
+    if (!best || best.length > 6) {
+      // one turn: out from the door a little way, then left or right to a street
+      for (let k = 0; k <= 4; k++) {
+        const first = run(d.x, d.y, ox, oy, k + 1);
+        if (first !== null) break; // (a street sooner than the turn: the straight run had it)
+        const pre: number[][] = [];
+        let ok = true;
+        for (let j = 0; j <= k; j++) { const tx = d.x + ox * j, ty = d.y + oy * j; if (!open(tx, ty)) { ok = false; break; } pre.push([tx, ty]); }
+        if (!ok) break;
+        const tx = d.x + ox * k, ty = d.y + oy * k;
+        for (const s of [1, -1]) {
+          const rest = run(tx - oy * s, ty + ox * s, -oy * s, ox * s, 12);
+          if (rest && (!best || pre.length + rest.length < best.length)) best = pre.concat(rest);
+        }
+      }
+    }
+    return best && best.length ? best : null;
+  },
+
+  /** V2: after a building has gone, the access lane that led only to it goes too (dead-end tiles from its door back to
+   *  the first junction or bend, where no other door opens) */
+  pruneLane(door: { x: number; y: number }) {
+    let x = door.x, y = door.y;
+    for (let n = 0; n < 20 && this.isRoad(x, y); n++) {
+      const nb = [[0, -1], [1, 0], [0, 1], [-1, 0]].filter(([dx, dy]) => this.isRoad(x + dx, y + dy));
+      if (nb.length > 1 || this.buildings.some((o: Building) => o.door.x === x && o.door.y === y)) break;
+      if (x === 0 || y === 0 || x === GW - 1 || y === GH - 1 || this.railMap[this.idx(x, y)]) break;
+      this.roadMap[this.idx(x, y)] = 0; this.roadStamp++; this.dirty = true;
+      if (!nb.length) break;
+      x += nb[0][0]; y += nb[0][1];
+    }
+  },
+
   setRoad(x: number, y: number) {
     if (!this.inB(x, y)) return;
     const i = this.idx(x, y);
-    if (this.bmap[i] || this.ground[i] === G_ROCK || this.reserved[i]) return;
+    // (V2: nor across the ground a wide rail bend curves over)
+    if (this.bmap[i] || this.ground[i] === G_ROCK || this.reserved[i] || (!this.roadMap[i] && this.curveTile(i))) return;
     if (!this.roadMap[i]) this.roadStamp++;
     this.roadMap[i] = 1; this.tree[i] = 0;
     this.dirty = true;
@@ -882,15 +1027,18 @@ export const World: any = {
      arrays are shared — callers must copy before mutating (they all do). */
   _pathCache: new Map(),
   _pathCacheStamp: -1,
-  roadPath(ax: number, ay: number, bx: number, by: number) {
+  /** V2: `hd0` (0–3, DX4/DY4) is the heading the vehicle is already driving at the start (no U-turn there unless it's
+   *  a dead end); `endHd` the heading it must arrive by (a bus pulling up at a stop along the kerb);
+   *  `long`: a bus, which goes round the block rather than turn back across both rows of an avenue */
+  roadPath(ax: number, ay: number, bx: number, by: number, hd0 = -1, endHd = -1, long = false) {
     if (this._pathCacheStamp !== this.roadStamp) {
       this._pathCacheStamp = this.roadStamp;
       this._pathCache.clear();
     }
-    const key = ((ax * GH + ay) * GW + bx) * GH + by;
+    const key = ((((ax * GH + ay) * GW + bx) * GH + by) * 25 + (hd0 + 1) * 5 + endHd + 1) * 2 + (long ? 1 : 0);
     const hit = this._pathCache.get(key);
     if (hit !== undefined) return hit;
-    const path = this._roadPathRaw(ax, ay, bx, by);
+    const path = this._roadPathRaw(ax, ay, bx, by, hd0, endHd, long);
     if (this._pathCache.size > 600) this._pathCache.clear();
     this._pathCache.set(key, path);
     return path;
@@ -907,9 +1055,9 @@ export const World: any = {
     return this.isRoad(rx, ry) && (this.isRoad(rx + dx, ry + dy) || this.isRoad(rx - dx, ry - dy)) &&
       (this.isRoad(x + dx, y + dy) || this.isRoad(x - dx, y - dy));
   },
-  _roadPathRaw(ax: number, ay: number, bx: number, by: number) {
+  _roadPathRaw(ax: number, ay: number, bx: number, by: number, hd0 = -1, endHd = -1, long = false) {
     if (!this.isRoad(ax, ay) || !this.isRoad(bx, by)) return null;
-    if (ax === bx && ay === by) return [[ax, ay]];
+    if (ax === bx && ay === by && (endHd < 0 || hd0 === endHd)) return [[ax, ay]];
     const D = DRIVE, gen = ++D.gen;
     const dist = D.dist, prev = D.prev, seen = D.seen;
     let hl = 0;
@@ -947,8 +1095,10 @@ export const World: any = {
     };
     const start = this.idx(ax, ay), goal = this.idx(bx, by);
     const h = (i: number) => Math.abs((i % GW) - bx) + Math.abs(((i / GW) | 0) - by);
-    // the start may be left in any direction
+    // the start may be left in any direction (V2: or carries on from the way it's heading)
+    const seed0 = hd0 >= 0 ? start * 4 + hd0 : -1;
     for (let k = 0; k < 4; k++) {
+      if (hd0 >= 0 && k !== hd0) continue;
       const s = start * 4 + k;
       seen[s] = gen; dist[s] = 0; prev[s] = -1;
       push(h(start), s);
@@ -958,17 +1108,22 @@ export const World: any = {
       const st = pop(), c = popC - h((st / 4) | 0);
       if (c > dist[st] + 1e-9) continue;
       const cur = (st / 4) | 0, hd = st & 3;
-      if (cur === goal) { end = st; break; }
+      const moving = prev[st] >= 0 || st === seed0;
+      if (cur === goal && (endHd < 0 || (moving && hd === endHd))) { end = st; break; }
       const cx = cur % GW, cy = (cur / GW) | 0;
       let ways = 0;
       for (let k = 0; k < 4; k++) if (this.isRoad(cx + DX4[k], cy + DY4[k])) ways++;
       for (let k = 0; k < 4; k++) {
         const nx = cx + DX4[k], ny = cy + DY4[k];
         if (!this.isRoad(nx, ny)) continue;
-        const back = prev[st] >= 0 && k === ((hd + 2) & 3);
+        const back = moving && k === ((hd + 2) & 3);
         if (back && ways > 1) continue; // no U-turns, except at a dead end
+        // (V2: from a heading given at the start, straight on first, where the road goes on: a bus pulling away from a stop)
+        if (st === seed0 && k !== hd && this.isRoad(cx + DX4[hd], cy + DY4[hd])) continue;
         let cost = 1;
-        if (prev[st] >= 0 && k !== hd) cost += back ? 2 : 0.35;
+        if (moving && k !== hd) cost += back ? 2 : 0.35;
+        // (a long vehicle turning, and turning again straight back the way it came: a U-turn across an avenue)
+        if (long && k !== hd && prev[st] >= 0 && hd !== (prev[st] & 3) && k === ((prev[st] + 2) & 3)) cost += 200;
         if (this.isLeftRow(nx, ny, DX4[k], DY4[k])) cost += 3;
         const ni = (ny * GW + nx) * 4 + k, nc = c + cost;
         if (seen[ni] !== gen || nc < dist[ni] - 1e-9) {

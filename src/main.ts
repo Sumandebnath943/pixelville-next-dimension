@@ -68,7 +68,7 @@ import { Gov } from './sim/gov';
 import { ShiftPanel } from './ui/shiftpanel';
 import { Approach } from './sim/approach';
 import { FOUNDER_TREATMENT } from './sim/economy';
-import { AutoVillage, AutoPlan } from './sim/autovillage';
+import { AutoVillage, AutoPlan, AutoSize } from './sim/autovillage';
 import { Festivals } from './sim/festivals';
 import { SEASONS, SEASON_EMOJI } from './sim/weather';
 
@@ -1311,9 +1311,26 @@ function nextAutoShot(): void {
 function askAuto(): void {
   if (autoBuilding) return;
   if (travel.active || transit.riding() || transit.waiting) { hud.toast('🌱 Finish the journey first', undefined, true); return; }
-  if (auto || autoMade || !World.buildings.some((b: any) => b.type !== 'lodge')) void buildAuto();
-  else panels.show('autoui');
+  // V2: always by way of the chooser, for its size (the warning only when there's a village of your own to lose)
+  const own = !(auto || autoMade || !World.buildings.some((b: any) => b.type !== 'lodge'));
+  $('au-replace').style.display = own ? '' : 'none';
+  $('au-save').style.display = own ? '' : 'none';
+  showAutoSize();
+  panels.show('autoui');
 }
+/** V2: the Auto village's size: a hamlet, a village, a town, or the full town with every network (sim/autovillage.ts) */
+let autoSize: AutoSize = 1;
+const AUTO_SIZE_NOTE = [
+  'A hamlet: a dozen homes round a crossroads, a shop, a café and a farm, and a bus.',
+  'A village: a square with its shops and hall, schools and services in the streets round it, fifty homes, the works and the farms.',
+  'A town: a wider grid, more of everything, and a railway with stations and level crossings.',
+  'The full town: every kind of building there is, the railway, an airport, a harbour with its ferry, a heliport, and every one of them connected.',
+];
+function showAutoSize(): void {
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#au-size button')) b.classList.toggle('on', +b.dataset.s! === autoSize);
+  $('au-size-note').textContent = AUTO_SIZE_NOTE[autoSize];
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('#au-size button')) b.addEventListener('click', () => { autoSize = +b.dataset.s! as AutoSize; showAutoSize(); });
 async function buildAuto(): Promise<void> {
   if (autoBuilding) return;
   autoBuilding = true;
@@ -1328,7 +1345,7 @@ async function buildAuto(): Promise<void> {
   $('au-build-text').textContent = 'Laying out the streets…';
   ov.classList.add('on');
   await yieldFrame();
-  const plan = AutoVillage.build();
+  const plan = AutoVillage.build(undefined, autoSize);
   stage.settleSeason();
   $('au-build-title').textContent = `Building ${plan.name}`;
   errands.reset(); gps.clear(); wanted.reset();
@@ -1407,7 +1424,7 @@ $('au-save').addEventListener('click', () => { panels.close('autoui'); $('btn-sa
 $('au-hide').addEventListener('click', () => document.body.classList.add('auto-clean'));
 $('au-show').addEventListener('click', () => document.body.classList.remove('auto-clean'));
 $('au-view').addEventListener('click', () => nextAutoShot());
-$('au-new').addEventListener('click', () => void buildAuto());
+$('au-new').addEventListener('click', () => askAuto());
 $('au-play').addEventListener('click', () => endAuto(true));
 
 /** a frame of the Auto village: the world goes on, the camera drifts from one view of it to the next */

@@ -16,6 +16,12 @@ import { Walk, Stroll } from './walking';
 /** V2: seconds a visitor's car, a cab or a delivery truck can stand without moving before it leaves the jam (gridlock
  *  relief, as for the villagers' cars) */
 export const STUCK_RELIEF = 150;
+/** the four headings, as World's road search numbers them (north, east, south, west) */
+const HX4 = [0, 1, 0, -1], HY4 = [-1, 0, 1, 0];
+/** V2: level-crossing timing (sim seconds): lights this long before the train gets there, the booms down this long
+ *  after the lights start, taking this long to come down, and this long to rise */
+const GATE_WARN = 13, GATE_LIGHTS = 3, GATE_LOWER = 4, GATE_RAISE = 3;
+const NEAR_XING: any[] = [];
 import { peakTrail } from './peak';
 import { Rep } from './reputation';
 import { Health } from './health';
@@ -104,6 +110,7 @@ export const Life: any = {
     this.tickTaxis(dtSim);
     this.tickTransitQueues(dtSim);
     this.tickTrains(dtSim);
+    this.tickGates(dtSim); // V2: the level crossings' lights and booms
     this.tickBoats(dtSim);
     this.tickHelis(dtSim, dtReal);
     this.tickCampaignLife(dtSim);
@@ -396,14 +403,17 @@ export const Life: any = {
           }
           // V2 (Milestone 8): a true loop, back round to the first stop, driven one way: running the same
           // road back and forth had the bus on the wrong carriageway of every avenue on the way back
-          let route: number[][] = [], stopIdx = [0];
-          let ok = true;
-          for (let i = 0; i < chain.length; i++) {
-            const a = chain[i], b = chain[(i + 1) % chain.length];
-            const seg = World.roadPath(a.door.x, a.door.y, b.door.x, b.door.y);
-            if (!seg) { ok = false; break; }
-            route = route.concat(i === 0 ? seg : seg.slice(1));
-            if (i < chain.length - 1) stopIdx.push(route.length - 1);
+          let { route, stopIdx, ok } = this.kerbLoop(chain);
+          if (!ok) {
+            // (a stop on a corner or a dead end: door to door, as before)
+            route = []; stopIdx = [0]; ok = true;
+            for (let i = 0; i < chain.length; i++) {
+              const a = chain[i], b = chain[(i + 1) % chain.length];
+              const seg = World.roadPath(a.door.x, a.door.y, b.door.x, b.door.y);
+              if (!seg) { ok = false; break; }
+              route = route.concat(i === 0 ? seg : seg.slice(1));
+              if (i < chain.length - 1) stopIdx.push(route.length - 1);
+            }
           }
           if (ok && route.length > 3) {
             const nBuses = Math.min(3, 1 + ((chain.length / 3) | 0));
@@ -433,24 +443,92 @@ export const Life: any = {
       if (bus.hidden) continue;
       if (bus.home && !Approach.seen(bus.x, bus.y)) { bus.hidden = true; bus.home = false; bus.prog = 0; continue; }
       if (bus.pause > 0) { bus.pause -= gm; bus.v = 0; continue; }
+      const n1 = bus.route.length - 1;
+      const loop = bus.route.length > 2 && bus.route[0][0] === bus.route[n1][0] && bus.route[0][1] === bus.route[n1][1];
+      // round the loop again, from the first stop (V2 (Milestone 8))
+      if (loop && bus.lastStop === n1) { bus.prog = Math.max(0, bus.prog - n1); bus.lastStop = 0; if (bus.last) bus.home = true; }
+      // V2: the stop it's making for (the first one again at the end of the loop), slowed for and stopped at, at the
+      // shelter: it used to halt dead wherever it was when the stop's tile came up, often halfway round a corner
+      let tgt = -1;
+      if (bus.dir > 0) {
+        for (const k of bus.stopIdx) if (k > 0 && k > bus.lastStop && k > bus.prog - 0.6) { tgt = k; break; }
+        if (tgt < 0 && loop) tgt = n1;
+      }
+      bus.stopAt = tgt >= 0 ? tgt : undefined;
       // V2: in the traffic like everyone else — queues, junctions, crossings, gates (sim/traffic.ts)
       bus.prog += Traffic.advance(bus, bus, bus.route, bus.prog, bus.dir, 1.3, dt, 1.3) * bus.dir; // ~37 km/h
-      // round the loop again (V2 (Milestone 8); an old save's back-and-forth bus turns round as before)
-      if (bus.prog >= bus.route.length - 1) {
-        const loop = bus.route.length > 2 && bus.route[0][0] === bus.route[bus.route.length - 1][0] && bus.route[0][1] === bus.route[bus.route.length - 1][1];
-        if (loop) { bus.prog -= bus.route.length - 1; bus.lastStop = -1; if (bus.last) bus.home = true; }
-        else { bus.prog = bus.route.length - 1; bus.dir = -1; bus.pause = 5; }
-      }
-      if (bus.prog <= 0 && bus.dir < 0) { bus.prog = 0; bus.dir = 1; bus.pause = 5; }
+      // (an old back-and-forth line turns round at either end)
+      if (!loop && bus.prog >= n1) { bus.prog = n1; bus.dir = -1; bus.pause = 5; }
+      if (bus.prog <= 0 && bus.dir < 0) { bus.prog = 0; bus.dir = 1; bus.pause = 5; bus.lastStop = -1; }
       // brief stop at each bus shelter on the way — real passengers get on & off
-      const at = Math.round(bus.prog);
-      if (bus.stopIdx.includes(at) && at !== bus.lastStop) {
-        bus.lastStop = at; bus.pause = 4;
-        const stop = bus.stops[bus.stopIdx.indexOf(at)];
+      if (tgt >= 0 && bus.prog >= tgt - 0.04) {
+        bus.lastStop = tgt; bus.pause = 4; bus.v = 0;
+        const stop = bus.stops[tgt === n1 && loop ? 0 : bus.stopIdx.indexOf(tgt)];
         if (stop) this.serveStop(bus, stop);
+      } else if (bus.dir < 0) {
+        const at = Math.round(bus.prog);
+        if (bus.stopIdx.includes(at) && at !== bus.lastStop) {
+          bus.lastStop = at; bus.pause = 4;
+          const stop = bus.stops[bus.stopIdx.indexOf(at)];
+          if (stop) this.serveStop(bus, stop);
+        }
       }
       this.followPath(bus, bus.route, bus.prog, Traffic.lanePx(bus), bus.dir);
     }
+  },
+
+  /** V2: where a bus pulls up at a stop: on a straight beside it, driving along the kerb with the shelter on its right
+   *  (on the near row of an avenue, the row whose traffic has the shelter on its right), out of any junction. The
+   *  street tile at its door if it can be, else one along from it (a stop on a corner). `hd` indexes HX4/HY4. Null if
+   *  there's no such place (a dead end). */
+  stopKerb(s: Building): { x: number; y: number; hd: number } | null {
+    const d = s.door;
+    if (!d || !World.isRoad(d.x, d.y)) return null;
+    const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+    let best: { x: number; y: number; hd: number } | null = null, bs = -1e9;
+    // (the street tiles within two steps of the door)
+    const near: number[][] = [[d.x, d.y, 0]];
+    for (let i = 0; i < near.length; i++) {
+      const [x, y, st] = near[i];
+      if (st < 2) for (let k = 0; k < 4; k++) {
+        const nx = x + HX4[k], ny = y + HY4[k];
+        if (World.isRoad(nx, ny) && !near.some((q) => q[0] === nx && q[1] === ny)) near.push([nx, ny, st + 1]);
+      }
+      if (isBox(x, y)) continue;
+      const ox = cx - (x + 0.5), oy = cy - (y + 0.5);
+      for (let hd = 0; hd < 4; hd++) {
+        const hx = HX4[hd], hy = HY4[hd];
+        if (!World.isRoad(x + hx, y + hy) || !World.isRoad(x - hx, y - hy)) continue;
+        const right = -hy * ox + hx * oy; // (the right-hand normal is (−hy, hx): y runs south)
+        // (and its 12 m clear of the junctions either side, if it can be: next to one it stands out over the zebra
+        // across the junction's mouth)
+        const score = (right > 0 ? 10 : 0) - st * 4 - Math.hypot(ox, oy) - (isBox(x + hx, y + hy) || isBox(x - hx, y - hy) ? 14 : 0);
+        if (score > bs) { bs = score; best = { x, y, hd }; }
+      }
+    }
+    return best;
+  },
+
+  /** V2: the bus loop through `chain`'s stops, each passed at its kerb (stopKerb) and never turned round in: from the
+   *  tile past one stop to the next stop, arriving along its kerb (and going round the block rather than turn back
+   *  across an avenue; a stop with no kerb, on a stub of road, at its door). `ok` false if a leg has no way. */
+  kerbLoop(chain: Building[]): { route: number[][]; stopIdx: number[]; ok: boolean } {
+    const kerbs = chain.map((s) => this.stopKerb(s) || { x: s.door.x, y: s.door.y, hd: -1 });
+    const route: number[][] = [[kerbs[0].x, kerbs[0].y]], stopIdx = [0];
+    for (let i = 0; i < chain.length; i++) {
+      const a = kerbs[i], b = kerbs[(i + 1) % chain.length];
+      // (leaving a stop with no kerb the way it came in, where it came in by one)
+      let h0 = a.hd;
+      if (h0 < 0 && route.length > 1) {
+        const p = route[route.length - 2], q = route[route.length - 1];
+        h0 = HX4.findIndex((hx, k) => hx === q[0] - p[0] && HY4[k] === q[1] - p[1]);
+      }
+      const seg = World.roadPath(a.x, a.y, b.x, b.y, h0, b.hd, true);
+      if (!seg || seg.length < 2) return { route: [], stopIdx: [], ok: false };
+      for (let k = 1; k < seg.length; k++) route.push([seg[k][0], seg[k][1]]);
+      if (i < chain.length - 1) stopIdx.push(route.length - 1);
+    }
+    return { route, stopIdx, ok: true };
   },
 
   /** V2: a point on a bus's loop out of the player's sight, at or before `want` (or `want`, if all of it is in view) */
@@ -793,7 +871,8 @@ export const Life: any = {
       if (!active) tr.last = true;
       else if (tr.last) tr.last = false;
       if (tr.pause > 0) { tr.pause -= gm; continue; }
-      tr.prog += (tr.speed || 4.2) * dt * tr.dir;
+      // (V2: slowing for, and stopping short of, anything still on a level crossing ahead: it never runs through it)
+      tr.prog += (tr.speed || 4.2) * dt * tr.dir * this.crossingClear(tr);
       if (tr.prog >= tr.route.length - 1) { tr.prog = tr.route.length - 1; tr.dir = -1; tr.pause = 12; tr.lastStop = tr.route.length - 1; if (tr.type === 'freight') this.freightAt(tr.route[tr.route.length - 1]); if (tr.last) { tr.hidden = true; tr.prog = 0; tr.dir = 1; continue; } }
       else if (tr.prog <= 0) { tr.prog = 0; tr.dir = 1; tr.pause = 12; tr.lastStop = 0; if (tr.type === 'freight') this.freightAt(tr.route[0]); }
       else if (tr.stopIdx) {
@@ -2095,6 +2174,80 @@ export const Life: any = {
       case 'nightliner': return false;                                             // (retired: no passenger trains overnight)
       default: return true;                                                        // freight never sleeps
     }
+  },
+
+  /* ---------------- V2: level crossings ----------------
+     A crossing's gates go by when the next train will reach it, at its speed: the red lights start flashing about
+     thirteen seconds before it gets there, the booms come down three seconds later and are down four seconds after
+     that, well before the train; they stay down until the last carriage is over, and rise again. Drivers stop for the
+     lights (sim/traffic.ts), unless too close to stop. An avenue's two rows close as one. (They held only while a
+     train was within five tiles, a second or two at speed, nothing was drawn, and trains ran through the queue.) */
+  gates: new Map(),
+  _xRoutes: new WeakMap(),
+  /** the steps of a train's route that are level crossings (kept while the roads and rails stay as they are) */
+  crossingsOn(route: number[][]): number[] {
+    const stamp = World.roadStamp * 100003 + World.railStamp;
+    let c = this._xRoutes.get(route);
+    if (!c || c.stamp !== stamp) {
+      c = { stamp, at: [] as number[] };
+      route.forEach((t, k) => { if (World.crossings.has(World.idx(t[0], t[1]))) c.at.push(k); });
+      this._xRoutes.set(route, c);
+    }
+    return c.at;
+  },
+  /** a train's length in route steps (tiles), engine and cars */
+  trainLen(tr: any): number {
+    return ((tr.cars || 3) + 1) * 1.8 + 0.4;
+  },
+  tickGates(dt: number) {
+    if (!World.crossings.size) { if (this.gates.size) this.gates.clear(); return; }
+    const need = new Set<number>();
+    for (const tr of this.intercity ? this.trains.concat([this.intercity]) : this.trains) {
+      if (tr.hidden || !tr.route) continue;
+      const v = Math.max(1, tr.speed || 2.6), len = this.trainLen(tr);
+      for (const k of this.crossingsOn(tr.route)) {
+        const ahead = (k - tr.prog) * (tr.dir || 1);
+        if (ahead < -(len + 1.2) || ahead > v * GATE_WARN + 1.5) continue;
+        if (tr.pause > 0 && ahead > 2.5 && !tr.driver) continue; // (calling at a station short of it)
+        need.add(World.idx(tr.route[k][0], tr.route[k][1]));
+      }
+    }
+    // (all the tiles of a crossing together)
+    for (const k of [...need]) {
+      const q = [k];
+      while (q.length) {
+        const i = q.pop()!, x = i % GW, y = (i / GW) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const j = World.idx(x + dx, y + dy);
+          if (World.inB(x + dx, y + dy) && World.crossings.has(j) && !need.has(j)) { need.add(j); q.push(j); }
+        }
+      }
+    }
+    for (const k of World.crossings) {
+      let g = this.gates.get(k);
+      if (!g) { g = { warn: 0, lower: 0 }; this.gates.set(k, g); }
+      if (need.has(k)) { g.warn += dt; g.lower = Math.min(1, Math.max(g.lower, (g.warn - GATE_LIGHTS) / GATE_LOWER)); }
+      else if (g.warn > 0 || g.lower > 0) { g.lower = Math.max(0, g.lower - dt / GATE_RAISE); if (g.lower <= 0) g.warn = 0; }
+    }
+    for (const k of this.gates.keys()) if (!World.crossings.has(k)) this.gates.delete(k);
+  },
+  /** are the lights flashing, or the booms not up, at the crossing tile (x, y)? (the traffic stops for it) */
+  gateClosed(x: number, y: number): boolean {
+    const g = this.gates.get(World.idx(x, y));
+    return !!g && (g.warn > 0 || g.lower > 0);
+  },
+  /** how fast a train may go on (1 full speed … 0 stopped), for anything still standing on a level crossing ahead */
+  crossingClear(tr: any): number {
+    if (!World.crossings.size || !tr.route) return 1;
+    let f = 1;
+    for (const k of this.crossingsOn(tr.route)) {
+      const ahead = (k - tr.prog) * (tr.dir || 1);
+      if (ahead < 0.6 || ahead > 6) continue;
+      const t = tr.route[k], cx = t[0] * T + 8, cy = t[1] * T + 8;
+      const on = Traffic.near(cx, cy, 14, NEAR_XING, true).some((o: any) => Math.abs(o.x - (t[0] + 0.5)) < 0.62 && Math.abs(o.y - (t[1] + 0.5)) < 0.62);
+      if (on) f = Math.min(f, ahead < 1.4 ? 0 : Math.min(1, (ahead - 1.4) / 4.6) * 0.7 + 0.08);
+    }
+    return f;
   },
 
   /* is any train within r tiles of this spot? (level-crossing gates ask)

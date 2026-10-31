@@ -14,7 +14,7 @@ import { Calamity } from './calamity';
 import { Settings } from './settings';
 import { Traffic, CAR_LEN, LANE, lanePose, kerbside } from './traffic';
 import { Walk } from './walking';
-import { spotFor, PARK_TIME, bayCount, carParkNear } from './parking';
+import { spotFor, baySpot, carParkNear, claimBay, bayHeld, parkInBay, leaveBay, spotTile, kerbHeading, outPlan, parkDuration } from './parking';
 import { Rep } from './reputation';
 import { Health } from './health';
 import { Edu, ESSENTIAL } from './education';
@@ -1566,12 +1566,25 @@ export const Sim: any = {
           t.waitJoin = (t.waitJoin || 0) + dt;
           // (V2: after a while it stops waiting for a gap in moving traffic, and after a long while for something parked
           // there, but it never pulls out into a car in the traffic)
-          if (!Traffic.roomToJoin(p, t.path, t.waitJoin > 20, t.waitJoin > 120)) {
+          // (V2: the way it will swing out of its drive or bay into the lane, sim/parking.ts outPlan: room all along it)
+          if (t.from && !t.out) t.out = outPlan(t.from, t.path, Traffic.lanePx(t));
+          if (!Traffic.roomToJoin(p, t.path, t.waitJoin > 20, t.waitJoin > 120, t.out?.prog ?? 0)) {
             const pose = lanePose(t.path, 0, Traffic.lanePx(t));
             p.x = pose.x; p.y = pose.y; p.dirx = pose.dx; p.diry = pose.dy; p.hx = pose.hx; p.hy = pose.hy;
             return;
           }
           t.joined = true;
+          // V2: then it creeps out and round into the lane, held meanwhile where it will join it (traffic coming stops
+          // behind it) before it drives on
+          if (t.out) { t.outT = 0; t.v = 0; }
+        }
+        if (t.out && t.outT !== undefined) {
+          t.outT += dt;
+          const pose = lanePose(t.path, t.out.prog, Traffic.lanePx(t));
+          p.x = pose.x; p.y = pose.y; p.dirx = pose.dx; p.diry = pose.dy; p.hx = pose.hx; p.hy = pose.hy;
+          if (t.outT < t.out.dur) return;
+          t.prog = t.out.prog; t.outT = undefined; t.v = 0.2;
+          if (t.fromB) { leaveBay(t.fromB, p); t.fromB = null; } // (out of its bay: free for the next car)
         }
         const moved = Traffic.advance(p, t, t.path, t.prog, 1, t.moto ? 1.4 : CAR_SPEED, dt, t.moto ? 0.3 : CAR_LEN);
         t.prog += moved;
@@ -1594,15 +1607,16 @@ export const Sim: any = {
       if (t.civic && t.prog >= t.path.length - 1) { Hustings.step(p, t, dt); return; }
       if (t.prog >= t.path.length - 1) { // arrived
         // V2 (Milestone 8): a car reverses into its spot (the drive at home, a bay at the venue) before anyone gets out
-        if (t.car && t.to && (t.parkT || 0) < PARK_TIME) { t.parkT = (t.parkT || 0) + dt; return; }
+        // (V2: as long as the way in takes at manoeuvring pace: sim/parking.ts inPlan)
+        if (t.car && t.to && (t.parkT || 0) < parkDuration(p, t)) { t.parkT = (t.parkT || 0) + dt; return; }
         // V2: parked at a public car park (the place itself had no bay free): on foot the rest of the way, the car
         // left in its bay for the way back
         if (t.car && t.lot) {
-          t.lot.parked = (t.lot.parked || 0) + 1;
+          parkInBay(t.lot, p);
           p.carLotId = t.lot.id;
           const wp = World.walkPath(t.lot.door.x, t.lot.door.y, p.dest.door.x, p.dest.door.y) || World.roadPath(t.lot.door.x, t.lot.door.y, p.dest.door.x, p.dest.door.y);
           if (wp && wp.length > 1) { p.trip = { path: wp, prog: 0, car: null, taxi: false, moto: false, keepCar: t.car }; return; }
-          t.lot.parked--; p.carLotId = undefined;
+          leaveBay(t.lot, p); p.carLotId = undefined;
         }
         const dest = p.dest;
         p.state = 'in'; p.at = dest; p.trip = null; p.dest = null;
@@ -1612,7 +1626,7 @@ export const Sim: any = {
           p.carHeld = t.car || t.keepCar || null;
           p.returnAt = p.until;
           dest.inside++;
-          if (t.car) dest.parked++;
+          if (t.car && t.toB === dest) parkInBay(dest, p);
           const cd = CAT[dest.type];
           if (cd.visit) {
             dest.visitors++;
@@ -1713,6 +1727,9 @@ export const Sim: any = {
   leaveCar(p: Person, t: any) {
     if (t.car) t.car.free = true;
     p.carHeld = null;
+    // (V2: and the bays it held, the one it left and the one it was making for)
+    if (t.fromB) leaveBay(t.fromB, p);
+    if (t.toB) leaveBay(t.toB, p);
     const dest = p.dest;
     const tx = Math.floor(p.x / T), ty = Math.floor(p.y / T);
     const from = World.isRoad(tx, ty) ? { x: tx, y: ty } : World.nearestRoad(tx, ty, 3);
@@ -1740,7 +1757,7 @@ export const Sim: any = {
         if (p.at !== p.home) {
           p.at!.inside = Math.max(0, p.at!.inside - 1);
           if (p.carHeld) {
-            park.parked = Math.max(0, park.parked - 1);
+            leaveBay(park, p);
             p.carHeld.free = true; p.carHeld = null;
           }
         }
@@ -1750,7 +1767,7 @@ export const Sim: any = {
     }
     if (p.at !== p.home && p.at !== dest) { // leaving a venue/workplace
       p.at!.inside = Math.max(0, p.at!.inside - 1);
-      if (p.carHeld) park.parked = Math.max(0, park.parked - 1);
+      // (V2: a car's bay is given up once it has pulled out of it, not before: see the pull-out in moveAll)
     }
     p.backTo = backTo || null;
     // family car for long trips (adults only); reuse the one parked at the venue.
@@ -1760,6 +1777,17 @@ export const Sim: any = {
     if (!car && p.kind !== 'kid' && path.length >= carMin) {
       car = p.home.cars.find((c: Car) => c.free) || null;
       if (car) car.free = false;
+    }
+    // V2: somewhere to leave it at the other end, booked now: a bay of the place's own, else one at a public car park
+    // near it. With neither, the car stays at home (it used to be driven there and left standing at the front door)
+    let at: Building = dest, toBay = -1;
+    if (car && dest !== p.home) {
+      toBay = claimBay(dest, p);
+      if (toBay < 0) {
+        const cp = carParkNear(dest, World.buildings);
+        if (cp) { toBay = claimBay(cp, p); if (toBay >= 0) at = cp; }
+      }
+      if (toBay < 0 && !p.carHeld) { car.free = true; car = null; }
     }
     // no car free? the family motorcycle covers the middle distances
     let moto = false;
@@ -1792,15 +1820,29 @@ export const Sim: any = {
     if (car || moto || taxi) {
       p.trip.joined = false;
       if (car) {
-        p.trip.from = spotFor(park, car, Math.max(0, (park.parked || 0)));
-        // V2: no bay free there? the nearest public car park with one, and the driver walks on from it
-        let at: Building = dest;
-        if (dest !== p.home && (dest.parked || 0) >= bayCount(dest)) {
-          const cp = carParkNear(dest, World.buildings);
-          const cpath = cp && World.roadPath(park.door.x, park.door.y, cp.door.x, cp.door.y);
-          if (cp && cpath && cpath.length > 1) { at = cp; p.trip.path = kerbside(cpath); p.trip.lot = cp; }
+        const t = p.trip;
+        // V2: out of the spot it stands in (its own drive at home, else the bay it took), into the one booked for it
+        // (a bay at a public car park, when the place had none free: the driver walks on from it)
+        if (park === p.home) t.from = spotFor(park, car);
+        else { const k = bayHeld(park, p); if (k >= 0) { t.from = baySpot(park, k); t.fromB = park; } }
+        if (at === p.home) t.to = spotFor(at, car);
+        else if (toBay >= 0) { t.to = baySpot(at, toBay); t.toB = at; }
+        if (at !== dest) t.lot = at;
+        // from the street tile in front of the one spot to the street tile in front of the other, arriving along the
+        // street: on the spot's side if that isn't far round (backing in from the near lane), else along the far side
+        const a = (t.from && spotTile(t.from)) || park.door, z = (t.to && spotTile(t.to)) || at.door;
+        const free = World.roadPath(a.x, a.y, z.x, z.y);
+        const along = (side: number): number[][] | null => {
+          const hd = t.to ? kerbHeading(t.to, z, side) : -1;
+          const w = hd >= 0 ? World.roadPath(a.x, a.y, z.x, z.y, -1, hd) : null;
+          return w && w.length > 1 ? w : null;
+        };
+        const near = along(1), far = near && (!free || near.length <= free.length + 14) ? null : along(-1);
+        const way = near && (!free || near.length <= free.length + 14 || !far) ? near : far || (free && free.length > 1 ? kerbside(free) : null);
+        if (way) t.path = way;
+        else if (at !== dest) { // (no way to the car park after all: to the door, as before)
+          leaveBay(at, p); t.lot = undefined; t.toB = undefined; t.to = null;
         }
-        p.trip.to = spotFor(at, car, Math.max(0, at.parked || 0));
       }
     }
     if (!car && !moto && p.kind !== 'kid' && Math.random() < 0.15) p.trip.dog = (Math.random() * 2) | 0; // walk the dog
@@ -1820,8 +1862,11 @@ export const Sim: any = {
       const stop = World.buildings.find((b: Building) => b.type === 'busstop' && b.connected && !b.ruined);
       if (stop) stop.funds += 1;
     }
-    const [sx, sy] = path[0];
+    const [sx, sy] = p.trip.path[0];
     p.x = sx * T + 8; p.y = sy * T + 8;
+    // V2: on foot, they set out from the pavement at their door: until their first step they stood in the middle of
+    // the street, where the car pulling out of the same drive "knocked them down" (and the traffic stopped for them)
+    if (!car && !taxi && !moto) { Walk.plan(p, p.trip, p.at, dest); Walk.pose(p, p.trip); }
   },
 
   /* off to the Christmas market: walk there, browse the stalls, walk home */
@@ -1839,8 +1884,8 @@ export const Sim: any = {
       pauseAt: out.length - 1, pauseT: 25 + Math.random() * 30, // time among the stalls
     };
     p.bubble = '🎄'; p.bubbleUntil = performance.now() + 2600;
-    const [sx, sy] = p.trip.path[0];
-    p.x = sx * T + 8; p.y = sy * T + 8;
+    // (V2: setting out from the pavement at their door, not the middle of the street)
+    Walk.plan(p, p.trip, p.at, p.home); Walk.pose(p, p.trip);
   },
 
   /* a wander to a nearby corner and back — pure flânerie */
@@ -1862,8 +1907,8 @@ export const Sim: any = {
     if (Math.random() < 0.45) p.trip.dog = (Math.random() * 2) | 0;
     p.bubble = p.trip.dog !== undefined ? '🐕' : '🚶';
     p.bubbleUntil = performance.now() + 2600;
-    const [sx, sy] = p.trip.path[0];
-    p.x = sx * T + 8; p.y = sy * T + 8;
+    // (V2: setting out from the pavement at their door, not the middle of the street)
+    Walk.plan(p, p.trip, p.at, p.home); Walk.pose(p, p.trip);
   },
 
   /* ---------- the village chronicle: daily samples for the history charts ---------- */

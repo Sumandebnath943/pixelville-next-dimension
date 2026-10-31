@@ -349,6 +349,37 @@ export const PROPS: Record<string, { geo: THREE.BufferGeometry; tinted?: boolean
   },
   xstar: { geo: new MeshBuilder().boxC(0, 12.9, 0, 0.9, 0.9, 0.3, W).boxC(0, 12.9, 0, 0.3, 0.9, 0.9, W).build(), glow: true, tinted: true },
   bulb: { geo: new THREE.SphereGeometry(0.09, 8, 6), glow: true, tinted: true },
+  // V2: a level crossing's half barrier. The post (local +z faces the traffic coming): the motor housing the boom
+  // pivots on, a mast with a pair of red lamps in their black backboard, and the white St Andrew's cross on top
+  xgatePost: {
+    geo: (() => {
+      const m = new MeshBuilder();
+      m.box(-0.07, 0, -0.07, 0.07, 3.0, 0.07, hex('#d8d8d4'));
+      m.box(-0.28, 0, -0.22, 0.28, 1.15, 0.22, hex('#e8e6e0')).box(-0.29, 0.95, -0.23, 0.29, 1.0, 0.23, hex('#c03030'));
+      m.box(-0.62, 2.0, 0.08, 0.62, 2.5, 0.12, hex('#151515'));
+      for (const x of [-0.36, 0.36]) m.box(x - 0.15, 2.1, 0.12, x + 0.15, 2.4, 0.15, hex('#3a0c0c')).box(x - 0.2, 2.42, 0.08, x + 0.2, 2.47, 0.3, hex('#151515'));
+      // (the cross: two white bars, front and back)
+      for (const s of [1, -1]) {
+        const c = Math.SQRT1_2, ux = c * 0.6, uy = s * c * 0.6, vx = -s * c * 0.07, vy = c * 0.07, y = 2.85;
+        for (const z of [0.17, 0.165]) {
+          const pts = [[-ux - vx, y - uy - vy, z], [ux - vx, y + uy - vy, z], [ux + vx, y + uy + vy, z], [-ux + vx, y - uy + vy, z]];
+          if (z > 0.168) m.quad(pts[0], pts[1], pts[2], pts[3], hex('#f4f4f0'));
+          else m.quad(pts[3], pts[2], pts[1], pts[0], hex('#f4f4f0'));
+        }
+      }
+      return m.build();
+    })(),
+  },
+  // (the boom: from its pivot out along local +x, red and white, with a lamp at its tip)
+  xboom: {
+    geo: (() => {
+      const m = new MeshBuilder();
+      for (let k = 0; k < 6; k++) m.box(0.15 + k * 0.5, -0.06, -0.05, 0.65 + k * 0.5, 0.06, 0.05, hex(k % 2 ? '#f4f4f0' : '#c81e1e'));
+      m.box(-0.35, -0.11, -0.09, 0.15, 0.11, 0.09, hex('#2a2a2a')); // (the counterweight)
+      return m.build();
+    })(),
+  },
+  xlamp: { geo: new THREE.CircleGeometry(0.15, 12).translate(0, 0, 0.16), glow: true, tinted: true },
   funnel: { geo: new MeshBuilder().cyl(0, 0, 0, 1.5, 34, 10, W, W, 9).build(), tinted: true },
   log: { geo: new MeshBuilder().box(-0.5, 0, -6, 0.5, 1.0, 6, hex('#5a3a22')).cone(0, 0.4, 5, 1.8, 4, 6, hex('#2a6a3a')).build() },
   crate: { geo: new MeshBuilder().box(-0.5, 0, -0.5, 0.5, 0.9, 0.5, hex('#a07a4a')).build() },

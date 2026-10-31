@@ -121,7 +121,7 @@ export class Fauna {
     const tx = Math.floor(x / TM), tz = Math.floor(z / TM);
     if (!World.inB(tx, tz)) return false;
     const i = World.idx(tx, tz);
-    return World.ground[i] === G_GRASS && !World.roadMap[i] && !World.railMap[i] && !World.bmap[i] && !World.tree[i];
+    return World.ground[i] === G_GRASS && !World.roadMap[i] && !World.railMap[i] && !World.curveTile(i) && !World.bmap[i] && !World.tree[i];
   }
 
   /** V2: the deer and hares of one stretch of open country (none where the village has built) */

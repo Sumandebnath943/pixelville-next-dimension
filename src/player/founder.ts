@@ -10,7 +10,7 @@ import { Settings } from '../sim/settings';
 import { Input } from '../input/input';
 import { heightAt, isWaterAt, treeSpot, postsNear } from '../render/terrain';
 import { drivewayCars, DrivewayCar } from '../render/parked';
-import { baySpot, bayCount } from '../sim/parking';
+import { baySpot, standingBays } from '../sim/parking';
 import { CAT } from '../sim/catalog';
 import type { BuildingLayer } from '../render/buildings';
 import { emit, on } from '../sim/core';
@@ -543,7 +543,7 @@ export class Founder {
         this.seenB.add(b);
         for (const c of drivewayCars(b, this.driveCars)) if (capsule(p, r, c.x, c.z, c.yaw, 1.35, 0.92)) hit = true;
         this.driveCars.length = 0;
-        if (b.parked > 0 && !CAT[b.type]?.res) for (let k = 0; k < Math.min(bayCount(b), b.parked); k++) {
+        if (b.parked > 0 && !CAT[b.type]?.res) for (const [k] of standingBays(b, this.bayList)) {
           const s = baySpot(b, k);
           if (s && capsule(p, r, s.x, s.z, s.yaw, 1.35, 0.92)) hit = true;
         }
@@ -565,6 +565,7 @@ export class Founder {
 
   private posts: { x: number; z: number; r: number }[] = [];
   private seenB = new Set<any>();
+  private bayList: [number, number][] = [];
   private driveCars: DrivewayCar[] = [];
   private nearV: ReturnType<typeof Traffic.near> = [];
   /** V2 (Milestone 8): on foot, the village's traffic is solid too: a car, a bus or a cab standing or passing is
