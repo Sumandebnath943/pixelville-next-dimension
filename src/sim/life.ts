@@ -556,9 +556,12 @@ export const Life: any = {
       b !== stand && b.connected && !b.ruined && !b.construction);
     for (let tries = 0; tries < 8 && dests.length; tries++) {
       const dst = dests[(Math.random() * dests.length) | 0];
-      const dt2 = this.streetTile(dst);
+      // (V2: and the fare set down at the kerb by their door, out of the junctions, the door on the cab's right, as at
+      // a bus stop: it stopped on the road tile nearest the door, often in a junction box, and stood there)
+      const kerb = this.stopKerb(dst), dt2 = kerb || this.streetTile(dst);
       if (!dt2) continue;
-      const route = World.roadPath(standTile.x, standTile.y, dt2.x, dt2.y);
+      // (V2: setting off the way it stands at the kerb: sim/life.ts stopKerb)
+      const route = World.roadPath(standTile.x, standTile.y, dt2.x, dt2.y, standTile.hd ?? -1, kerb ? kerb.hd : -1);
       if (route && route.length > 4) return route;
     }
     return null;
@@ -576,7 +579,11 @@ export const Life: any = {
         this.taxis = [];
         const pop = Sim.people.length;
         for (const stand of stands) {
-          const tile = this.streetTile(stand);
+          // V2: the rank is a stretch of kerb beside the stand, along a plain street, out of the junction boxes, the
+          // stand on the cab's right (as a bus stop's: stopKerb). The cabs waited on the road tile nearest the stand's
+          // door, which was often a junction, turned whichever way their next fare's route set off: across the road,
+          // in the junction box, and the traffic jammed behind them
+          const tile = this.stopKerb(stand) || this.streetTile(stand);
           if (!tile) continue;
           const nCabs = Math.min(2, 1 + (pop > 70 ? 1 : 0));
           for (let k = 0; k < nCabs; k++) {
@@ -610,11 +617,21 @@ export const Life: any = {
         cab.prog = cab.route.length - 1;
         if (!cab.returning) {                            // dropped the fare across town
           cab.pause = 3;
-          if (cab.pax.length)
-            this.spawnAlighter(cab.x, cab.y, cab.dirx || 1, cab.diry || 0, cab.pax.shift());
+          // (V2: out of its kerbside door onto the pavement, as off a bus: they stepped out of its middle and walked
+          // off up the lane)
+          if (cab.pax.length) {
+            const hx = cab.hx ?? cab.dirx ?? 1, hy = cab.hy ?? cab.diry ?? 0, hl = Math.hypot(hx, hy) || 1, nx = -hy / hl, ny = hx / hl;
+            this.spawnAlighter(cab.x + nx * 3.2, cab.y + ny * 3.2, nx * 0.3 + hx / hl, ny * 0.3 + hy / hl, cab.pax.shift());
+          }
           // V2 (Milestone 8): it drives its own way back to the rank (keeping right), not the fare's route backwards
           const end = cab.route[cab.route.length - 1];
-          const back = World.roadPath(end[0], end[1], cab.standTile.x, cab.standTile.y);
+          // (setting off the way it stopped, never turned round on the spot, and arriving along the rank's kerb, the
+          // way it will wait there. V2: it stood out its pause turned to the first step of the way back: across the
+          // road, where that began with a turn)
+          const pre = cab.route[cab.route.length - 2];
+          const h0 = pre ? HX4.findIndex((hx, k) => hx === end[0] - pre[0] && HY4[k] === end[1] - pre[1]) : -1;
+          const back = World.roadPath(end[0], end[1], cab.standTile.x, cab.standTile.y, h0, cab.standTile.hd ?? -1, true)
+            || World.roadPath(end[0], end[1], cab.standTile.x, cab.standTile.y, -1, cab.standTile.hd ?? -1);
           if (back && back.length > 1) { cab.route = back; cab.prog = 0; cab.returning = true; }
           else cab.dir = -1;
         } else {                                         // back at the rank: next fare
@@ -639,9 +656,12 @@ export const Life: any = {
      the same spot, one inside the next) */
   rankSlot(cab: any) {
     if (cab.prog !== 0 || cab.dir < 0 || !cab.route) return;
+    // (V2: setting a fare down, it stands pulled in where it stopped; only those at the rank queue there)
+    if (cab.returning) { this.followPath(cab, cab.route, 0, Traffic.lanePx(cab) + 0.6, 1); return; }
     let slot = 0;
-    for (const o of this.taxis) if (o !== cab && o.home === cab.home && !o.hired && o.prog === 0 && o.pause > 0 && o.dir > 0 && (o.pause < cab.pause || (o.pause === cab.pause && this.taxis.indexOf(o) < this.taxis.indexOf(cab)))) slot++;
-    this.followPath(cab, cab.route, 0, Traffic.lanePx(cab), 1);
+    for (const o of this.taxis) if (o !== cab && o.home === cab.home && !o.hired && !o.returning && o.prog === 0 && o.pause > 0 && o.dir > 0 && (o.pause < cab.pause || (o.pause === cab.pause && this.taxis.indexOf(o) < this.taxis.indexOf(cab)))) slot++;
+    // (V2: pulled in to the kerb while it waits, a wheel's width from it, leaving the lane to the traffic)
+    this.followPath(cab, cab.route, 0, Traffic.lanePx(cab) + 0.6, 1);
     if (slot) { cab.x -= (cab.hx || cab.dirx || 1) * slot * 0.8 * T; cab.y -= (cab.hy || cab.diry || 0) * slot * 0.8 * T; }
   },
 

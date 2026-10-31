@@ -109,6 +109,8 @@ function kitMaterial(map: THREE.Texture, lampU: { value: THREE.Vector4 }, lamp2U
       #endif
       vLit = aLit;` : ''),
     fDecl: KIT_F + (far ? '\nvarying vec2 vLit;' : ''),
+    // (V2: channel 3 is the inside, in the shade of the roof: lit like the street it read as an empty, open shell)
+    fColor: 'if (abs(vGlow - 3.0) < 0.5) diffuseColor.rgb *= 0.55;',
     uniforms: { uLamp: lampU, uLamp2: lamp2U },
     fEmissive: `{
       float ch = floor(vGlow + 0.5);
@@ -136,11 +138,12 @@ function kitMaterial(map: THREE.Texture, lampU: { value: THREE.Vector4 }, lamp2U
   return m;
 }
 let GLASS: THREE.MeshStandardMaterial | null = null;
-/** tinted glass: see-through looking straight in, a mirror at a glancing angle */
+/** tinted glass: the cabin faintly through it looking straight in, a mirror at a glancing angle
+ *  (V2: at a third opaque it hardly read as glass at all) */
 function glassMaterial(): THREE.MeshStandardMaterial {
   GLASS ??= surface(new THREE.MeshStandardMaterial({ color: 0x0a0e12, roughness: 0.04, metalness: 0.25, transparent: true, opacity: 0.6, side: THREE.DoubleSide }), {
     snow: 0.4, wet: 0.1,
-    fColor: 'diffuseColor.a = mix(0.32, 0.95, pow(1.0 - abs(dot(normalize(vWNrm), normalize(cameraPosition - vWPos))), 3.0));',
+    fColor: 'diffuseColor.a = mix(0.58, 0.96, pow(1.0 - abs(dot(normalize(vWNrm), normalize(cameraPosition - vWPos))), 3.0));',
   }, 'fleetGlass');
   return GLASS;
 }

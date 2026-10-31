@@ -51,6 +51,8 @@ export interface Theme {
   wainscot?: string; wainscotH?: number; wainscotMat?: Mat; ceiling?: string;
 }
 export interface Sign { text: string; x: number; y: number; z: number; w: number; h: number; ry: number; bg: string; fg: string }
+/** V2: a painting on a wall: its canvas's centre, size, facing and which picture it is */
+export interface Art { x: number; y: number; z: number; w: number; h: number; ry: number; seed: number }
 export interface Layout {
   template: Template;
   w: number; d: number; h: number;
@@ -66,6 +68,8 @@ export interface Layout {
   signs: Sign[];
   /** windows in the side walls (the front always has two beside the door) */
   sideWindows: boolean;
+  /** V2: paintings hung on the free walls (dress) */
+  art: Art[];
 }
 
 const THEMES: Record<Template, Theme> = {
@@ -457,17 +461,70 @@ export function layoutFor(b: { id: number; type: string; w: number; h: number })
   const p = new Plan(W, D, H, rnd);
   // V2: a room of its own where the business has one (rooms.ts), else the template's
   (ROOMS[b.type] ?? BUILD[template])(p, b.type);
+  const sideWindows = template !== 'workshop' && template !== 'fire' && template !== 'venue' && template !== 'police' && b.type !== 'church';
+  const art = dress(p, template, sideWindows);
   // the way out: just inside the door
   p.spots.push({ kind: 'exit', x: 0, z: D / 2 - 0.7, yaw: Math.PI, label: 'Go outside' });
   // keep the doorway clear
   p.solids = p.solids.filter((r) => !(r.x0 < 1.1 && r.x1 > -1.1 && r.z1 > D / 2 - 1.6));
   return {
+    art,
     template, w: W, d: D, h: H,
     theme: { ...THEMES[template], ...(TINTS[b.type] || {}), ...(ROOM_THEMES[b.type] || {}) },
     boxes: p.boxes, solids: p.solids, spots: p.spots, posts: p.posts, places: p.places, lights: p.lights, signs: p.signs,
     // (a church has stained glass of its own)
-    sideWindows: template !== 'workshop' && template !== 'fire' && template !== 'venue' && template !== 'police' && b.type !== 'church',
+    sideWindows,
   };
+}
+
+/** V2: the finishing touches every room gets on top of its furniture, wherever the wall or the floor is still free:
+ *  paintings on the back and side walls (clear of the windows, the shelves and the wall units), and potted plants in
+ *  the empty corners. Rooms were their furniture in a bare box: long stretches of plain plaster, empty corners. */
+function dress(p: Plan, template: Template, sideWindows: boolean): Art[] {
+  const art: Art[] = [];
+  // is anything (furniture, a fitting, a sign's board) in this block of the room?
+  const free = (x0: number, z0: number, x1: number, z1: number, y0: number, y1: number): boolean =>
+    !p.boxes.some((b) => {
+      const [hw, hd] = (b.ry || 0) % Math.PI ? [b.d / 2, b.w / 2] : [b.w / 2, b.d / 2];
+      return b.x - hw < x1 && b.x + hw > x0 && b.z - hd < z1 && b.z + hd > z0 && b.y < y1 && b.y + b.h > y0;
+    }) && !p.signs.some((s) => Math.abs(s.x - (x0 + x1) / 2) < s.w / 2 + (x1 - x0) / 2 && Math.abs(s.z - (z0 + z1) / 2) < s.w / 2 + (z1 - z0) / 2 && s.y + s.h / 2 > y0 && s.y - s.h / 2 < y1);
+  if (template !== 'workshop' && template !== 'fire') {
+    const big = p.h > 4, y = big ? 1.9 : 1.45, ph = big ? 1.1 : 0.7, pw = big ? 1.5 : 1.0;
+    const frame = template === 'office' || template === 'shop' ? '#1e1e20' : '#4a3422';
+    let seed = Math.floor(p.rnd() * 997);
+    const hang = (x: number, z: number, along: 'x' | 'z', ry: number): void => {
+      p.picture(x, z, pw, ph, y, along, '#e8e0d0', frame);
+      // (the canvas itself, painted: just proud of the backing)
+      const n = along === 'x' ? 1 : 0;
+      art.push({ x: x + (along === 'z' ? Math.sign(-x) * 0.03 : 0), y: y + ph / 2, z: z + n * 0.03, w: pw - 0.04, h: ph - 0.04, ry, seed: seed++ });
+    };
+    // the back wall: up to three, a good step apart
+    const zb = p.back + 0.02;
+    let last = -1e9, n = 0;
+    for (let x = p.left + pw; x <= p.right - pw && n < 3; x += 0.25) {
+      if (x - last < pw + 1.4) continue;
+      if (!free(x - pw / 2 - 0.15, p.back, x + pw / 2 + 0.15, p.back + 0.7, y - 0.25, y + ph + 0.2)) continue;
+      hang(x, zb, 'x', 0); last = x; n++;
+    }
+    // the side walls: one each, clear of the windows
+    const nWin = Math.max(1, Math.floor(p.d / 4));
+    for (const sx of [-1, 1]) {
+      const wx = sx * (p.w / 2 - 0.02);
+      for (let z = p.back + pw; z <= p.front - pw - 1; z += 0.25) {
+        if (sideWindows && [...Array(nWin)].some((_, k) => Math.abs(z - (p.back + (p.d / nWin) * (k + 0.5))) < 0.75 + pw / 2 + 0.2)) continue;
+        const [x0, x1] = sx < 0 ? [p.left, p.left + 0.7] : [p.right - 0.7, p.right];
+        if (!free(x0, z - pw / 2 - 0.15, x1, z + pw / 2 + 0.15, y - 0.25, y + ph + 0.2)) continue;
+        hang(wx, z, 'z', sx < 0 ? Math.PI / 2 : -Math.PI / 2);
+        break;
+      }
+    }
+  }
+  // plants in the corners nobody uses (never in the doorway, and out of the way along the walls)
+  if (template !== 'workshop' && template !== 'fire' && template !== 'terminal') {
+    for (const [cx, cz] of [[p.left + 0.5, p.front - 0.55], [p.right - 0.5, p.front - 0.55], [p.left + 0.5, p.back + 0.5], [p.right - 0.5, p.back + 0.5]])
+      if (free(cx - 0.55, cz - 0.55, cx + 0.55, cz + 0.55, 0, 2.2) && !p.solids.some((r) => r.x0 < cx + 0.6 && r.x1 > cx - 0.6 && r.z0 < cz + 0.6 && r.z1 > cz - 0.6)) p.plant(cx, cz, p.rnd() < 0.6);
+  }
+  return art;
 }
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 const GOODS = ['#c8402a', '#2a7ac8', '#e8c02a', '#3a9a4a', '#e8e4dc', '#8a3aa8', '#e87a2a', '#2a2a2a', '#d8a8c8'];

@@ -54,6 +54,14 @@ export function drivewaySpot(b: any, slot: number): Spot | null {
   return { x, z, yaw: ((b.facing || 0) * Math.PI) / 2 };
 }
 
+/** V2: how many cars a home's plot has a drive spot for (a house's or cottage's one, a mansion's two, the flats'
+ *  forecourt three): a family owns no more (headless, with no lots built, the most a drive takes) */
+export function driveCount(b: any): number {
+  if (!CAT[b?.type]?.res) return 0;
+  const L = Lots.of?.(b);
+  return L ? Math.min(3, L.drive.length) : 3;
+}
+
 /** parking bay k (0–3) across the front of a workplace's or venue's plot (staff and visitors) */
 export function baySpot(b: any, k: number): Spot | null {
   const d = CAT[b.type];

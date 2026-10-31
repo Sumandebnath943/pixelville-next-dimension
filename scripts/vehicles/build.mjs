@@ -67,6 +67,10 @@ class Soup {
     for (let i = 0; i < this.count; i++) b.expandByPoint(v.fromArray(this.pos, i * 3));
     return b;
   }
+  /** the last triangle pushed onto `from`, pushed again here */
+  copyLast(from) {
+    for (const [k, n] of [['pos', 3], ['nor', 3], ['uv', 2], ['col', 3], ['pbr', 2], ['glow', 1], ['paint', 1]]) for (let c = from[k].length - 3 * n; c < from[k].length; c++) this[k].push(from[k][c]);
+  }
   filter(fn) {
     const o = new Soup();
     for (let t = 0; t < this.count; t += 3) {
@@ -194,7 +198,8 @@ async function build(entry, io) {
     const mr = mat?.getMetallicRoughnessTexture();
     if (mr) { const a = await average(mr); rough *= Math.sqrt(a[1]); metal *= Math.sqrt(a[2]); }
     else if (!mat) { rough = 0.6; metal = 0; }
-    plans.push({ kind, glow, tex, slot, uvAttr: uv, rough: Math.min(1, Math.max(0.05, rough)), metal: Math.min(1, Math.max(0, metal)), factor: emisLook ? [...mat.getEmissiveFactor(), 1] : tex && dark ? [1, 1, 1, 1] : fac0, inside: RE.inside.test(label) });
+    plans.push({ kind, glow, tex, slot, uvAttr: uv, rough: Math.min(1, Math.max(0.05, rough)), metal: Math.min(1, Math.max(0, metal)), factor: emisLook ? [...mat.getEmissiveFactor(), 1] : tex && dark ? [1, 1, 1, 1] : fac0, inside: RE.inside.test(label),
+      holes: !!(entry.windows && slot && alpha && new RegExp(entry.windows, 'i').test(label)) });
   }
 
   /* pack the atlas (shelves; everything halves until it fits; V2: a big vehicle's atlas grows to 2048 first) */
@@ -228,6 +233,9 @@ async function build(entry, io) {
 
   /* bake the primitives */
   const parts = { paint: new Soup(), glass: new Soup(), kit: new Soup(), rotor: new Soup() }, wheelParts = new Map();
+  // V2: a body whose windows are holes in its texture (the bus): each triangle with a hole in it, again, as glass
+  // (moved just inside the body once it stands, so the glass shows only through the holes)
+  const panes = new Soup();
   const v = new THREE.Vector3(), n = new THREE.Vector3(), M = new THREE.Matrix4(), NM = new THREE.Matrix3(), J = new THREE.Matrix4(), T = new THREE.Matrix4();
   for (let pi = 0; pi < prims.length; pi++) {
     const plan = plans[pi];
@@ -251,7 +259,11 @@ async function build(entry, io) {
     // (faces the other way round under a mirroring matrix)
     const flip = M.determinant() < 0;
     const order = flip ? [0, 2, 1] : [0, 1, 2];
-    for (let t = 0; t < count; t += 3)
+    const src = plan.holes ? await image(plan.tex) : null, tuv = [];
+    // (the texture's alpha at a uv: below a half, the material cuts a hole there)
+    const clearAt = (u, w) => src.data[(Math.min(src.h - 1, Math.floor(w * src.h)) * src.w + Math.min(src.w - 1, Math.floor(u * src.w))) * 4 + 3] < 128;
+    for (let t = 0; t < count; t += 3) {
+      tuv.length = 0;
       for (const o of order) {
         const i = I ? I.getScalar(t + o) : t + o;
         P.getElement(i, e); v.fromArray(e);
@@ -270,10 +282,16 @@ async function build(entry, io) {
           plan.uvAttr.getElement(i, eu);
           const u = Math.min(1, Math.max(0, eu[0])), w = Math.min(1, Math.max(0, eu[1]));
           uv = [(s.x + 0.5 + u * (s.size - 1)) / ATLAS, (s.y + 0.5 + w * (s.size - 1)) / ATLAS];
+          tuv.push([u, w]);
         } else if (flatC) col = col.map((c, k) => c * flatC[k]);
         if (plan.kind === 'paint') col = [1, 1, 1];
         target.push(v, n, uv, col, [plan.rough, plan.metal], plan.glow, plan.kind === 'paint' ? 1 : 0);
       }
+      if (src && tuv.length === 3) {
+        const c = [0, 1].map((k) => (tuv[0][k] + tuv[1][k] + tuv[2][k]) / 3);
+        if ([...tuv, c].some(([u, w]) => clearAt(u, w))) panes.copyLast(target);
+      }
+    }
     if (plan.inside) for (let k = target.count - count; k < target.count; k++) target.glow[k] = target.glow[k] || -1; // (marks the inside: left out of the far models)
   }
 
@@ -294,7 +312,7 @@ async function build(entry, io) {
   const len = fwd.endsWith('x') ? s0.x : s0.z;
   const scale = entry.length ? entry.length / len : 1;
   const place = new THREE.Matrix4().makeScale(scale, scale, scale).multiply(R).multiply(new THREE.Matrix4().makeTranslation(-c0.x, -b0.min.y, -c0.z));
-  for (const p of [parts.paint, parts.kit, parts.glass, parts.rotor, ...wheelParts.values()]) p.transform(place);
+  for (const p of [parts.paint, parts.kit, parts.glass, parts.rotor, panes, ...wheelParts.values()]) p.transform(place);
 
   /* wheels: their centres, and the front-left one as the wheel every corner uses */
   const wheelsAt = [];
@@ -311,7 +329,7 @@ async function build(entry, io) {
     const w = clusters;
     for (const x of w) x.c = x.b.getCenter(new THREE.Vector3());
     const ground = Math.min(...w.map((x) => x.b.min.y));
-    for (const p of [parts.paint, parts.kit, parts.glass, parts.rotor, ...w.map((x) => x.s)]) p.transform(new THREE.Matrix4().makeTranslation(0, -ground, 0));
+    for (const p of [parts.paint, parts.kit, parts.glass, parts.rotor, panes, ...w.map((x) => x.s)]) p.transform(new THREE.Matrix4().makeTranslation(0, -ground, 0));
     for (const x of w) { x.c.y -= ground; wheelsAt.push(x.c.toArray().map((q) => +q.toFixed(3))); }
     const fl = w.filter((x) => x.c.x > 0).sort((a, b) => b.c.z - a.c.z)[0] || w[0];
     wheelR = +((fl.b.max.y - fl.b.min.y) / 2).toFixed(3);
@@ -324,6 +342,19 @@ async function build(entry, io) {
     const rb = parts.rotor.bounds(), rc = rb.getCenter(new THREE.Vector3());
     rotorAt = rc.toArray().map((q) => +q.toFixed(3));
     rotorGeo = indexed(parts.rotor.transform(new THREE.Matrix4().makeTranslation(-rc.x, -rc.y, -rc.z)), 400);
+  }
+  // the window panes 3 cm inside the body (towards the vehicle's middle, whichever way the body's normals face)
+  if (panes.count) {
+    const ctr = parts.kit.bounds().getCenter(new THREE.Vector3()), c = new THREE.Vector3(), nv = new THREE.Vector3();
+    for (let t = 0; t < panes.count; t += 3) {
+      c.set(0, 0, 0);
+      for (let i = t; i < t + 3; i++) c.add(new THREE.Vector3().fromArray(panes.pos, i * 3));
+      c.divideScalar(3);
+      nv.fromArray(panes.nor, t * 3);
+      const k = nv.dot(c.clone().sub(ctr)) > 0 ? -0.03 : 0.03;
+      for (let i = t; i < t + 3; i++) for (let a = 0; a < 3; a++) panes.pos[i * 3 + a] += panes.nor[i * 3 + a] * k;
+    }
+    parts.glass.append(panes);
   }
   // siren halves flash in turn: left half one colour, right half the other
   for (let i = 0; i < parts.kit.count; i++) if (parts.kit.glow[i] === 5 && parts.kit.pos[i * 3] < 0) parts.kit.glow[i] = 6;
@@ -338,14 +369,15 @@ async function build(entry, io) {
   const headAt = [mid(lamps.L), mid(lamps.R)].filter(Boolean).map((p) => [+p[0].toFixed(3), +p[1].toFixed(3), +(p[2] + 0.02).toFixed(3)]);
   const beamAt = headAt.length === 2 ? [0, +((headAt[0][1] + headAt[1][1]) / 2).toFixed(3), +((headAt[0][2] + headAt[1][2]) / 2 + 0.03).toFixed(3)] : null;
 
-  /* levels of detail: near, mid (no interior), far (one mesh, everything, for instancing) */
+  /* levels of detail: near, mid (a coarser interior), far (one mesh, everything but the interior, for instancing) */
+  // (V2: the mid model had no interior at all, and past 30 m every car, van and bus was an empty shell behind its glass)
   // (V2: the near model is the model as made, up to 24 000 triangles: drawn only within 30 m, a few at a time; it was cut
   // to 9 000, half or less of most of them, and looked unfinished)
   const tot = parts.paint.count / 3 + parts.kit.count / 3;
   const k0 = Math.min(1, 24000 / Math.max(1, tot));
   const outside = (s) => s.filter((t) => s.glow[t] !== -1);
   const near = { paint: indexed(parts.paint, (parts.paint.count / 3) * k0, [], 0.004), kit: indexed(parts.kit, (parts.kit.count / 3) * k0, [], 0.004), glass: indexed(parts.glass), wheel: wheelGeo ? indexed(wheelGeo, 900, [], 0.01) : null };
-  const midL = { paint: indexed(parts.paint, Math.max(400, parts.paint.count / 3 * 0.45), [], 0.02), kit: indexed(outside(parts.kit), Math.max(400, parts.kit.count / 3 * 0.35), [], 0.02), glass: indexed(parts.glass, Math.max(50, parts.glass.count / 3 * 0.5), [], 0.02), wheel: wheelGeo ? indexed(wheelGeo, 240, [], 0.03) : null };
+  const midL = { paint: indexed(parts.paint, Math.max(400, parts.paint.count / 3 * 0.45), [], 0.02), kit: indexed(parts.kit, Math.max(400, outside(parts.kit).count / 3 * 0.35 + (parts.kit.count - outside(parts.kit).count) / 3 * 0.2), [], 0.02), glass: indexed(parts.glass, Math.max(50, parts.glass.count / 3 * 0.5), [], 0.02), wheel: wheelGeo ? indexed(wheelGeo, 240, [], 0.03) : null };
   const farS = new Soup().append(parts.paint).append(outside(parts.kit));
   const gl = parts.glass;
   for (let i = 0; i < gl.count; i++) farS.push(new THREE.Vector3().fromArray(gl.pos, i * 3), new THREE.Vector3().fromArray(gl.nor, i * 3), WHITE, [0.02, 0.025, 0.03], [0.1, 0.3], 0, 0);
@@ -373,7 +405,7 @@ async function build(entry, io) {
     if (full) {
       // (colours and finishes as bytes: they are factors, not fine detail)
       const u8 = (arr) => Uint8Array.from(arr, (x) => Math.round(Math.min(1, Math.max(0, x)) * 255));
-      prim.setAttribute('TEXCOORD_0', a(g.uv, 'VEC2')).setAttribute('COLOR_0', a(u8(g.col), 'VEC3').setNormalized(true)).setAttribute('_PBR', a(u8(g.pbr), 'VEC2').setNormalized(true)).setAttribute('_GLOW', a(Uint8Array.from(g.glow, (x) => Math.max(0, x)), 'SCALAR'));
+      prim.setAttribute('TEXCOORD_0', a(g.uv, 'VEC2')).setAttribute('COLOR_0', a(u8(g.col), 'VEC3').setNormalized(true)).setAttribute('_PBR', a(u8(g.pbr), 'VEC2').setNormalized(true)).setAttribute('_GLOW', a(Uint8Array.from(g.glow, (x) => (x < 0 ? 3 : x)), 'SCALAR')); // (3: the inside, shaded by the roof)
       if (name === 'far') prim.setAttribute('_PAINT', a(Uint8Array.from(g.paint), 'SCALAR'));
     }
     sc.addChild(out.createNode(name).setMesh(out.createMesh(name).addPrimitive(prim)));

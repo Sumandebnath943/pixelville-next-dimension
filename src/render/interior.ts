@@ -66,6 +66,78 @@ function mat(m: Mat): THREE.Material {
   }
   return MATS[m]!;
 }
+/* V2: the paintings (a handful of pictures painted once: landscapes, a seascape, still lifes, abstracts) and the view
+   out of the windows (sky, hills, a tree line and the houses across the street), so the glass shows somewhere
+   outside rather than a flat white sheet */
+const ART: THREE.Texture[] = [];
+function artTex(seed: number): THREE.Texture {
+  const k = seed % 8;
+  if (!ART[k]) {
+    const c = document.createElement('canvas');
+    c.width = 192; c.height = 128;
+    const g = c.getContext('2d')!;
+    let s = k * 9301 + 49297;
+    const r = (): number => ((s = (s * 9301 + 49297) % 233280) / 233280);
+    const pal = [['#9cc4e4', '#e8d8b0', '#6a8a4a', '#3a5a2a'], ['#f0b080', '#f8e0b0', '#5a6a8a', '#2a3a5a'], ['#c8d8e0', '#8ab0c8', '#2a5a7a', '#e8e0d0'],
+      ['#3a2a24', '#c8a050', '#8a2a20', '#e8d8b8'], ['#e8e4dc', '#c83a2a', '#2a4a8a', '#e8c02a'], ['#b8c8a8', '#e0d8c0', '#7a8a5a', '#4a5a3a'],
+      ['#283848', '#e8c890', '#c87a4a', '#f0e8d8'], ['#d8c8e0', '#8a6a9a', '#e8d0a0', '#4a3a5a']][k];
+    if (k === 3 || k === 7) { // a still life: a dark ground, a bowl and fruit
+      g.fillStyle = pal[0]; g.fillRect(0, 0, 192, 128);
+      g.fillStyle = pal[3]; g.fillRect(0, 88, 192, 40);
+      g.fillStyle = pal[1]; g.beginPath(); g.ellipse(96, 86, 46, 14, 0, 0, Math.PI); g.fill();
+      for (let i = 0; i < 5; i++) { g.fillStyle = [pal[2], pal[1], '#7a9a3a'][i % 3]; g.beginPath(); g.arc(70 + i * 13, 74 - (i % 2) * 8, 11, 0, Math.PI * 2); g.fill(); }
+    } else if (k === 4) { // an abstract in blocks of colour
+      g.fillStyle = pal[0]; g.fillRect(0, 0, 192, 128);
+      for (let i = 0; i < 7; i++) { g.fillStyle = pal[1 + (i % 3)]; g.fillRect(r() * 150, r() * 100, 20 + r() * 60, 14 + r() * 40); }
+      g.strokeStyle = '#1a1a1a'; g.lineWidth = 4; g.strokeRect(10, 10, 172, 108);
+    } else { // a landscape (or the sea): sky, far hills, near ground
+      const sky = g.createLinearGradient(0, 0, 0, 80);
+      sky.addColorStop(0, pal[0]); sky.addColorStop(1, pal[1]);
+      g.fillStyle = sky; g.fillRect(0, 0, 192, 128);
+      g.fillStyle = pal[2];
+      g.beginPath(); g.moveTo(0, 80);
+      for (let x = 0; x <= 192; x += 16) g.lineTo(x, 62 + Math.sin(x * 0.05 + k) * 10 + r() * 6);
+      g.lineTo(192, 128); g.lineTo(0, 128); g.fill();
+      g.fillStyle = pal[3]; g.fillRect(0, 96, 192, 32);
+      if (k !== 2) for (let i = 0; i < 6; i++) { const x = r() * 192; g.beginPath(); g.ellipse(x, 92, 8, 14, 0, 0, Math.PI * 2); g.fill(); }
+      else { g.fillStyle = '#f8f4ec'; g.beginPath(); g.moveTo(110, 88); g.lineTo(124, 60); g.lineTo(124, 88); g.fill(); }
+    }
+    // brush texture: a light speckle over all of it
+    for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '0,0,0'},0.05)`; g.fillRect(r() * 192, r() * 128, 2, 2); }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    ART[k] = t;
+  }
+  return ART[k];
+}
+let VIEW: THREE.Texture | null = null;
+function viewTex(): THREE.Texture {
+  if (!VIEW) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 256;
+    const g = c.getContext('2d')!;
+    const sky = g.createLinearGradient(0, 0, 0, 150);
+    sky.addColorStop(0, '#9cc0e0'); sky.addColorStop(1, '#e6eef4');
+    g.fillStyle = sky; g.fillRect(0, 0, 256, 256);
+    g.fillStyle = '#9aaa9a'; // far hills, hazy
+    g.beginPath(); g.moveTo(0, 140);
+    for (let x = 0; x <= 256; x += 8) g.lineTo(x, 118 + Math.sin(x * 0.03) * 12 + Math.sin(x * 0.11) * 4);
+    g.lineTo(256, 256); g.lineTo(0, 256); g.fill();
+    g.fillStyle = '#5a7a4a'; // the tree line
+    for (let x = -10; x < 270; x += 14) { g.beginPath(); g.ellipse(x, 150 + Math.sin(x) * 3, 12, 20, 0, 0, Math.PI * 2); g.fill(); }
+    for (let i = 0; i < 4; i++) { // the houses across the street
+      const x = 10 + i * 64, w = 48, h = 44 + (i % 2) * 10;
+      g.fillStyle = ['#e8dcc8', '#c8a888', '#d8d0c0', '#b89878'][i]; g.fillRect(x, 200 - h, w, h);
+      g.fillStyle = ['#8a3a2a', '#5a5a60', '#7a3a2a', '#4a4a50'][i]; g.beginPath(); g.moveTo(x - 4, 200 - h); g.lineTo(x + w / 2, 200 - h - 18); g.lineTo(x + w + 4, 200 - h); g.fill();
+      g.fillStyle = '#4a5a6a'; for (const wx of [8, 30]) g.fillRect(x + wx, 200 - h + 10, 10, 12);
+    }
+    g.fillStyle = '#7a8a6a'; g.fillRect(0, 200, 256, 16); // the verge
+    g.fillStyle = '#6a6a6c'; g.fillRect(0, 216, 256, 40); // the street
+    VIEW = new THREE.CanvasTexture(c);
+    VIEW.colorSpace = THREE.SRGBColorSpace;
+  }
+  return VIEW;
+}
 let ENVMAP: THREE.Texture | null = null;
 function roomEnv(renderer: THREE.WebGLRenderer): THREE.Texture {
   if (!ENVMAP) {
@@ -139,7 +211,9 @@ export class InteriorScene {
     };
     wall(L.w, L.h, 0, L.h / 2, -hd, 0);
     // what you see through the glass: the day (or night) outside
-    this.outside = new THREE.MeshBasicMaterial({ color: '#cfe0f0' });
+    this.outside = new THREE.MeshBasicMaterial({ color: '#cfe0f0', map: viewTex() });
+    // (V2: and curtains either side of every window, in a soft shade of the room's accent)
+    this.curtain = new THREE.Color(th.accent).lerp(new THREE.Color('#f4efe6'), 0.45);
     this.disposables.push(this.outside);
     // side walls, with windows if the room has them
     for (const sx of [-1, 1]) {
@@ -165,6 +239,17 @@ export class InteriorScene {
     };
     glassFront(doorW, 2.4, 0, 1.2);
     for (const sx of [-1, 1]) glassFront(sideW - 0.8, 1.5, sx * (doorW / 2 + sideW / 2), 1.65);
+    for (const sx of [-1, 1]) this.curtains(sx * (doorW / 2 + sideW / 2), hd - 0.09, sideW - 0.8, 'x', 0.9, 1.5);
+
+    // V2: the paintings hung on the free walls (interiors/plan.ts dress)
+    for (const a of L.art) {
+      const am = new THREE.MeshStandardMaterial({ map: artTex(a.seed), roughness: 0.75 });
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(a.w, a.h), am);
+      m.position.set(a.x, a.y, a.z);
+      m.rotation.y = a.ry;
+      S.add(m);
+      this.disposables.push(am, m.geometry);
+    }
 
     // trim: skirting all round, the door frame and its mullion, window sills
     const trim: THREE.BufferGeometry[] = [];
@@ -240,12 +325,30 @@ export class InteriorScene {
     this.disposables.push(this.fixtures);
     const fixGeo = new THREE.CylinderGeometry(0.22, 0.26, 0.06, 16);
     this.disposables.push(fixGeo);
+    // V2: under a room's ordinary ceiling, a pendant: the flex, a fabric shade and the bulb's glow under it (the
+    // lamps were flat white discs on the ceiling); a hall's high ceiling keeps its flush lights
+    const pendants = L.h <= 3.4;
+    const shadeGeo = new THREE.CylinderGeometry(0.13, 0.3, 0.26, 20, 1, true), flexGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.55, 6), bulbGeo = new THREE.CircleGeometry(0.26, 20);
+    const shadeMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(th.trim).lerp(new THREE.Color('#e8dcc4'), 0.6), roughness: 0.95, side: THREE.DoubleSide, emissive: new THREE.Color('#ffd9a0'), emissiveIntensity: 0.12 });
+    this.disposables.push(shadeGeo, flexGeo, bulbGeo, shadeMat);
     const ranked = [...L.lights].sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z));
     for (const l of L.lights) {
       if (l.y > L.h - 0.4) {
-        const f = new THREE.Mesh(fixGeo, this.fixtures);
-        f.position.set(l.x, L.h - 0.03, l.z);
-        S.add(f);
+        if (!pendants) {
+          const f = new THREE.Mesh(fixGeo, this.fixtures);
+          f.position.set(l.x, L.h - 0.03, l.z);
+          S.add(f);
+          continue;
+        }
+        const flex = new THREE.Mesh(flexGeo, mat('metal'));
+        flex.position.set(l.x, L.h - 0.275, l.z);
+        const shade = new THREE.Mesh(shadeGeo, shadeMat);
+        shade.position.set(l.x, L.h - 0.68, l.z);
+        shade.castShadow = false;
+        const bulb = new THREE.Mesh(bulbGeo, this.fixtures);
+        bulb.rotation.x = Math.PI / 2;
+        bulb.position.set(l.x, L.h - 0.8, l.z);
+        S.add(flex, shade, bulb);
       }
     }
     for (const l of ranked.slice(0, MAX_LAMPS)) {
@@ -276,6 +379,28 @@ export class InteriorScene {
     parts.forEach((g) => g.dispose());
     this.scene.add(f);
     this.disposables.push(pane.geometry, f.geometry);
+    this.curtains(inX - sx * 0.1, z, 1.3, 'z', y0, wh);
+  }
+
+  /** V2: a pair of curtains drawn back either side of a window `w` wide (centred at x, z, along the wall's `along`), on
+   *  a rod above it: each in folds, from just above the window to below its sill */
+  private curtain = new THREE.Color('#d8d0c0');
+  private curtains(x: number, z: number, w: number, along: 'x' | 'z', y0: number, wh: number): void {
+    const parts: THREE.BufferGeometry[] = [], c = this.curtain, dark = c.clone().multiplyScalar(0.82), rod = new THREE.Color('#3a3026');
+    const top = y0 + wh + 0.22, bot = Math.max(0.05, y0 - 0.3), ch = top - bot;
+    for (const e of [-1, 1]) {
+      const at = w / 2 + 0.12;
+      for (let k = 0; k < 4; k++) { // four folds, alternately lit and shaded
+        const o = e * (at - 0.1 + k * 0.07), dep = k % 2 ? 0.07 : 0.05, col = k % 2 ? dark : c;
+        parts.push(along === 'x' ? boxGeo(x + o, bot, z - (k % 2) * 0.015, 0.075, ch, dep, col) : boxGeo(x - Math.sign(x) * (k % 2) * 0.015, bot, z + o, dep, ch, 0.075, col));
+      }
+    }
+    parts.push(along === 'x' ? boxGeo(x, top, z + 0.02, w + 0.9, 0.035, 0.035, rod) : boxGeo(x + Math.sign(x) * 0.02, top, z, 0.035, 0.035, w + 0.9, rod));
+    const m = new THREE.Mesh(mergeGeometries(parts), mat('fabric'));
+    parts.forEach((g) => g.dispose());
+    m.receiveShadow = true;
+    this.scene.add(m);
+    this.disposables.push(m.geometry);
   }
 
   /** follow the light outside: `day` 0 (night) … 1 (bright day), `lampsOn` 0 … 1, `power` 0 in a blackout */

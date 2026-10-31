@@ -59,13 +59,13 @@
     "glass0": 216,
     "wheel0": 899,
     "paint1": 2114,
-    "kit1": 3429,
+    "kit1": 2934,
     "glass1": 108,
     "wheel1": 316,
     "far": 2266
    },
    "file": "ace.glb",
-   "bytes": 397756
+   "bytes": 397560
   },
   {
    "id": "sigil",
@@ -125,13 +125,13 @@
     "glass0": 326,
     "wheel0": 900,
     "paint1": 2255,
-    "kit1": 2156,
+    "kit1": 1961,
     "glass1": 163,
     "wheel1": 479,
     "far": 1744
    },
    "file": "sigil.glb",
-   "bytes": 327504
+   "bytes": 328036
   },
   {
    "id": "milano",
@@ -191,13 +191,13 @@
     "glass0": 304,
     "wheel0": 899,
     "paint1": 2019,
-    "kit1": 3294,
+    "kit1": 2693,
     "glass1": 152,
     "wheel1": 315,
     "far": 1600
    },
    "file": "milano.glb",
-   "bytes": 354116
+   "bytes": 354532
   },
   {
    "id": "compact",
@@ -257,13 +257,13 @@
     "glass0": 190,
     "wheel0": 900,
     "paint1": 1460,
-    "kit1": 2222,
+    "kit1": 2174,
     "glass1": 95,
     "wheel1": 486,
     "far": 2366
    },
    "file": "compact.glb",
-   "bytes": 342336
+   "bytes": 345936
   },
   {
    "id": "kiri",
@@ -323,13 +323,13 @@
     "glass0": 136,
     "wheel0": 899,
     "paint1": 1454,
-    "kit1": 2058,
+    "kit1": 1829,
     "glass1": 67,
     "wheel1": 316,
     "far": 1594
    },
    "file": "kiri.glb",
-   "bytes": 301980
+   "bytes": 301200
   },
   {
    "id": "trinity",
@@ -389,13 +389,13 @@
     "glass0": 354,
     "wheel0": 981,
     "paint1": 3939,
-    "kit1": 1974,
+    "kit1": 1777,
     "glass1": 177,
     "wheel1": 504,
     "far": 1607
    },
    "file": "trinity.glb",
-   "bytes": 370096
+   "bytes": 369272
   },
   {
    "id": "carter",
@@ -453,13 +453,13 @@
     "kit0": 12927,
     "glass0": 366,
     "wheel0": 1157,
-    "kit1": 4524,
+    "kit1": 4307,
     "glass1": 182,
     "wheel1": 592,
     "far": 2065
    },
    "file": "carter.glb",
-   "bytes": 350244
+   "bytes": 351036
   },
   {
    "id": "urban",
@@ -519,13 +519,13 @@
     "glass0": 332,
     "wheel0": 899,
     "paint1": 2376,
-    "kit1": 2387,
+    "kit1": 2139,
     "glass1": 166,
     "wheel1": 316,
     "far": 1597
    },
    "file": "urban.glb",
-   "bytes": 333348
+   "bytes": 333664
   },
   {
    "id": "fairheaven",
@@ -585,13 +585,13 @@
     "glass0": 200,
     "wheel0": 720,
     "paint1": 2858,
-    "kit1": 3466,
+    "kit1": 2908,
     "glass1": 100,
     "wheel1": 253,
     "far": 1555
    },
    "file": "fairheaven.glb",
-   "bytes": 393300
+   "bytes": 395688
   },
   {
    "id": "pickup",
@@ -651,13 +651,13 @@
     "glass0": 160,
     "wheel0": 866,
     "paint1": 2819,
-    "kit1": 3803,
+    "kit1": 3400,
     "glass1": 80,
     "wheel1": 315,
     "far": 1700
    },
    "file": "pickup.glb",
-   "bytes": 413696
+   "bytes": 411880
   },
   {
    "id": "police",
@@ -715,13 +715,13 @@
     "kit0": 14720,
     "glass0": 332,
     "wheel0": 900,
-    "kit1": 5152,
+    "kit1": 4904,
     "glass1": 166,
     "wheel1": 358,
     "far": 1599
    },
    "file": "police.glb",
-   "bytes": 399956
+   "bytes": 401960
   },
   {
    "id": "taxi",
@@ -779,13 +779,13 @@
     "kit0": 15848,
     "glass0": 284,
     "wheel0": 862,
-    "kit1": 5546,
+    "kit1": 4911,
     "glass1": 141,
     "wheel1": 389,
     "far": 1965
    },
    "file": "taxi.glb",
-   "bytes": 442928
+   "bytes": 442312
   },
   {
    "id": "ambulance",
@@ -843,13 +843,13 @@
     "kit0": 22455,
     "glass0": 140,
     "wheel0": 765,
-    "kit1": 7858,
+    "kit1": 7162,
     "glass1": 70,
     "wheel1": 249,
     "far": 1865
    },
    "file": "ambulance.glb",
-   "bytes": 665096
+   "bytes": 664140
   },
   {
    "id": "van",
@@ -909,13 +909,13 @@
     "glass0": 140,
     "wheel0": 765,
     "paint1": 3500,
-    "kit1": 4120,
+    "kit1": 3424,
     "glass1": 70,
     "wheel1": 253,
     "far": 1599
    },
    "file": "van.glb",
-   "bytes": 432092
+   "bytes": 431320
   },
   {
    "id": "utility",
@@ -975,13 +975,13 @@
     "glass0": 192,
     "wheel0": 826,
     "paint1": 1869,
-    "kit1": 6307,
+    "kit1": 5570,
     "glass1": 96,
     "wheel1": 328,
     "far": 2405
    },
    "file": "utility.glb",
-   "bytes": 664948
+   "bytes": 666200
   },
   {
    "id": "tow",
@@ -1039,13 +1039,13 @@
     "kit0": 21722,
     "glass0": 192,
     "wheel0": 826,
-    "kit1": 7602,
+    "kit1": 6872,
     "glass1": 96,
     "wheel1": 328,
     "far": 2344
    },
    "file": "tow.glb",
-   "bytes": 660892
+   "bytes": 662896
   },
   {
    "id": "truck",
@@ -1105,13 +1105,13 @@
     "glass0": 174,
     "wheel0": 826,
     "paint1": 1763,
-    "kit1": 2747,
+    "kit1": 2637,
     "glass1": 86,
     "wheel1": 328,
     "far": 1612
    },
    "file": "truck.glb",
-   "bytes": 465240
+   "bytes": 465584
   },
   {
    "id": "bus",
@@ -1129,12 +1129,14 @@
    "beamAt": null,
    "rotorAt": null,
    "tris": {
-    "kit0": 5559,
-    "kit1": 1945,
+    "kit0": 5535,
+    "glass0": 88,
+    "kit1": 2902,
+    "glass1": 50,
     "far": 1999
    },
    "file": "bus.glb",
-   "bytes": 199256
+   "bytes": 233432
   },
   {
    "id": "fire",
@@ -1261,12 +1263,12 @@
    "tris": {
     "kit0": 24000,
     "glass0": 94,
-    "kit1": 15337,
+    "kit1": 15331,
     "glass1": 50,
     "far": 5250
    },
    "file": "loco.glb",
-   "bytes": 425776
+   "bytes": 426188
   },
   {
    "id": "railcar",
@@ -1286,12 +1288,12 @@
    "tris": {
     "kit0": 23567,
     "glass0": 992,
-    "kit1": 8247,
+    "kit1": 7413,
     "glass1": 736,
     "far": 2341
    },
    "file": "railcar.glb",
-   "bytes": 501624
+   "bytes": 499352
   },
   {
    "id": "boxcar",

@@ -1115,7 +1115,12 @@ export const Traffic = {
               const q: any = pd.o;
               // (V2: someone not yet out on the pavement, setting off from their door this tick, isn't in the road)
               if (q?.state === 'walk' && q.trip && !q.trip.car && !q.trip.taxi && !q.trip.moto && !q.trip.walk) continue;
-              const px = isFounder(q) ? pd.x : (q.x ?? pd.x * T) / T, py = isFounder(q) ? pd.y : (q.y ?? pd.y * T) / T;
+              // (V2: someone standing is where they were indexed: a villager waiting at their door for a cab or a gap is
+              // on the pavement there, though their trip's pose is still out in the lane, and a queue at a stop stands
+              // at its places. They were "knocked down" in the lane by every car that passed: dozens a day, and the
+              // hurt left lying in the road for the ambulance)
+              const idx = isFounder(q) || pd.still;
+              const px = idx ? pd.x : (q.x ?? pd.x * T) / T, py = idx ? pd.y : (q.y ?? pd.y * T) / T;
               const rx = px - vx, ry = py - vy;
               if (Math.abs(rx * fx + ry * fy) > ob.len / 2 + 0.05 || Math.abs(rx * -fy + ry * fx) > 0.15) continue;
               const k = `${rank(o)}:${rank(q)}`;

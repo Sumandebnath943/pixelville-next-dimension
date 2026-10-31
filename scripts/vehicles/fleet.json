@@ -16,7 +16,7 @@
   { "id": "utility", "src": "lightbody_90_md_utility_-_low_poly_model.glb", "kind": "utility" },
   { "id": "tow", "src": "lightbody_90_md_tow_truck_-_low_poly_model.glb", "kind": "tow", "tint": false },
   { "id": "truck", "src": "lct_3000_07-_low_poly_model.glb", "kind": "truck" },
-  { "id": "bus", "src": "city_bus_-_rigged__-5236.glb", "kind": "bus", "forward": "-z", "drop": "shadow", "wheels": false, "far": 2000 },
+  { "id": "bus", "src": "city_bus_-_rigged__-5236.glb", "kind": "bus", "forward": "-z", "drop": "shadow|IntDoors", "wheels": false, "far": 2000, "windows": "RoAZ_5236$" },
   { "id": "fire", "src": "firetruck.glb", "kind": "fire", "forward": "auto", "length": 9.4, "wheels": false, "glow": { "far": 1, "lamba": 5, "tepe": 5 }, "far": 2000 },
   { "id": "tractor", "src": "tractor_sgw3.glb", "kind": "tractor", "forward": "auto", "length": 4.0, "wheels": false, "far": 1500 },
   { "id": "scooter", "src": "piaggio_si_scooter.glb", "kind": "moto", "forward": "auto", "length": 1.75, "wheels": false, "far": 800 },

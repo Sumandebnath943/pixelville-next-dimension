@@ -14,7 +14,7 @@ import { Calamity } from './calamity';
 import { Settings } from './settings';
 import { Traffic, CAR_LEN, LANE, lanePose, kerbside } from './traffic';
 import { Walk } from './walking';
-import { spotFor, baySpot, carParkNear, claimBay, bayHeld, parkInBay, leaveBay, spotTile, kerbHeading, outPlan, parkDuration } from './parking';
+import { spotFor, driveCount, baySpot, carParkNear, claimBay, bayHeld, parkInBay, leaveBay, spotTile, kerbHeading, outPlan, parkDuration } from './parking';
 import { Rep } from './reputation';
 import { Health } from './health';
 import { Edu, ESSENTIAL } from './education';
@@ -886,7 +886,13 @@ export const Sim: any = {
       // a car showroom in town makes buying easier (and pays the dealer)
       const showroom = World.buildings.find((o: Building) => o.type === 'carshowroom' && o.connected && !o.ruined && !o.construction);
       const adults = b.residents.filter((r: Person) => r.kind !== 'kid').length;
-      const carCap = b.level >= 3 ? 3 : Math.min(2, adults);
+      // (V2: and no more than the plot has a drive spot for: a second car had nowhere to stand, and drove up to the
+      // front door and stopped there in the street on every trip home. One already owned beyond that is sold)
+      const carCap = Math.min(b.level >= 3 ? 3 : Math.min(2, adults), driveCount(b));
+      if (b.cars.length > driveCount(b)) {
+        const spare = b.cars.findLastIndex((c: Car) => c.free);
+        if (spare >= 0 && spare >= driveCount(b)) { b.cars.splice(spare, 1); b.funds += 150; }
+      }
       if (b.cars.length < carCap && b.funds >= (b.cars.length >= 2 ? 550 : 350)) {
         const price = (b.cars.length >= 2 ? 420 : 250) * (showroom ? 0.9 : 1);
         b.funds -= price;
@@ -1775,12 +1781,14 @@ export const Sim: any = {
     const carMin = ((Weather.isRaining() || Weather.isSnowing())) ? 8 : CAR_MIN_DIST;
     let car = p.carHeld || null;
     if (!car && p.kind !== 'kid' && path.length >= carMin) {
-      car = p.home.cars.find((c: Car) => c.free) || null;
+      // (V2: one with a drive spot at home to come back to)
+      car = p.home.cars.find((c: Car) => c.free && spotFor(p.home, c)) || null;
       if (car) car.free = false;
     }
     // V2: somewhere to leave it at the other end, booked now: a bay of the place's own, else one at a public car park
     // near it. With neither, the car stays at home (it used to be driven there and left standing at the front door)
-    let at: Building = dest, toBay = -1;
+    let at: Building = dest, toBay = -1, leftAt: Building | null = null;
+    const held = p.carHeld;
     if (car && dest !== p.home) {
       toBay = claimBay(dest, p);
       if (toBay < 0) {
@@ -1788,6 +1796,9 @@ export const Sim: any = {
         if (cp) { toBay = claimBay(cp, p); if (toBay >= 0) at = cp; }
       }
       if (toBay < 0 && !p.carHeld) { car.free = true; car = null; }
+      // (V2: driven here, and nowhere to leave it there either: it stays in the bay it stands in, and they go on
+      // without it, to fetch it on the way home, as from a car park. It was driven over and left at the front door)
+      else if (toBay < 0 && park !== p.home && bayHeld(park, p) >= 0) { leftAt = park; car = null; }
     }
     // no car free? the family motorcycle covers the middle distances
     let moto = false;
@@ -1815,6 +1826,7 @@ export const Sim: any = {
     }
     // (V2: a car parks from the near row of an avenue, in line with the traffic, not across the far row: sim/traffic.ts)
     p.trip = { path: car || taxi || moto ? kerbside(usePath) : usePath, prog: 0, car, taxi, moto };
+    if (leftAt) { p.trip.keepCar = held; p.carLotId = leftAt.id; }
     // V2 (Milestone 8): a car pulls out of its spot (the family's driveway, the venue's bay it took) once there's
     // a gap in the traffic, and turns into its spot at the other end, rather than appearing in the road
     if (car || moto || taxi) {

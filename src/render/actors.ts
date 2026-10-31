@@ -64,6 +64,8 @@ interface CarSlot { car: CarModel; kind: string; x: number; z: number; yaw: numb
 
 /* V2 (Milestone 9): which downloaded model draws each vehicle type, and how many of each model can be on screen */
 const TYPE_KIND: Record<string, string> = { car: 'car', taxi: 'taxi', police: 'police', fire: 'fire', ambulance: 'ambulance', truck: 'truck', van: 'utility', tractor: 'tractor', bus: 'bus', moto: 'moto', bicycle: 'bicycle', loco: 'loco', coach: 'coach', wagon: 'wagon', boat: 'boat', ferry: 'ferry', heli: 'heli', plane: 'plane' };
+/** the vehicles drawn as full models near the camera */
+const NEAR_TYPES = new Set(['car', 'taxi', 'police', 'bus', 'van', 'truck', 'ambulance', 'fire', 'tractor']);
 const FLEET_CAPS: Record<string, number> = { car: 140, taxi: 40, police: 30, fire: 12, ambulance: 8, truck: 24, utility: 9, van: 9, tow: 6, tractor: 6, bus: 24, moto: 80, bicycle: 40, loco: 16, coach: 60, wagon: 50, boat: 30, ferry: 3, heli: 6, plane: 6 };
 
 const PX = 0.5;
@@ -317,11 +319,12 @@ export class Actors {
   }
   /** a vehicle this frame; `parked` ones stand with their lights off */
   vehicle(type: string, x: number, y: number, z: number, yaw: number, paint: THREE.Color, opts: VehOpts = {}): void {
-    // nearby cars, cabs and patrol cars are drawn as full models
-    if ((type === 'car' || type === 'taxi' || type === 'police') && !opts.scale && this.carWant.length < nearCars() * 2) {
+    // nearby road vehicles are drawn as full models (V2: buses, vans, lorries, ambulances, fire engines and tractors
+    // too: they were always the far model, a shell with no cabin, and a bus's windows were empty holes in it)
+    if (NEAR_TYPES.has(type) && !opts.scale && this.carWant.length < nearCars() * 2) {
       const d2 = (x - this.camX) ** 2 + (z - this.camZ) ** 2;
       if (d2 < nearCarsR() ** 2) {
-        this.carWant.push({ type, x, y, z, yaw, paint: paint.clone(), siren: !!opts.siren, pitch: opts.pitch || 0, roll: opts.roll || 0, parked: !!opts.parked });
+        this.carWant.push({ type, x, y, z, yaw, paint: paint.clone(), siren: !!(opts.siren || opts.beacon), pitch: opts.pitch || 0, roll: opts.roll || 0, parked: !!opts.parked });
         return;
       }
     }
@@ -1412,6 +1415,8 @@ export class Actors {
       if (shown >= nearCars()) { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, pitch: w.pitch, roll: w.roll, parked: w.parked }); continue; }
       const style = w.type === 'taxi' ? 'sedan' : w.type === 'police' ? 'estate' : styleForPaint(w.paint);
       const model = this.modelFor(w.type, w.paint);
+      // (only a car has a code-built stand-in: anything else without its model stays the far one)
+      if (!model && w.type !== 'car' && w.type !== 'taxi' && w.type !== 'police') { this.instancedVehicle(w.type, w.x, w.y, w.z, w.yaw, w.paint, { siren: w.siren, parked: w.parked }); continue; }
       const kind = `${w.type}:${model ? model.id : style}`;
       // the same car as last frame: the nearest slot of this kind within a few metres
       let best: CarSlot | null = null, bd = 36;
