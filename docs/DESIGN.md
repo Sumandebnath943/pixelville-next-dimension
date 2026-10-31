@@ -27,7 +27,7 @@ PixelVille V1 is a living village you watched from above: you drop buildings, an
 | --- | --- |
 | Platform | Browser. TypeScript + Vite + Three.js; Rapier for vehicle/character physics when needed (M1 uses light grid collision — see MILESTONES). |
 | Players | Single-player. Simulation is engine-agnostic and command-driven so online co-op can be added later. |
-| Art | Stylized low-poly. Buildings, terrain and props generated procedurally; CC0 rigged characters and vehicles (M1 ships procedural ones). |
+| Art | Semi-realistic PBR (chosen 2026-10-23). Buildings, terrain, trees, props and textures generated procedurally; since 9j, Microsoft Rocketbox villagers (MIT) and credited CC BY 4.0 vehicles and animals (M1 shipped procedural ones). |
 | Player role | God with an avatar ("the Founder"): free building in Planner view, street-level roaming, no needs, no aging. |
 | Money | Light personal wallet: playable job shifts pay you; you spend on food, tickets, vehicles, flights, fines. God-mode building stays free. |
 | Time | A day ≈ 24 real minutes at 1×. Villagers age one year per in-game week. A year is still 28 days (4 seasons × 7). |

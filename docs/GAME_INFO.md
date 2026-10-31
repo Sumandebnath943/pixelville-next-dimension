@@ -20,7 +20,7 @@ It is the sequel to the original 2D, top-down PixelVille. Every one of the origi
 | Villagers | Every person simulated individually: traits, memories, friends, jobs, health, schooling, opinion of you |
 | Tech | TypeScript, Three.js, Vite, Vercel; AI villager chat through Groq |
 | Graphics | Low, Medium and High picked for your device; Ultra (every small shadow, full reflections) when you choose it |
-| Assets | None downloaded: every building, person, vehicle, texture, tree and sound is generated in code |
+| Assets | The world, buildings, trees, textures and sound are generated in code; villagers (Microsoft Rocketbox, MIT), vehicles and animals (CC BY 4.0) are downloaded models, every one credited |
 
 ### Design pillars
 
@@ -70,7 +70,7 @@ You found a village from the sky, then live in it at street level: build what it
 
 A lost scenario never ends the game: the map carries on as a sandbox.
 
-**Auto village.** One press lays out and fills a whole village (an avenue grid with a square of shops, the town hall and church, services round the blocks, homes with gardens, works, farms and a power plant, about 150 villagers moving in) and then shows it from the air, the camera drifting from one view of it to the next. Drag turns the view, the wheel comes closer, H hides the panel. The panel pins a **season** (or follows the calendar), a **weather** (or lets it change), a **festival** (New Year, Easter, Diwali, Christmas: its decorations go up, and the fireworks after dark) and the **pace** (pause to 8×; Christmas keeps its own 1× pace). *Another view*, *New village*, or *Play this village* to take it over from the Lodge.
+**Auto village.** One press lays out and fills a whole village (an avenue grid with a square of shops, the town hall and church, services round the blocks, homes with gardens, works, farms and a power plant, about 150 villagers moving in) and then shows it from the air, the camera drifting from one view of it to the next. Drag turns the view, the wheel comes closer, H hides the panel. The panel pins a **season** (or follows the calendar), a **weather** (or lets it change), a **festival** (New Year, Easter, Diwali, Christmas: its decorations go up, and the fireworks after dark) and the **pace** (pause to 8×; Christmas keeps its own 1× pace). *Another view*, *New village*, or *Play this village* to take it over from the Lodge. **Four sizes:** a *Hamlet* (a dozen homes round a crossroads, a shop, a café, a farm and a bus), a *Village* (the square, fifty homes, schools, works and farms), a *Town* (a wider grid and a railway with stations and level crossings) and *Full* (every kind of building, the railway, an airport, a harbour with its ferry and a heliport, all connected).
 
 ### Saving
 
@@ -229,6 +229,10 @@ The tree is a 24 m spruce with 1,400 lights, a star and garlands. It is lit 05:0
 ### Wildlife and ambient life
 
 Hikers on the trails, birds, ducks on the water, butterflies, fireflies, beachgoers, tourists, and sky events, all part of the simulation rather than decoration.
+
+- **Farm and zoo animals:** each farm keeps cows, sheep, a horse and a donkey in its yard (fed and watered, milked, the horse at the plough); the zoo has five themed enclosures (elephants, zebras, a lion, penguins) round its walks, with keepers at the noon feeding.
+- **Wild and street animals:** deer and hares in open country at dawn and dusk, shy of you; pigeons on the parks, the plaza and the shop fronts; a cat in some front gardens; walkers' dogs of four breeds. They wander round obstacles, graze, sit and settle down after dark.
+- **Birds on the wing:** flocks that flap and glide at their own heights and circle the farms and parks.
 
 ## The villagers
 
@@ -486,7 +490,9 @@ Money is never conjured or destroyed; it only enters or leaves at the map's edge
 - **Emergency vehicles** drive in the traffic on blue lights: through red lights, first across junctions, past queues.
 - **Real lanes and bends:** vehicles keep right, follow quarter-circle arcs through corners (tight rights, wide lefts), slow for bends, and swing round dead ends.
 - **Keeping right on avenues:** route planning penalises turns and the oncoming carriageway, so routes are straight and legal; buses run one-way loops; service vehicles plan their own way back.
-- **Parking:** cars wait in their drive for a gap, pull out on a curve, and reverse into their spot at the end of the trip. Venues and workplaces have bays across the front of the plot; cabs queue along the kerb at the rank.
+- **Parking:** every home's plot has its drives (a house or cottage one, the mansion two, the flats a forecourt of three) and a family owns no more cars than it has room for. Venues and workplaces have bays across the front of the plot, each booked by the driver heading for it; a full place sends the car to the nearest **Car Park** (eight bays) and the driver walks on; with nowhere to park at all the car stays at home, and a car with nowhere to go at the next stop stays in its bay while the driver walks on. Cars wait in their drive or bay for a real gap, pull out round the rear axle, arrive along the kerb on the spot's side and back in, never through a wall, fence or another car.
+- **Zebra crossings** at every junction mouth, with a stop line behind them: drivers stop at the line (or run the amber), never on the stripes.
+- **Level crossings:** lights flash 13 seconds before a train, half barriers come down, traffic keeps the tracks clear, and a train slows and stops for anything left on the crossing.
 - **Traffic lights** at the busy junctions the sim chooses, on 8-second phases; level-crossing gates for trains; bridges where roads cross water.
 - **Road rules for villagers too:** a villager who stays in the oncoming lane or drives an avenue's wrong row is fined from the household's funds.
 - **They see you:** drivers queue behind your car, stop for you on foot, and honk after two seconds held up. Emergency vehicles keep right of way and slow for people in the road.
@@ -494,14 +500,14 @@ Money is never conjured or destroyed; it only enters or leaves at the map's edge
 
 ### Pedestrians
 
-Walkers keep to the pavement on their door's side, cross side-street mouths on the crossing line, round corners on the kerb, wait at the kerb for a gap before crossing, each at their own pace and line, stepping aside to pass. People waiting to cross stand a step apart. Nobody walks through anybody, the Founder included; walkers go round cars standing on the pavement, wait for cars crossing it, and step back to the kerb rather than stand in the road.
+Walkers keep to the pavement on their door's side, cross on the zebras at the junction mouths, round corners on the kerb, wait at the kerb for a gap before crossing, each at their own pace and line, stepping aside to pass. People waiting to cross stand a step apart. Nobody walks through anybody, the Founder included; walkers go round cars standing on the pavement, wait for cars crossing it, and step back to the kerb rather than stand in the road. People waiting to cross take places of their own at the kerb and cross two abreast; they wait at a level crossing's barrier while its lights flash. Villagers waiting at their door for a cab or a car stand on the pavement, and passengers step out of a bus's or a cab's kerbside door onto it.
 
 ### Public transport
 
-- **Buses:** the village line chains stops into a loop; up to 3 buses; real queues at stops, longer at rush hour. Service 05:30–21:00, an evening bus, last bus 23:30.
-- **Trains:** player-laid rails carry local, commuter, express and freight services, each on its own track with a timetable; passenger trains run 05:30–23:30 (the original's night sleeper is retired) and freight runs through the night.
+- **Buses:** the village line chains stops into a loop, each stop served at the kerb beside its shelter, clear of the junctions, never turning round in the road; up to 3 buses; real queues at stops, longer at rush hour. Service 05:30–21:00, an evening bus, last bus 23:30.
+- **Trains:** player-laid rails (with bends as wide as there's room for, up to three tiles) carry local, commuter and express multiple units and freight, each on its own track with a timetable; passenger trains run 05:30–23:30 (the original's night sleeper is retired) and freight runs through the night.
 - **The national railway:** a station brings a branch line to the nearest map edge, and the Intercity Express calls every three hours 07:00–22:00, standing 14 minutes at the platform.
-- **Taxis** work the streets from the ranks; the ferry sails 06:00–22:00; flights every three hours; helicopters from the heliport.
+- **Taxis** work the streets from the ranks, waiting pulled in at the kerb along a plain street beside the stand and setting fares down at the kerb by their door, never across the road; the ferry sails 06:00–22:00; flights every three hours; helicopters from the heliport.
 
 ### Crime and justice
 
@@ -528,7 +534,7 @@ You play the Founder: a god with a body who builds for free from the sky but liv
 
 ### Who you are
 
-- A violet coat, gold scarf, wide-brimmed hat and a faint golden ring at your feet. No hunger, sleep or ageing.
+- **Your own look:** founding a village (or Settings → Village → *Your look*) offers a man or a woman and six faces each, drawn as portraits. Whoever you choose wears the Founder's violet coat and gold scarf, with a faint golden ring at your feet; no villager wears it. No hunger, sleep or ageing.
 - Walk, run, jump, drive, ride and work. Third-person camera with wall collision (it never clips into buildings, awnings or balconies) or first person with a gentle head bob.
 - **Health on foot:** a vehicle can knock you down; the screen's edges go red and you mend in 6 seconds; enough of it is "Wasted".
 - **The Founder's Lodge** is your home, spawn point and garage; its drive is always legal parking. The Lodge's garage keys hang on a hook inside.
@@ -640,7 +646,8 @@ Shifts run on the simulation's real events. Start from the phone's Jobs app (it 
 ### Going indoors
 
 - **81 building types** open into a room from 12 templates (home, shop, food and drink, office, workshop, classroom, hospital, police, fire station, terminal, venue, civic hall), re-themed per type: a bakery's glass case and oven, a fast-food menu board, a bank's teller counter, the PVTV news set, a car on the garage lift, the fire engine in its bay, a church's pews and stained glass, cinema rows and screen, the station's departure board.
-- Each room is laid out from the building's own seed, so it's the same every visit. Windows glow with the real light outside.
+- Each room is laid out from the building's own seed, so it's the same every visit. Windows show a view of hills, trees and the houses across the street, lit by the real light outside.
+- **Dressed rooms:** a cornice and (by style) panelling or tiles on the lower wall; paintings (landscapes, a seascape, still lifes, abstracts) on whatever wall is free; curtains at every window; pendant lampshades under ordinary ceilings; potted plants in the empty corners.
 - **The occupants are real:** the staff on shift stand at their posts, customers sit or browse, the family is at home, all coming and going as the simulation moves them.
 - **Use things:** the counter sells the place's own wares (a croissant at the bakery, a film ticket at the cinema, stamps at the post office) at the staff's price for you; sit on seats; the cash machine shows your balance; ticket machines sell tickets.
 - **Door rules:** closed outside opening hours, on fire, ruined or under construction. Homes only if someone's in and likes you. Not with the police after you. If the building catches fire while you're in, everyone's out.
@@ -679,7 +686,7 @@ Tab opens a home screen with the clock, wallet and current route, and eleven app
 
 ## Graphics, sound and performance
 
-The whole game ships with zero image, model or audio files: every building, person, car, tree, texture and sound is generated in code, yet it reaches a semi-realistic look that runs on an integrated laptop GPU and a phone.
+The world ships with no image or audio files: every building, tree, texture and sound is generated in code (only the villagers, vehicles and animals are downloaded models, made small by the game's own build scripts), yet it reaches a semi-realistic look that runs on an integrated laptop GPU and a phone.
 
 ### Light and sky
 
@@ -710,10 +717,11 @@ Gerstner waves that grow with the wind, ripples drifting along each river's own 
 
 ### People and vehicles
 
-- **Skinned people** with real proportions, a shaped head, hair and clothes, and weights blended across every joint. Animation is procedural from gait data: hip, knee and ankle curves, pelvis bob and sway, counter-rotating shoulders, arm swing, idle breathing and weight shifts, looking both ways at a kerb, an umbrella in the rain, and work poses (hammering, carrying, pedalling).
+- **Real people:** 45 Microsoft Rocketbox characters (women, men, children and 14 work uniforms), refitted onto the game's own skeleton; clothes recolour so villagers vary and uniforms keep theirs; faces get their own share of the texture. Animation is procedural from gait data (a walk and a run): hip, knee and ankle curves, pelvis bob and sway, counter-rotating shoulders, arm swing, idle breathing and weight shifts, looking both ways at a kerb, an umbrella in the rain, and work poses (hammering, carrying, pedalling).
 - The nearest 32 villagers are full skinned models; the rest are instanced.
-- **Cars** built from extruded profiles (hatch, sedan, estate, SUV) with taxi signs and police light bars; motorcycles that lean; the nearest 22 are full models. Headlamps sit on the nose (a swept lens, projector bulbs, a running-light strip) with a soft glare seen head-on.
-- 21 instanced vehicle types: car, taxi, police, fire engine, ambulance, truck, van, tractor, bus, motorcycle, locomotive, coach, wagon, boat, ferry, raft, helicopter, plane, balloon, UFO and Santa's sleigh.
+- **Real vehicles:** 30 downloaded models (12 cars, the taxi, police car, ambulance, vans, lorries, the bus, a fire engine, tractor, moped, bicycle, locomotive, railcar, boxcar, airliner, helicopter and three boats), each credited. Paint recolours, wheels turn and steer, lamps, sirens and roof signs glow from the model, rotors spin.
+- **Real glass and cabins:** tinted glass that mirrors the sky at a glance, with the seats behind it shaded as a cabin is; the nearest 22 road vehicles (cars, cabs, police, buses, vans, lorries, ambulances, fire engines, tractors) are full models, the rest one instanced draw per model.
+- Balloons, the UFO, the raft and Santa's sleigh are still built in code.
 - Thought bubbles, one per head, show where someone is going or how they feel.
 
 ### Nature
@@ -760,14 +768,16 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 
 | System | What it does | Scale |
 | --- | --- | --- |
+| Access lanes | A new building's road is a tidy one-tile lane straight from its door to the street, gone again with the building | Small |
 | Accessibility | Interface size, subtitles, colour-vision modes, motion options, rebinding | Medium |
 | Ageing | One year of age per game week; whole lives in weeks of play | Small |
 | AI villager chat | Free conversation grounded in each villager's mind, with validated effects | Big |
 | Airfield | 372 m runway, taxiway, four stands; one plane on the runway at a time | Medium |
+| Animals | 18 modelled species: farm yards, a five-enclosure zoo, deer, hares, pigeons, cats, walkers' dogs, birds on the wing | Medium |
 | Ambulances | Dispatched by road from the nearest hospital; treat at the scene, carry to the ward | Medium |
 | Approval | The mayor's standing from quality of life, builds, scandals, grievances | Small |
 | Auto resolution | Render resolution follows frame rate, never below 80%, sharpened | Small |
-| Auto village | A whole village built and moved into at a press, watched from the air; pin season, weather, festival and pace; take it over | Medium |
+| Auto village | A whole village built and moved into at a press, watched from the air in four sizes (hamlet to the full town); pin season, weather, festival and pace; take it over | Medium |
 | Auto-road | A\* road builder with terrain costs and turn penalty joins every new building | Medium |
 | Autosave | Every 2 or 5 minutes, when the tab hides, and when the graphics card resets | Small |
 | Bag | Up to 16 carried items: food, tickets, souvenirs | Small |
@@ -785,7 +795,9 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Christmas tradition | From scouting the tree on day 15 to its timber going to a new home on day 2 of the next year | Big |
 | Cities beyond the map | Six destinations with sights, souvenirs and journeys | Medium |
 | Claims | Emergencies go to you first on a shift; too slow and the village's crew goes | Small |
+| Car parks | Eight bays for a busy street; a full venue sends drivers there to walk on | Small |
 | Collision | Custom circle-vs-box physics against buildings, trees, water, street furniture | Small |
+| Credits | Every downloaded model's creator, links, licence and changes, on the Credits screen | Small |
 | Community self-building | Villagers pool savings to build what the mayor ignores | Medium |
 | Contacts | Phone list of villagers you've met; call or find them | Small |
 | Controls | One action map for keyboard, gamepad and touch; prompts name your device's buttons | Medium |
@@ -809,6 +821,7 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Fleet | Your vehicles with paint, fuel, damage and whereabouts | Medium |
 | Flights | Every three hours, check-in, gate, take-off, landing | Medium |
 | Forecast | The next weather spell, rolled in advance and always honest | Small |
+| Founder's look | A man or a woman, six faces each, chosen as portraits; in the Founder's coat | Small |
 | Founder's Lodge | Home, spawn point and garage | Small |
 | Friendship | Bonds from meetings, cooling without contact, firm friends announced | Medium |
 | Fuel | Drains with distance; gas stations; empty-tank crawl | Small |
@@ -821,16 +834,18 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Health | 0–100 health, seasonal illness, injuries, recovery | Big |
 | Household economy | Wages, savings, upgrades, purchases, rentals, bills | Big |
 | Imports and exports | Daily allowance growing with the village; surplus sold on | Medium |
-| Interiors | 81 enterable types, a room of its own for each kind of business, with real occupants | Big |
+| Interiors | 81 enterable types, a room of its own for each kind of business, dressed with paintings, curtains, lampshades and plants, with real occupants | Big |
 | Intercity Express | National railway every three hours | Medium |
 | Junction boxes | Junctions reserved whole, entered only with room beyond; crossing movements take turns | Medium |
 | Knocking | Meet a household that won't ask you in yet at the door | Small |
 | Land prices | Central and waterfront plots cost more | Small |
+| Level crossings | Lights, half barriers, traffic kept off the tracks, trains that stop for anything left on them | Medium |
 | Landing screen | Live cinematic flight over your own village | Small |
 | Lifestyles | Eight adult profiles setting savings and dreams | Medium |
 | Lost dog | Find it, call it, walk it home for a reward | Small |
 | Lottery | A rare $400 household win | Small |
 | Mayors | Four personalities with their own build lists and honesty | Big |
+| Models | 45 Rocketbox villagers, 30 vehicles and 18 animals in three levels of detail, real glass and cabins | Big |
 | Memory | 14-entry episodic diary per villager; fades unless strong | Big |
 | Money rule | No money conjured or destroyed: tills pay wages, budgets run public places, debts instead of free services | Big |
 | Mood | Daily feeling from work, money, safety, home, fun, friends, memories | Medium |
@@ -840,8 +855,8 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Newcomers | Families arrive by train or plane and walk to their new door | Small |
 | Offences and tickets | Seen by patrols, cameras or witnesses; villagers ticketed too | Medium |
 | Overtaking | Only on clear straights with nothing coming | Small |
-| Parking | Drives, bays, rank queues, reversing in; tickets and towing | Medium |
-| Pedestrians | Pavement-side walking, crossings, own pace, stepping aside | Medium |
+| Parking | A drive for every family car, bays booked per driver, car parks, pulling out and backing in round walls; tickets and towing | Medium |
+| Pedestrians | Pavement-side walking, zebra crossings, kerb queues, own pace, stepping aside | Medium |
 | Personality | Five traits from each villager's seed | Medium |
 | Phone | Eleven apps: Map, Jobs, Ride, Contacts, Wallet, Garage, PVTV, Tasks, Camera, Planner, Settings | Medium |
 | Photo mode | Paused world, free camera, lens, bokeh, looks, hour and weather preview | Medium |
@@ -870,12 +885,12 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Subtitles | Street speech with names, optional sound captions | Small |
 | Supply chain | Four goods from producer yards by truck and train to shelves and sites | Big |
 | Taxes | Low, normal, high, set by you; moods and treasury respond | Small |
-| Taxis | Real cabs from ranks; ride or drive them | Medium |
+| Taxis | Real cabs from kerbside ranks, fares set down at the kerb; ride or drive them | Medium |
 | Templates | Mind-driven dialogue when AI is off | Medium |
 | Thaw | Snow retreats in drifts on the village's clock; flattened grass greens; lake ice breaks up from the banks | Small |
 | Tiers | Hamlet, Village, Town, City, Metropolis | Small |
 | Traffic | Look-ahead driving at real sizes, junction boxes, lights, gates, lanes, parking, traffic from beyond the map, gridlock relief | Big |
-| Trains | Local, commuter, express, freight on player-laid track with timetables | Big |
+| Trains | Local, commuter and express multiple units and freight on player-laid track with wide bends and timetables | Big |
 | Travel | Leave by road, rail, sea or air; journey screen; city; while you were away | Big |
 | Trees | Procedural species, wind, seasons, four levels of detail that keep each tree's shape, street trees | Medium |
 | Ultra graphics | Every small shadow and full reflections, chosen in Settings | Small |
@@ -886,7 +901,7 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Weather | Five states, seasonal tables, wet and snowy streets, the spring thaw, lightning | Big |
 | While you were away | What changed during your trip | Small |
 | Witnesses | Who saw an offence decides if it counts, and they remember | Medium |
-| Zero assets | Every model, texture and sound generated in code | Big |
+| Zebra crossings | At every junction mouth, with a stop line drivers never cross onto the stripes | Small |
 
 ## Portfolio highlights
 
@@ -901,7 +916,7 @@ PixelVille – Next Dimension is a full simulation first and a 3D game second: a
 5. **Consequences that feel fair.** An offence only counts if a squad car, a road camera or a villager actually saw it; police drive from real stations by real roads; witnesses remember; reputation spreads three hops by gossip and sets prices, greetings and who calls the police.
 6. **A closed economy.** Money is never conjured or destroyed: every workplace pays its people from its own till, public services run on budgets from the village fund, your purchases are a business's income, and a bill nobody can pay becomes a debt rather than a free service.
 7. **Jobs built on live events.** All 13 shifts run on what the simulation is doing right now: real fires, real casualties, real customers, real shortages.
-8. **Zero assets.** Every building, person, car, tree, texture and sound is generated in code, yet it reaches a semi-realistic, physically lit look that runs on an integrated laptop GPU and on phones.
+8. **A world made in code.** Every building, tree, texture and sound is generated in code (the people, vehicles and animals are credited models, shrunk by the game's own build scripts), yet it reaches a semi-realistic, physically lit look that runs on an integrated laptop GPU and on phones.
 9. **Plays anywhere.** Keyboard and mouse, gamepad through every menu, touch with an installable phone layout, rebindable keys, and a full accessibility suite.
 10. **It carries the original forward.** Every system of the 2D [PixelVille](https://github.com/Sumandebnath943/pixelville) was ported behaviour for behaviour, and an original village's save imports and keeps living in 3D.
 
@@ -937,9 +952,9 @@ In one test a thunderstorm's lightning strikes a substation, the junction's ligh
 | Festivals | New Year, Easter, Diwali, a Christmas tradition from day 15 into the new year |
 | Phone apps | 11 |
 | Hometown stock tickers | 5 |
-| Automated tests | 152, including multi-day simulation soak runs, a busy-grid traffic test and an economy audit |
-| Game source | About 41,500 lines of TypeScript |
-| Image, model and audio files | 0 |
+| Automated tests | 170, including multi-day simulation soak runs, a busy-grid traffic test and an economy audit |
+| Game source | About 47,000 lines of TypeScript |
+| Downloaded models | 93 files: 45 villagers, 30 vehicles, 18 animals, every one credited (the Credits screen) |
 | Time to draw a frame on an Intel UHD laptop (Medium) | About 9 ms at street level, 15 ms from the Planner |
 
 ### Under the hood

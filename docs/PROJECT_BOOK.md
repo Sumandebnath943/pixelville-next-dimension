@@ -13,6 +13,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## A
 
+**Access lanes** — **M9** (9l): a new building's road is one tile wide, straight from its door square on to a street (or with one turn) (`World.accessLane` in `connectRoad`), and is removed with the building (`World.pruneLane`).
+
 **Accessibility** — **M7**, Settings → Accessibility (`src/ui/access.ts`): interface size, **Subtitles** (street speech, and optionally sound captions), colour vision (red–green or blue–yellow safe: the `--ok`/`--bad` colours swap; struggling stats are underlined too), camera shake, first-person head bob, reduce motion. With the field of view (Graphics) these are the motion-sickness options. Keys are rebindable (**Controls**).
 
 **Actors** — `src/render/actors.ts`. Draws everything that moves: villagers (the nearest 32 are skinned **Person** models, the rest instanced), vehicles (the nearest 22 cars are full **Car** models, the rest instanced from `src/render/models.ts`), props, fires, sparks, bubbles, traffic-signal lenses, parked planes. The client adds its own things each frame via `actors.extra` (the dog, the wanted level's units, the sightseeing heli, shift vehicles). Public helpers: `vehicle()`, `prop()`, `person()`, `spray()`.
@@ -25,6 +27,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Alerts** — The street HUD's one-line warning (power cut here, rolling blackouts, a shortage, flu season); click opens the **Mayor's report**. `villageAlert()` in `src/main.ts`.
 
+**Animals** — **M9** (9j/9k): 18 species on two skeletons of the game's own (`gfx/animals.ts`, built by `scripts/animals/build.mjs` from `zoo.json`); where they live and what they do in `render/fauna.ts` (farm yards, deer and hares, pigeons, cats, walkers' dogs) and `render/zoo.ts` (five enclosures, keepers' noon feeding); flying birds are code-built (`gfx/birds.ts`). Near ones skinned (`Animal`), far ones instanced (`Herd`).
+
 **Ambulance** — See **Health**. Also the **Paramedic** shift's vehicle.
 
 **Approach** — **M9** `src/sim/approach.ts`: the roads that run off the map carry on along a valley to the horizon (`Terrain` draws them); visitors' cars, delivery trucks and the county's van drive in from 1.1 km out on the right-hand row, one behind another, and join only when there's room; what leaves drives away out of sight. Vehicles still off the map have `off` set and are not indexed by **Traffic**.
@@ -33,11 +37,11 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Arrest** — The Founder can be arrested (**Busted**) or, on a **Police** shift, arrest a burglar (`Life.resolve(true)`).
 
-**Assets** — Everything is procedural (no downloaded models or textures). Real rigged people and cars are waiting on the owner's licensing decision (CC0-only vs CC-BY/Mixamo vs paid). Any assets must be listed in `public/assets/LICENSES.md`.
+**Assets** — The world, buildings, trees, textures and sound are procedural. Since **M9** (9j) the people, vehicles and animals are downloaded models (the owner chose Microsoft Rocketbox, MIT, for people and CC BY 4.0 Sketchfab models for the rest): raw files in `assets-src/` (not committed; sources in `docs/MODEL_SOURCES.md`), built small into `public/models/` by `scripts/{people,vehicles,animals}/build.mjs`. CC BY means every model stays credited: add any new one to `scripts/credits.mjs` (see **Credits**).
 
 **Auto resolution** — M7: Settings → Graphics → Resolution "auto" (`Stage.autoRes`) drops the world's render resolution 10% at a time while frames run under ~30 fps, back up when there's room, never below 80% (M9; it was 70%, and the soft picture was much of why the game looked worse than the **Look lab**); or a fixed 100/85/70/55%. The grade pass sharpens (`sharpen`, more the lower the resolution). A 30 fps cap saves battery.
 
-**Auto village** — **M9** `src/sim/autovillage.ts` (`AutoVillage.build(seed)`: an avenue grid, `BLOCK` 14, block corners free so crossings get traffic lights, a square of shops and civic buildings, services, homes, works, farms, a power plant, ~150 villagers) and `askAuto/buildAuto/autoFrame` in `src/main.ts`, panel `#auto`. The landing's "Auto village" or Menu → Auto village; the camera drifts between views (drag turns, wheel zooms, H hides the panel). Pins: season and weather (`Weather.pin`), festival (`Festivals.pinDay`), pace. "Play this village" hands it over at the Lodge.
+**Auto village** — **M9** `src/sim/autovillage.ts` (`AutoVillage.build(seed, size)`, size 0 hamlet, 1 village, 2 town with a railway, 3 full with every building type, the harbour, airport and heliport, chosen in `#au-size`; an avenue grid, `BLOCK` 14, block corners free so crossings get traffic lights, a square of shops and civic buildings, services, homes, works, farms, a power plant, ~150 villagers) and `askAuto/buildAuto/autoFrame` in `src/main.ts`, panel `#auto`. The landing's "Auto village" or Menu → Auto village; the camera drifts between views (drag turns, wheel zooms, H hides the panel). Pins: season and weather (`Weather.pin`), festival (`Festivals.pinDay`), pace. "Play this village" hands it over at the Lodge.
 
 **Autosave** — Every 2 or 5 minutes (setting), when the tab is hidden, and (M9) when the graphics card resets; written to IndexedDB slot `AUTO` (`src/save/store.ts`). An empty map is not autosaved. Saves are per browser origin, port included.
 
@@ -57,9 +61,11 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Building sites** — `b.construction` = minutes of work left, `b.conTotal` the total. Sites eat materials (`Supply.build`); a site without materials stalls. The **Construction worker** shift speeds them up.
 
-**Bus** — The village line chains bus stops by proximity (`Life.tickBuses`), up to 3 buses, queues at stops (`Life.stopQueues`, anonymous riders). Ride it (**M5**), or drive it on the **Bus driver** shift (**M6**).
+**Bus** — The village line chains bus stops by proximity (`Life.tickBuses`) into a kerb loop (**M9** 9l: `Life.kerbLoop`, each stop served at `Life.stopKerb`, a plain street tile beside it, shelter on the right, out of junction boxes; legs by `World.roadPath(…, hd0, endHd, long)`; buses brake to `Drive.stopAt`), up to 3 buses, queues at stops (`Life.stopQueues`, anonymous riders). Ride it (**M5**), or drive it on the **Bus driver** shift (**M6**).
 
-**Busted** — Caught while wanted: a fine by stars, impound if driving your own car, then a night in the cells (or five hours by day) behind the **Curtain**. Ends any shift.
+**Busted** — Caught while wanted: a fine by stars, impound if driving your own car, then a night in the cells (or five hours by day) behind the **Credits** — **M9** (9j): `scripts/credits.mjs` writes `public/models/credits.json` and `CREDITS.md` (every model's title, creator, links, licence and changes); the Credits screen on the landing and in the menu shows them.
+
+**Curtain**. Ends any shift.
 
 ---
 
@@ -70,6 +76,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Camera** — Street third-person orbit with collision against building volumes (exact ray-box tests, 0.45 m radius), first-person toggle (`V`), chase and cockpit cameras when driving (further back for big work vehicles), a follow camera when riding (`founder.passengerAt`), the Planner's aerial camera, the interior's own camera, and **Photo mode**'s free camera.
 
 **Career** — The Founder's shift record (`shifts.record`): shifts by job, hours, earnings, best stars, and wages the village fund still owes. Saved as `FounderSave.jobs`.
+
+**Car parks** — **M9** (9k/9l): the Car Park (3×2, eight bays). A destination with no bay free sends the car to the nearest one (`carParkNear`, `trip.lot`) and the driver walks on; the car waits there (`p.carLotId`). See **Parking**.
 
 **Catch-up** — `Game.catchUp(minutes)` advances the clock and daily logic (used behind curtains, journeys and when the tab is hidden). It does not walk villagers.
 
@@ -159,7 +167,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Flights** — Passenger flights (**M5**) to Avalon City and Solano every three hours 06:30–21:30, with check-in and the gate; or fly them yourself as **Pilot**.
 
-**Founder** — The player: `src/player/founder.ts`. A violet coat, gold scarf, wide-brimmed hat, and a faint golden ring at the feet. Walks, runs, jumps, drives (arcade handling per vehicle **Spec**), rides, works.
+**Founder** — The player: `src/player/founder.ts`. A violet coat, gold scarf, and a faint golden ring at the feet; who wears them is the player's choice (**M9** 9j: a man or a woman, six faces each, `ui/figure.ts`, `Founder.setFigure`, saved as `FounderSave.figure`). Walks, runs, jumps, drives (arcade handling per vehicle **Spec**), rides, works.
 
 **Founder's Lodge** — The player's home and garage; the drive is always legal parking.
 
@@ -217,7 +225,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Knocking** — M7: at a home whose household won't ask you in yet, `E` knocks and the eldest at home comes to the door to talk.
 
-**Interiors** — `src/interiors/plan.ts`: 12 templates (home, shop, food, office, workshop, classroom, hospital, police, fire, terminal, venue, civic), themed per type, laid out from the building's seed as plain data.
+**Interiors** — `src/interiors/plan.ts`: 12 templates (home, shop, food, office, workshop, classroom, hospital, police, fire, terminal, venue, civic), themed per type, laid out from the building's seed as plain data; many types have a room of their own (`src/interiors/rooms.ts`). **M9** (9m): `dress()` hangs paintings on free wall (`Layout.art`) and puts plants in empty corners; `render/interior.ts` adds a painted window view, curtains and pendant shades.
 
 ---
 
@@ -230,6 +238,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Jobs app** — The phone app listing every job, where it's worked nearest, pay, your record; start or clock off.
 
 **Journal** — The village task book and news log (`J`; `src/sim/tasks.ts`).
+
+**Level crossings** — **M9** (9l): `Life.tickGates`, `gateClosed`, `crossingClear`: lights 13 s before a train, booms down, up 3 s after; traffic keeps the tracks clear (`xing` in `Traffic.advance`), walkers wait (`Traffic.gateDown`), trains stop for anything on a crossing. Props `xgatePost`, `xboom`, `xlamp`.
 
 **Junction boxes** — **M9** `src/sim/traffic.ts`: a junction is reserved whole, each tile for the quarters its swept path covers (`MASKS`), and only with room on the far side; crossing movements take turns, the longest-waiting first (`outranks`); straight on from both sides or two right turns share it. With every vehicle's real length and width at any angle, nothing drives through anything (`tests/traffic.test.ts` busy grid, `tests/jams.test.ts`).
 
@@ -291,6 +301,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## P
 
+**Parking** — `src/sim/parking.ts`. Homes: drive spots found from what the plot built (`Lots.of(b).drive`, set by `render/buildings.ts`); **M9** (9m) a family owns no more cars than `driveCount(b)`, spares are sold, only a car with a home spot goes out. Venues: bays booked per driver (`claimBay`, `bayHeld`, `parkInBay`, `leaveBay`). Trips run spot tile to spot tile (`spotTile`, `kerbHeading`); pulling out (`outPlan`) and backing in (`inPlan`) steer the rear axle and are checked against `Lots.blocked`. No bay at the next stop: a held car stays in its bay and the driver walks on (`carLotId`). Tickets and towing for the Founder: see **Tickets**.
+
 **Panels** — `src/ui/panels.ts`: building and villager cards, modals (settings, saves, new map, history chart, help).
 
 **Paramedic** — M6 job (hospital): casualties come to you; treat them on foot, drive them in, hand them over to the ward; home visits to the sick between calls.
@@ -319,7 +331,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Quality tiers** — `detectQuality()`: low / medium / high (see **Performance**); a setting overrides, applied after reload. **M9**: **Ultra** is only ever chosen in Settings; a graphics reset lowers the preset for the next load only (`QUALITY_ONCE` in `src/render/stage.ts`; it used to stick for good, and settings lowered that way were moved back to Auto once, `Settings.qualityFix`).
 
-**Queues** — Anonymous riders waiting at bus stops and taxi ranks (`Life.stopQueues`), longer at rush hour.
+**Queues** — Anonymous riders waiting at bus stops and taxi ranks (`Life.stopQueues`), longer at rush hour, standing on the pavement (`Life.queueSpot`). Cabs wait at their rank on the kerb beside the stand (**M9** 9m: `stopKerb`, pulled in, `rankSlot`) and set fares down at the kerb by their door, never turned across the road.
 
 ---
 
@@ -382,7 +394,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Terrain** — `src/render/terrain.ts`: textured grass/sand/rock, kerbed roads, bridges, ballasted rails, lamps (built per chunk, M9), animated water with foam and ice, trees in four LODs (32k), **Street trees**, streamed grass, banded shores, hills and the sea beyond the map. Tree positions come from `treeSpot` (shared with collisions; M9 fixed a signed shift that put some on the roads).
 
-**Tests** — Vitest in `tests/`, one file per system (sim, traffic, founder, wanted, reputation, photo, interiors, chat, health, power, education, supply, deeper, travel, shifts, V1 import); `tests/town.ts` builds towns. 118 tests at M7 (`controls.test.ts` added), 130 at M8 (`polish.test.ts`), 152 in M9 (`collisions`, `jams`, `economy` among the new files).
+**Tests** — Vitest in `tests/`, one file per system (sim, traffic, founder, wanted, reputation, photo, interiors, chat, health, power, education, supply, deeper, travel, shifts, V1 import); `tests/town.ts` builds towns. 118 tests at M7 (`controls.test.ts` added), 130 at M8 (`polish.test.ts`), 152 in M9 (`collisions`, `jams`, `economy` among the new files), 170 after 9l (`vehicles`, `parking`, `buses`, `rail`, `zebra`, `autovillage`). Tests that drive traffic mock `performance.now()` in step with the ticks.
 
 **Thaw** — **M9** The spring thaw and the ice: `pvSnowField/pvSnowLine/pvSnowCover` in `src/gfx/env.ts` (drifts tens of metres across), `ENV.melt` (wet margins), `ENV.thaw` (flattened, straw-pale grass for a day and a half), the `plough` and `thaw` surface options, the melt on the sim clock in `Stage.drift`, and `Stage.ice` (lakes freeze in winter and thaw from the banks in floes, `gfx/water.ts`).
 
@@ -392,11 +404,11 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Top bar** — See **HUD**.
 
-**Traffic** — `src/sim/traffic.ts`: every vehicle looks ahead along its path, keeps its distance, stops for people, brakes for red lights and gates, takes turns at junctions, overtakes stopped vehicles when clear, and sees the Founder (`Traffic.guests`). **M9**: **Junction boxes**, real vehicle sizes, people standing in the road only hold up their own lane (`PED_AFTER` 6 s for walkers), waiting villagers stand on the pavement, twins on one spot take turns, **Gridlock relief**, traffic from beyond the edge (**Approach**). The traffic lights stay on wall-clock 8 s phases (tying them to game time killed junction capacity).
+**Traffic** — `src/sim/traffic.ts`: every vehicle looks ahead along its path, keeps its distance, stops for people, brakes for red lights and gates, takes turns at junctions, overtakes stopped vehicles when clear, and sees the Founder (`Traffic.guests`). **M9**: **Junction boxes**, real vehicle sizes, people standing in the road only hold up their own lane (`PED_AFTER` 6 s for walkers), waiting villagers stand on the pavement, twins on one spot take turns, **Gridlock relief**, traffic from beyond the edge (**Approach**). The traffic lights stay on wall-clock 8 s phases (tying them to game time killed junction capacity). 9l: **Zebra crossings**, **Level crossings**. 9m: someone standing (waiting at their door for a cab, in a queue, hurt) is hit-tested where they were indexed, not at their trip's lane pose (it gave dozens of false "knocked down" a day).
 
 **Train driver** — M6 job (train station): drive the village line's passenger service (the local first); `W` power, `S` brake; stop with the cab at each platform (doors open, riders on and off); overrunning a platform or hitting the buffers counts against you; timetable bonus.
 
-**Trains** — V1 services on player-laid rails (local, commuter, express, nightliner, freight), each on its own track with a timetable; plus the **Intercity Express**.
+**Trains** — V1 services on player-laid rails (local, commuter, express, freight; the nightliner retired), each on its own track with a timetable; plus the **Intercity Express**. **M9** (9l): bends up to three tiles' radius (`World.bendRadius`, swept ground kept clear), carriages on two bogies, commuter and express as multiple units; **Level crossings**.
 
 **Travel** — `src/player/travel.ts` + `src/ui/travelui.ts` (**M5**): leave from a gateway (seen in the world), the journey screen while hours pass at home, the city (look around, souvenir, stay the night, head home), the way back, and "while you were away".
 
@@ -418,7 +430,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **V1** — The original PixelVille (2D, top-down). Its modules were ported into `src/sim` verbatim; changes are marked `V2:`. Since 2026-10-26 they're type-checked (no `@ts-nocheck`), the module objects still `any`. Never modify the V1 repo.
 
-**Vehicles (models)** — Full models: `src/gfx/car.ts` (Car with extruded profiles in hatch/sedan/estate/suv; taxi sign; police light bar; Moto). Instanced: `src/render/models.ts` (car, taxi, police, fire, ambulance, truck, van, tractor, bus, moto, loco, coach, wagon, boat, ferry, raft, heli, plane, balloon, ufo, sleigh).
+**Vehicles (models)** — **M9** (9j): 30 downloaded models built by `scripts/vehicles/build.mjs` (`fleet.json`) into near, mid and far levels (paint, kit atlas, glass, one instanced wheel); `gfx/vehicle.ts` (`ModelCar`; `FarFleet`, one instanced draw per model). `gfx/car.ts`'s `Car` wraps a `ModelCar` (its code-built bodies remain the fallback). The nearest 22 road vehicles are full models (`NEAR_TYPES` in `render/actors.ts`: car, taxi, police, bus, van, truck, ambulance, fire, tractor; 9m: the big ones had always been the far shell). 9m: the mid level keeps a coarse cabin (glow channel 3, shaded); the bus's alpha-cut windows get inset glass (`windows` in `fleet.json`). Balloon, UFO, raft and sleigh stay code-built (`render/models.ts`).
 
 **Village fund** — `Gov.treasury`: taxes in; civic costs, county power, imports, prizes, the Founder's public-service wages out.
 
@@ -457,6 +469,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 ---
 
 ## Z
+
+**Zebra crossings** — **M9** (9l): at every junction mouth on the pavement line (`zebraAt`, `ZEBRA_IN`/`ZEBRA_OUT`, painted by **Terrain**), the stop line behind (`STOP_LINE`); drivers stop at the line or run the amber, never on the stripes; walkers queue at the kerb in places of their own (`KERB` in `sim/walking.ts`) and cross abreast.
 
 **Zones / districts** — There is no zoning: buildings are placed directly. "Districts" exist only for **Power** (32×32 tiles), and "town centre / outskirts" bands for naming places (`Gov.districtName`).
 

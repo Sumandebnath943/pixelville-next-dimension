@@ -19,12 +19,13 @@
 
 **Never modify the V1 repo.** It is the behavioural reference.
 
-### Status (2026-10-30)
+### Status (2026-10-31)
 - **Live** at https://pixelvillenextdimension.houseofnamus.com/; `main` deploys on every push.
-- **Milestone 9 (live play fixes)**: the owner's batches since launch went straight onto `main` (details in MILESTONES.md): elections on the ground, headlight beams, junction boxes and real vehicle sizes, shores and boats, traffic from beyond the edge, the rugged peak, collisions, tree LODs, the new sound engine, shop interiors, **god view**, the **money overhaul** (`src/sim/economy.ts`), the **Auto village**, the traffic-deadlock fix with gridlock relief, the **look fixes** (resolution floor, FOV 60, street trees, texture anti-tiling), the **top-bar fit**, the **rescue prompt** for villages that won't open, a **lighter frame**, the **spring thaw**, **Ultra graphics**, and trees moved off the roads. Last pushed commit `3ce0d6e`; 152 tests pass.
-- **9l · The owner's "changes 2" list** (2026-10-31, on `main`, not yet committed when written): buses, parking, rail (crossings, wide bends, multiple units), collisions and zebra crossings, Auto village sizes, access lanes, sharper vehicle prints; 170 tests pass. See MILESTONES.md 9l. Headless tests that drive traffic must mock `performance.now()` in step with the ticks (the lights run on it).
+- **Milestone 9 (live play fixes)**: the owner's batches since launch went straight onto `main` (details in MILESTONES.md): elections on the ground, headlight beams, junction boxes and real vehicle sizes, shores and boats, traffic from beyond the edge, the rugged peak, collisions, tree LODs, the new sound engine, shop interiors, **god view**, the **money overhaul** (`src/sim/economy.ts`), the **Auto village**, the traffic-deadlock fix with gridlock relief, the **look fixes** (resolution floor, FOV 60, street trees, texture anti-tiling), the **top-bar fit**, the **rescue prompt** for villages that won't open, a **lighter frame**, the **spring thaw**, **Ultra graphics**, and trees moved off the roads. Then 9j–9m (below). Last pushed commit `8c7c534`; 170 tests pass.
+- **9m · The owner's five-point list** (2026-10-31, `8c7c534`): real glass and cabins in every vehicle and full models for buses, vans, lorries and the emergency services near the camera; no more false "knocked down" for people waiting at their door; cabs wait and set down at the kerb, never across the road; dressed rooms (paintings, curtains, window views, lampshades, plants); a drive spot for every family car. See MILESTONES.md 9m.
+- **9l · The owner's "changes 2" list** (2026-10-31, `06a5bdd`): buses, parking, rail (crossings, wide bends, multiple units), collisions and zebra crossings, Auto village sizes, access lanes, sharper vehicle prints; 170 tests pass. See MILESTONES.md 9l. Headless tests that drive traffic must mock `performance.now()` in step with the ticks (the lights run on it).
 - **9k · The owner's 23-point list** (2026-10-31): see MILESTONES.md 9k (committed `956ef37`).
-- **9j · Real models** (built 10-30, not yet committed when written): Rocketbox villagers (MIT), 30 vehicles and 18 animals (CC BY 4.0) from `assets-src/` (not committed; re-download from `docs/MODEL_SOURCES.md`) via `scripts/{people,vehicles,animals}/build.mjs` into `public/models/`; farm, zoo, park and street animals (`render/fauna.ts`); the Founder chooser (`ui/figure.ts`); credits (`scripts/credits.mjs` → `public/models/credits.json` + `CREDITS.md`, Credits screen). CC BY means **every model must stay credited**: add any new one to `scripts/credits.mjs`.
+- **9j · Real models** (10-30, `3419100`): Rocketbox villagers (MIT), 30 vehicles and 18 animals (CC BY 4.0) from `assets-src/` (not committed; re-download from `docs/MODEL_SOURCES.md`) via `scripts/{people,vehicles,animals}/build.mjs` into `public/models/`; farm, zoo, park and street animals (`render/fauna.ts`); the Founder chooser (`ui/figure.ts`); credits (`scripts/credits.mjs` → `public/models/credits.json` + `CREDITS.md`, Credits screen). CC BY means **every model must stay credited**: add any new one to `scripts/credits.mjs`.
 - **Milestone 8 (the owner's 33-point polish list)** is built on branch `milestone-8` (traffic lanes, bends, keep-right routing, parking, tickets, hits, the night timetable; pavements for walkers; site crews; a steady camera; bloom, sunrise, headlamps, the Planner at night, water; curved shores and rails; pines and firs, light forests; the peak and its trail with bike hire; solid street furniture; Rockefeller-style Christmas; the logo, loading, landing and controls screens). Details in MILESTONES.md. 130 tests pass. Merged into `main` and pushed on 2026-10-26 (`bf164bc`).
 - **Key art**: drop the owner's image at `public/art/keyart.jpg` (1920×1080) and the loading screen uses it.
 - Milestones 1, 1.5, 2 (2a–2f), 3, 4, 5 and 6 are done, merged into `main` and pushed (`3f529f9`).
@@ -143,7 +144,7 @@ slice.html + src/slice/   the "look lab" vertical slice (Milestone 1.5)
 | 6 | 2026-10-25 | **13 playable job shifts** + the 48×15 airfield |
 | 7 | 2026-10-25 | **Launch polish**: rebindable keys, gamepad menus, subtitles and accessibility, the first-day guide, phones, balance, chat guards; deployed |
 | 8 | 2026-10-26 | **The owner's 33-point polish list**: lanes, bends, parking, tickets, hits, pavements, the peak, shores, Christmas, the landing |
-| 9 | 2026-10-26 → 30 | **Live play fixes**: junction boxes, headlight beams, shores and boats, collisions, sound, money, god view, Auto village, the deadlock fix, the look, the top bar, the rescue prompt, a lighter frame, the thaw, Ultra |
+| 9 | 2026-10-26 → 31 | **Live play fixes**: junction boxes, headlight beams, shores and boats, collisions, sound, money, god view, Auto village, the deadlock fix, the look, the top bar, the rescue prompt, a lighter frame, the thaw, Ultra; real models (9j); the 23-point list (9k); buses, parking, rail, zebras, village sizes (9l); glass, cabs, rooms, car spots (9m) |
 
 ### Milestone 6 in a page (the newest code)
 - **`src/player/shifts.ts`** — `JOBS` table (title, workplaces, lent vehicle + handling, hourly pay, public or business, max hours, factory), `Shifts` manager: `placesFor`, `offers(b)`, `whyNot`, `start(id, b)`, `go(id, b?)` (phone booking: GPS to the workplace, starts at the door), `end()` (pays: hourly × hours + task pay, × (0.7 + 0.1 × stars); public services from `Gov.treasury`, which **owes** what it can't pay and settles when taxes arrive; businesses from their till, as far as it goes), `update`, `interaction`, `carrying` (train/plane cab), `overlay/frame` (pilot's journey screen), `draw`, `panel()`, `listing()`, `record` (saved in `FounderSave.jobs`).
@@ -212,7 +213,8 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 
 ## 8. Known issues and polish backlog
 
-- **Models (9j) follow-ups**: pigeons and ducks have no wing bones (the birds in flight are code-built since 9k, `gfx/birds.ts`); the Founder's moped and bicycle are still code-built (the scooter and bicycle models could replace them); the zoo's pens were checked by their layout only (the test village had no zoo); no fire engine better than the current CC BY one was found.
+- **Traffic hits (9m)**: about two real hits a day remain in a town, a bus or a cab clipping a walker on a junction corner; walkers cross side-street mouths on the zebra without waiting for turning traffic. A car creeping out of a dead-end lane can nudge someone crossing it (shaken only).
+- **Models (9j) follow-ups**: more train models need the owner's downloads (only the diesel, the railcar and the boxcar exist); pigeons and ducks have no wing bones (the birds in flight are code-built since 9k, `gfx/birds.ts`); the Founder's moped and bicycle are still code-built (the scooter and bicycle models could replace them); the zoo's pens were checked by their layout only (the test village had no zoo); no fire engine better than the current CC BY one was found.
 - **A returning browser on the live site** once had a problem a fresh window didn't; it was never reproduced. The likely causes are handled (the rescue prompt, quality no longer stuck low, the frame guard, less memory); if it comes back, ask the owner what they see, and with their OK look in their own Chrome.
 - **Traffic:** no permanent gridlock (gridlock relief clears any car stuck 100–150 s), checked in the game on Auto villages; very cramped hand-built layouts can still form short jams that relief clears.
 - The Browser pane's frame times are not the owner's (its rAF is throttled): judge performance by draw calls, render time and memory.
@@ -230,7 +232,7 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 ## 9. What's next
 
 - Play-test on a real phone and a real gamepad.
-- **The asset-licensing decision** (CC0-only, CC-BY/Mixamo, or paid) for real rigged people and cars; they'll change the performance budgets (today: ~9 ms render a frame on the street, ~15 ms in the Planner, at medium on the Intel laptop).
+- More train models, once the owner downloads them (the licensing question was settled in 9j: Rocketbox people, credited CC BY vehicles and animals).
 - Cloud saves (a database such as Supabase) were discussed and left for later: they would add saves on any device, not fix lag, memory or graphics.
 - Typing the V1 module objects (the entities are typed).
 - New feature ideas go to the owner first (§3).
@@ -239,8 +241,8 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 
 ## 10. Git and handoff checklist for a new session
 
-1. `git pull` on `main` (latest: Milestone 9's batches).
-2. `npm install && npm test && npm run typecheck` — expect 152 passing tests.
+1. `git pull` on `main` (latest: Milestone 9's batches, up to 9m).
+2. `npm install && npm test && npm run typecheck` — expect 170 passing tests.
 3. Start the dev server from `.claude/launch.json` (`pixelville-nd`), open a **fresh** `*.localhost` origin, build the test town (§7) or an Auto village.
 4. Work on `main` (or a branch if the owner asks); commit and push only when the owner says so. A push deploys the live site.
 5. Update `docs/MILESTONES.md`, this file's status, [GAME_INFO.md](GAME_INFO.md) and [PROJECT_BOOK.md](PROJECT_BOOK.md) when a batch lands.

@@ -21,7 +21,7 @@ Then open the address Vite prints (usually http://localhost:5173). Other scripts
 | Command | What it does |
 | --- | --- |
 | `npm run build` | type-check and build the static site into `dist/` |
-| `npm test` | 152 headless tests (a 20-day soak, saves, V1 import, traffic jams, the economy) |
+| `npm test` | 170 headless tests (a 20-day soak, saves, V1 import, traffic jams, the economy, buses, rail, zebras, parking) |
 | `npm run lint` | ESLint |
 
 ## How to play
