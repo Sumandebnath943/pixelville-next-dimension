@@ -469,12 +469,12 @@
           <span class="ld-kicker" id="loading-village">Waking the village</span>
           <p id="loading-text" aria-live="polite">Raising the village…</p>
         </div>
-        <b class="ld-pct"><span id="loading-pct">0</span><small>%</small></b>
+        <b class="ld-pct" aria-hidden="true"><span id="loading-pct">0</span><small>%</small></b>
         <div class="ld-stages" id="loading-track" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <span><i></i><em>Records</em></span>
           <span><i></i><em>The land</em></span>
           <span><i></i><em>Buildings</em></span>
-          <span><i></i><em>Textures</em></span>
+          <span><i></i><em>Assets</em></span>
           <span><i></i><em>Lighting</em></span>
         </div>
         <aside class="ld-tip">
@@ -491,6 +491,11 @@
             <button id="ld-fresh">Start a new village <small>(this one is kept: Menu → Load village)</small></button>
           </div>
         </div>
+        <div class="ld-rescue" id="ld-error" role="alertdialog" aria-labelledby="ld-error-title" aria-describedby="ld-error-detail">
+          <b id="ld-error-title">The village couldn’t finish opening</b>
+          <p id="ld-error-detail">Reload to try again.</p>
+          <div class="ld-rescue-btns"><button class="primary" id="ld-reload">Reload</button></div>
+        </div>
       </section>
       <p class="ld-foot">A living village, now in three dimensions</p>
     </div>
@@ -498,7 +503,7 @@
     <!-- V2: the landing screen redesigned: the menu in a column on the left over a cinematic shade, the village as a card
          (its name, the day and season, the hour, its people and its weather), one big button to play and the rest as a
          quiet list, and a "live" mark saying the flight behind is the village as it is right now -->
-    <div id="landing">
+    <div id="landing" inert>
       <div class="la-shade"></div>
       <div class="la-wrap">
         <div class="la-panel">

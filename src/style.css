@@ -608,6 +608,7 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
   position: fixed; inset: 0; z-index: 50; overflow: hidden; color: #f4ead8;
   background: radial-gradient(ellipse at 50% 35%, #141a2a 0%, #080a12 70%); transition: opacity 0.8s ease;
 }
+#loading.finished { opacity: 0; pointer-events: none; }
 #loading.no-art { background: linear-gradient(180deg, #120f2a 0%, #2a1d4a 38%, #6b3a5a 64%, #d9875a 86%, #f0c27a 100%); }
 #loading .ld-art { position: absolute; left: -3%; top: -3%; width: 106%; height: 106%; object-fit: cover; object-position: 50% 45%; opacity: 0; transition: opacity 1.1s ease; animation: ldDrift 34s ease-in-out infinite alternate; will-change: transform; }
 #loading.has-art .ld-art { opacity: 1; }
@@ -639,10 +640,10 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
 #loading-text { margin: 0; font-size: clamp(15px, 1.7vw, 21px); font-weight: 600; color: #f8f1e4; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ld-pct { grid-area: pct; align-self: end; font: 300 clamp(36px, 5vw, 60px) / 0.85 var(--font); color: #fff8ea; font-variant-numeric: tabular-nums; text-shadow: 0 2px 16px rgba(0, 0, 0, 0.5); }
 .ld-pct small { margin-left: 3px; font-size: 0.4em; font-weight: 500; color: var(--accent); }
-.ld-stages { grid-area: bar; display: grid; grid-template-columns: 1.1fr 0.8fr 3fr 1.1fr 1.3fr; gap: 6px; }
+.ld-stages { grid-area: bar; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .ld-stages span { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .ld-stages i { position: relative; display: block; height: 5px; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, 0.14); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2); transition: box-shadow 0.4s; }
-.ld-stages i::after { content: ''; position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--f, 0)); background: linear-gradient(90deg, #e3a256, #f6d6a0); transition: transform 0.35s ease; }
+.ld-stages i::after { content: ''; position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(var(--f, 0)); background: linear-gradient(90deg, #e3a256, #f6d6a0); }
 .ld-stages span.on i { box-shadow: 0 0 14px rgba(240, 194, 122, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.2); }
 .ld-stages span.on i::before { content: ''; position: absolute; inset: 0; z-index: 1; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent); transform: translateX(-100%); animation: ldShine 1.5s ease-in-out infinite; }
 @keyframes ldShine { to { transform: translateX(100%); } }
@@ -662,8 +663,8 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
   grid-area: tip; display: none; flex-direction: column; gap: 6px; max-width: 660px; padding: 14px 16px; border-radius: 14px;
   background: rgba(14, 16, 24, 0.72); backdrop-filter: blur(12px) saturate(130%); -webkit-backdrop-filter: blur(12px) saturate(130%); border: 1px solid rgba(240, 194, 122, 0.3);
 }
-#loading.rescue .ld-rescue { display: flex; }
-#loading.rescue .ld-tip, #loading.rescue .ld-stages, #loading.rescue .ld-pct { visibility: hidden; }
+#loading.rescue #ld-rescue, #loading.failed #ld-error { display: flex; }
+#loading:is(.rescue, .failed) :is(.ld-tip, .ld-stages, .ld-pct) { visibility: hidden; }
 .ld-rescue b { font-size: 15px; color: #fff3dc; }
 .ld-rescue p { margin: 0 0 4px; color: #f1e8d8; font-size: 13px; line-height: 1.45; }
 .ld-rescue-btns { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -681,7 +682,11 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
   .ld-stages em { display: none; }
 }
 @media (max-height: 520px) { .ld-tip { display: none; } .ld-logo { width: clamp(180px, 24vw, 300px); } }
-@media (prefers-reduced-motion: reduce) { #loading .ld-art, .ld-motes i, .ld-stages span.on i::before, .ld-glow { animation: none !important; } .ld-motes { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  #loading { transition: none; }
+  #loading .ld-art, .ld-panel, .ld-logo, .ld-motes i, .ld-stages span.on i::before, .ld-glow { animation: none !important; }
+  .ld-motes { display: none; }
+}
 
 /* ---------- landing (Milestone 8): the menu over a slow flight across the village. V2: a column on the left over a
    cinematic shade: the logo, the village as a card (name, day and season, hour, people, weather), one big button to

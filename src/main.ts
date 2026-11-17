@@ -24,6 +24,7 @@ import { Input, keys } from './input/input';
 import { PadNav } from './input/padnav';
 import { Tour } from './ui/tour';
 import { applyAccess, Subs } from './ui/access';
+import { LoadingScreen } from './ui/loading';
 import { Hud } from './ui/hud';
 import { Panels } from './ui/panels';
 import { initTouch } from './ui/touch';
@@ -87,15 +88,22 @@ function showPrompt(el: HTMLElement, html: string): void {
 Game.boot();
 Input.loadBinds(); // (the player's own keys, now the settings are loaded)
 applyAccess();
-const stage = new Stage(canvas);
+const loading = new LoadingScreen($('loading'));
+$('ld-reload').addEventListener('click', () => location.reload());
+const stage = (() => {
+  try { return new Stage(canvas); }
+  catch (error) { loading.fail(); throw error; }
+})();
 const terrain = new Terrain(stage.scene, stage.profile);
 stage.waterUpdate = (r, s, c, ambient, reflect) => terrain.water.update(r, s, c, ambient, reflect, stage.ice);
 stage.onResize = (w, h) => terrain.water.reflection.setSize(w, h);
 stage.resize();
 // V2: the graphics card reset: the village is saved and the player told (the picture used to freeze without a word)
 stage.onLost = () => {
+  loading.stop();
   if (World.buildings.length > 1) put(AUTO, Game.buildSaveString()).catch(() => {});
   $('gpu-lost').classList.add('on');
+  $('gpu-reload').focus();
 };
 $('gpu-reload').addEventListener('click', () => location.reload());
 const buildings = new BuildingLayer(stage.scene);
@@ -869,6 +877,11 @@ function frame(now: number): void {
   try { runFrame(now); } catch (e) {
     guard('frame', () => { throw e; });
     try { Input.endFrame(); } catch { /* the next frame */ }
+    if (awaitingLandingFrame) {
+      awaitingLandingFrame = false;
+      failBoot(e);
+      return;
+    }
     requestAnimationFrame(frame);
   }
 }
@@ -1186,6 +1199,7 @@ setInterval(() => {
 
 /* ---------- Milestone 8: the landing screen, over a slow flight across the village ---------- */
 let landing = false;
+let awaitingLandingFrame = false;
 let flyT = 0;
 const flyCentre = new THREE.Vector3();
 function showLanding(resumed: boolean): void {
@@ -1219,13 +1233,12 @@ function showLanding(resumed: boolean): void {
     : '';
   $('la-live').textContent = `Live · ${World.name} right now`;
   ($('la-continue').querySelector('span') as HTMLElement).textContent = resumed || built.length ? `Continue ${World.name}` : 'Begin';
-  setTimeout(() => ($('la-continue') as HTMLButtonElement).focus(), 60);
   afterLandingResumed = resumed;
 }
 let afterLandingResumed = false;
 /** off the landing screen and into the village (then the guide, or the controls, or a welcome back) */
 function leaveLanding(then?: () => void): void {
-  if (!landing) return;
+  if (!landing || !loading.ready || stage.lost) return;
   fade(() => {
     landing = false;
     document.body.classList.remove('landing');
@@ -1241,7 +1254,7 @@ $('la-load').addEventListener('click', () => leaveLanding(() => $('btn-load').cl
 $('la-controls').addEventListener('click', () => panels.show('help'));
 $('la-settings').addEventListener('click', () => panels.openSettings());
 $('la-credits').addEventListener('click', () => void panels.openCredits());
-window.addEventListener('keydown', (e) => { if (landing && e.key === 'Enter' && !panels.anyModalOpen()) { e.preventDefault(); leaveLanding(); } });
+window.addEventListener('keydown', (e) => { if (landing && loading.ready && !stage.lost && e.key === 'Enter' && !panels.anyModalOpen()) { e.preventDefault(); leaveLanding(); } });
 /** a frame of the landing screen: the world goes on, the camera circles high over the village */
 function landingFrame(now: number, dt: number): void {
   Game.tick(dt);
@@ -1265,6 +1278,15 @@ function landingFrame(now: number, dt: number): void {
   cam.getWorldDirection(camDir);
   Snd.listen(focus.x, focus.z, camDir.x, camDir.z);
   scape.frame(dt, cam.position.x, cam.position.y, cam.position.z, { dark: stage.night });
+  if (awaitingLandingFrame && !stage.lost && !stage.renderer.getContext().isContextLost()) {
+    awaitingLandingFrame = false;
+    bootClearAt = now + 30000;
+    performance.mark('boot:First landing frame');
+    loading.complete(() => {
+      $('landing').inert = false;
+      $('la-continue').focus();
+    });
+  }
 }
 
 /* ---------- V2: Auto village: a bustling, ready-made village to watch live and grow ----------
@@ -1493,8 +1515,10 @@ let bootClearAt = 0;
 addEventListener('pagehide', () => bootMark.set(false));
 function askRescue(): Promise<'again' | 'light' | 'fresh'> {
   const l = $('loading');
+  loading.pause();
   l.classList.add('rescue');
   $('loading-text').textContent = 'How would you like to go on?';
+  $('ld-again').focus();
   return new Promise((res) => {
     const pick = (v: 'again' | 'light' | 'fresh') => (): void => { l.classList.remove('rescue'); res(v); };
     $('ld-again').addEventListener('click', pick('again'), { once: true });
@@ -1503,54 +1527,22 @@ function askRescue(): Promise<'again' | 'light' | 'fresh'> {
   });
 }
 
+/** Give a visible phase transition a paint before the next stretch of synchronous work. */
+async function paintLoading(): Promise<void> {
+  await yieldFrame();
+  await yieldFrame();
+}
+
+function failBoot(error: unknown): void {
+  console.error('[boot] Could not finish loading the village', error);
+  if (!stage.lost) loading.fail();
+}
+
 /* boot: continue the last village if there is one, build it a slice at a time
    behind the loading screen, light it and compile every shader off-frame (a cold
    compile on frame one can stall an integrated GPU long enough to lose the context) */
 async function boot(): Promise<void> {
-  const text = $('loading-text'), pct = $('loading-pct'), track = $('loading-track'), tipEl = $('loading-tip');
-  // (V2: the build's five stages, as fractions of the whole: the village records, the land, the buildings, the
-  // textures and the lighting, each a part of the bar)
-  const stages = Array.from(track.children) as HTMLElement[];
-  const SPANS = [[0, 0.12], [0.12, 0.15], [0.15, 0.75], [0.75, 0.85], [0.85, 1]];
-  // Milestone 8: the key art, if there is one (public/art/keyart.jpg), behind the loading screen
-  // (V2: an image in the page itself, fetched from the first moment, faded in over a dark screen once it's there; the
-  // dusk sky only if there's none to be had)
-  const art = $('loading').querySelector('img.ld-art') as HTMLImageElement;
-  const shown = (): void => { $('loading').classList.add(art.naturalWidth ? 'has-art' : 'no-art'); };
-  if (art.complete) shown();
-  else { art.addEventListener('load', shown); art.addEventListener('error', shown); }
-  // …and a tip while you wait
-  const TIPS = [
-    'Villagers remember what you do, and tell each other about it.',
-    'Keep right and stop at red lights: the road cameras write tickets.',
-    'Rise into the Planner to build; the village grows on its own around what you place.',
-    'The last bus and the last train leave at 23:30. Flights run round the clock.',
-    'Hire a mountain bike at the foot of the peak and ride the trail to the summit.',
-    'Every December the great tree comes to the square on a flatbed, with a police escort.',
-    'The phone’s Jobs app has shifts to work: firefighter, cabbie, pilot, reporter…',
-    'Mind the traffic on foot: a car that hits you hurts, and a bus hurts more.',
-  ];
-  let tip = Math.floor(Math.random() * TIPS.length);
-  tipEl.textContent = TIPS[tip];
-  // (V2: each tip fades out and the next one in)
-  const tipTimer = setInterval(() => {
-    tipEl.classList.add('out');
-    setTimeout(() => { tip = (tip + 1) % TIPS.length; tipEl.textContent = TIPS[tip]; tipEl.classList.remove('out'); }, 400);
-  }, 5200);
-  const step = (msg: string, k: number): void => {
-    if (text.textContent !== msg && !msg.startsWith('Raising')) performance.mark(`boot:${msg}`);
-    text.textContent = msg;
-    const p = Math.round(k * 100);
-    pct.textContent = String(p);
-    track.setAttribute('aria-valuenow', String(p));
-    SPANS.forEach(([a, b], i) => {
-      const f = Math.max(0, Math.min(1, (k - a) / (b - a)));
-      stages[i].style.setProperty('--f', f.toFixed(3));
-      stages[i].classList.toggle('done', f >= 1);
-      stages[i].classList.toggle('on', f < 1 && k >= a);
-    });
-  };
-  step('Opening the village records…', 0.05);
+  loading.enter('records', 'Opening the village records…');
   let resumed = false;
   let data: string | null = null;
   try { data = await get(AUTO); } catch { /* a fresh village */ }
@@ -1559,7 +1551,6 @@ async function boot(): Promise<void> {
   let asked = false;
   try { asked = !!sessionStorage.getItem(RESCUED); sessionStorage.removeItem(RESCUED); } catch { /* private mode */ }
   if (data && bootMark.get() && !asked) {
-    clearInterval(tipTimer);
     const pick = await askRescue();
     try { sessionStorage.setItem(RESCUED, '1'); } catch { /* private mode */ }
     if (pick === 'light') {
@@ -1576,23 +1567,24 @@ async function boot(): Promise<void> {
   bootMark.set(true);
   // V2 (Milestone 9): start fetching the downloaded models now; the loading screen waits for them after the buildings
   const models = Promise.all([loadFleet(), loadCast(), loadZoo()]).catch((e) => console.warn('[models]', e));
+  loading.enter('land', 'Laying out the land…');
+  await paintLoading();
   try { if (data) resumed = Game.performLoad(data).ok; } catch { /* a fresh village */ }
   $('loading-village').textContent = resumed ? `Welcome back to ${World.name || 'your village'}` : 'Founding a new village';
   stage.settleSeason();
-  step('Laying out the land…', 0.12);
-  await yieldFrame();
   terrain.update(true);
   lastVersion = Game.mapVersion;
-  await buildings.buildAll((done, total) => step(`Raising the buildings… ${done} of ${total}`, 0.15 + 0.6 * (done / Math.max(1, total))));
-  step('Painting textures…', 0.78);
+  loading.enter('buildings', 'Raising the buildings…');
+  await buildings.buildAll((done, total) => loading.buildings(done, total));
+  loading.enter('textures', 'Painting textures…');
   await texturesReady();
   // V2 (Milestone 9): the villagers' characters and the vehicles (loading since the start, alongside the buildings)
-  step('Dressing the villagers…', 0.82);
+  loading.enter('models', 'Dressing the villagers…');
   await models;
   founder.refreshFigure();
   founder.refreshRide();
-  step('Lighting the village…', 0.85);
-  await yieldFrame();
+  loading.enter('lighting', 'Lighting the village…');
+  await paintLoading();
   actors.prewarm(true);
   actors.prewarmModels(true, founder.pos);
   // (Milestone 8: the landing camera flies too high for grass or near trees: grow them round the Founder first, so
@@ -1601,21 +1593,18 @@ async function boot(): Promise<void> {
   try { await stage.warmUp(); } catch { /* draw anyway */ }
   actors.prewarm(false);
   actors.prewarmModels(false, founder.pos);
-  step('Ready', 1);
-  clearInterval(tipTimer);
+  if (stage.lost) return;
+  loading.enter('frame', 'Opening the village…');
   // Milestone 8: the landing screen first, over a flight across the village; the guide, the controls or a
   // welcome back once the player steps in
   showLanding(resumed);
+  awaitingLandingFrame = true;
   requestAnimationFrame((t) => {
     last = t;
-    bootClearAt = t + 30000;
     frame(t);
-    const l = $('loading');
-    l.style.opacity = '0';
-    setTimeout(() => l.remove(), 700);
   });
 }
-void boot();
+void boot().catch(failBoot);
 
 // debugging handle for the console
 (window as unknown as Record<string, unknown>).PV = { tour, padNav, applyAccess, Subs, Settings, Game, Sim, World, stage, founder, planner, actors, buildings, terrain, Input, gps, errands, phone, motoring, showroom, wanted, Life, Rep, streetLife, panels, photo, enterPhoto, leavePhoto, indoors, goIn, goOut, counter, dialogue, chatClient, Health, Power, Supply, Edu, Gateways, transit, travel, openDepartures, shifts, JOBS, Weather };
