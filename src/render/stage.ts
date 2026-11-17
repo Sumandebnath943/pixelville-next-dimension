@@ -156,12 +156,16 @@ export class Stage {
   /** light everything once so shaders compile with the environment map, then compile them off-frame */
   async warmUp(): Promise<void> {
     this.update(1 / 60, this.camera.position, []);
-    this.renderer.setRenderTarget(this.pipe.composer.readBuffer);
-    try { await this.renderer.compileAsync(this.scene, this.camera); } catch { /* compile lazily */ }
-    // one frame with shadows so the shadow map exists before any mirror pass samples it
-    this.renderer.shadowMap.needsUpdate = true;
-    this.renderer.render(this.scene, this.camera);
-    this.renderer.setRenderTarget(null);
+    const previous = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.pipe.sceneTarget);
+    try {
+      try { await this.renderer.compileAsync(this.scene, this.camera); } catch { /* compile lazily */ }
+      // one frame with shadows so the shadow map exists before any mirror pass samples it
+      this.renderer.shadowMap.needsUpdate = true;
+      this.renderer.render(this.scene, this.camera);
+    } finally {
+      this.renderer.setRenderTarget(previous);
+    }
   }
 
   /** photo mode: the moment is held (rain hangs in the air, water and leaves stop, the weather stops drifting) */

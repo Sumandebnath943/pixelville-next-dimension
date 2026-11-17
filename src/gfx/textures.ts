@@ -34,6 +34,18 @@ let broken = false, seq = 0;
 const PENDING = new Map<number, { job: Job; res: number; key: string; fill: (data: Uint8Array[]) => void }>();
 const QUEUE: number[] = [];
 let WAIT: Promise<void>[] = [];
+const EMPTY_PIXELS = new Map<number, Uint8Array>();
+
+/** Pending textures share read-only zero pixels until their generated data arrives. */
+function texturePixels(length: number): Uint8Array {
+  if (!JOB) return new Uint8Array(length);
+  let data = EMPTY_PIXELS.get(length);
+  if (!data) {
+    data = new Uint8Array(length);
+    EMPTY_PIXELS.set(length, data);
+  }
+  return data;
+}
 
 /** the raw pixel arrays of a generator's textures (used by the worker) */
 export function generateRaw(name: string, args: unknown[]): Uint8Array[] {
@@ -100,18 +112,21 @@ function offThread<A extends unknown[], R extends TexSet | THREE.Texture>(name: 
     try { return f(...a); } finally { JOB = null; }
   };
 }
-/** the current job's pixels land in `arrays`: from the cache of an earlier visit, else from a worker */
-function dispatch(arrays: Uint8Array[], texes: THREE.Texture[]): void {
+/** Adopt the worker or cache buffers directly, including when a placeholder has already been uploaded. */
+function dispatch(texes: THREE.DataTexture[]): void {
   const job = JOB!, id = ++seq;
   const key = cacheKey(job, RES);
+  const lengths = texes.map((t) => t.image.data!.byteLength);
   WAIT.push(new Promise<void>((resolve) => {
     PENDING.set(id, {
       job,
       res: RES,
       key,
       fill: (data) => {
-        data.forEach((d, i) => arrays[i].set(d));
-        for (const t of texes) t.needsUpdate = true;
+        texes.forEach((t, i) => {
+          t.image.data = data[i];
+          t.needsUpdate = true;
+        });
         resolve();
       },
     });
@@ -119,7 +134,7 @@ function dispatch(arrays: Uint8Array[], texes: THREE.Texture[]): void {
   cacheGet(key).then((hit) => {
     const p = PENDING.get(id);
     if (!p) return;
-    if (hit && hit.length === arrays.length && hit.every((h, i) => h.length === arrays[i].length)) {
+    if (hit && hit.length === lengths.length && hit.every((h, i) => h.byteLength === lengths[i])) {
       PENDING.delete(id);
       p.fill(hit);
     } else {
@@ -208,6 +223,7 @@ export async function texturesReady(): Promise<void> {
     for (const s of POOL) s.w.terminate();
     POOL = null;
   }
+  EMPTY_PIXELS.clear();
   void cachePrune();
 }
 /** scale every generated texture (0.5 on integrated GPUs: 4× faster to build, a quarter of the memory) */
@@ -293,10 +309,10 @@ function dataTex(data: Uint8Array, size: number, srgb: boolean): THREE.DataTextu
 function build(size: number, metres: number, fn: (u: number, v: number, xm: number, ym: number, o: Px) => void, bump = 1): TexSet {
   size = Math.max(128, Math.round(size * RES));
   const n = size * size;
-  const alb = new Uint8Array(n * 4), nor = new Uint8Array(n * 4), rgh = new Uint8Array(n * 4);
+  const alb = texturePixels(n * 4), nor = texturePixels(n * 4), rgh = texturePixels(n * 4);
   const set = { map: dataTex(alb, size, true), normalMap: dataTex(nor, size, false), roughnessMap: dataTex(rgh, size, false), metres };
   if (JOB) {
-    dispatch([alb, nor, rgh], [set.map, set.normalMap, set.roughnessMap]);
+    dispatch([set.map, set.normalMap, set.roughnessMap]);
     return set;
   }
   const hgt = new Float32Array(n);
@@ -332,9 +348,9 @@ function build(size: number, metres: number, fn: (u: number, v: number, xm: numb
 
 /** a single RGBA tile filled by `fill` (off-thread on the page) */
 function pixels(size: number, srgb: boolean, fill: (d: Uint8Array) => void): THREE.DataTexture {
-  const d = new Uint8Array(size * size * 4);
+  const d = texturePixels(size * size * 4);
   const t = dataTex(d, size, srgb);
-  if (JOB) dispatch([d], [t]);
+  if (JOB) dispatch([t]);
   else fill(d);
   return t;
 }

@@ -11,6 +11,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { loadModel } from './modelqueue';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { surface } from './surface';
 import { addBeam, glare, isBraking, steerAngle, VIEW } from './car';
@@ -36,7 +37,7 @@ export function loadFleet(): Promise<void> {
     const index = await fetch(BASE + 'index.json').then((r) => r.json()).catch(() => ({ fleet: [] }));
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    await Promise.all((index.fleet as any[]).map(async (e) => {
+    await Promise.all((index.fleet as any[]).map((e) => loadModel(async () => {
       try {
         const gltf = await loader.loadAsync(BASE + e.file);
         gltf.scene.updateMatrixWorld(true);
@@ -54,7 +55,7 @@ export function loadFleet(): Promise<void> {
       } catch (err) {
         console.warn('[fleet] could not load', e.id, err);
       }
-    }));
+    })));
   })();
   return loading;
 }

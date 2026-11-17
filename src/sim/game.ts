@@ -233,6 +233,12 @@ export const Game = {
 
   /** idle progress while the tab is hidden: catch up in small steady steps */
   catchUp(seconds: number): void {
+    const steps = this.catchUpSteps(seconds);
+    while (!steps.next().done) { /* drain the same steps for synchronous callers */ }
+  },
+
+  /** Preserve the tick and completion order when a journey yields between frames. */
+  *catchUpSteps(seconds: number): Generator<void> {
     let remaining = Math.min(seconds, 90);
     const spd = Math.min(this.speed(), 1);
     if (spd <= 0) return;
@@ -245,12 +251,14 @@ export const Game = {
       Festivals.tick(step);
       this.tickSystems(step);
       Weather.tick(step, step);
+      yield;
     }
     while (Sim.completed.length) {
       const b = Sim.completed.shift();
       this.afterMapEdit();
       this.toast(`✅ ${CAT[b.type].name} completed!`);
       for (const m of Sim.onBuildingAdded(b)) this.toast(m);
+      yield;
     }
     if (World.dirty) this.refreshDerived();
   },
@@ -543,5 +551,28 @@ export const Game = {
   footprint,
   mapSize: { w: GW, h: GH },
 };
+
+/** Advance skipped time in the same batches while giving the browser time to paint. */
+export class CatchUp {
+  private batch: { minutes: number; steps: Generator<void> } | null = null;
+
+  constructor(public remaining: number, private readonly batchSize = 30) {}
+
+  get pending(): boolean { return this.batch !== null; }
+
+  advance(): void {
+    if (this.remaining <= 0) return;
+    const minutes = Math.min(this.remaining, this.batchSize);
+    const batch = this.batch ??= { minutes, steps: Game.catchUpSteps(minutes) };
+    const deadline = performance.now() + 6;
+    do {
+      if (batch.steps.next().done) {
+        this.remaining -= batch.minutes;
+        this.batch = null;
+        return;
+      }
+    } while (performance.now() < deadline);
+  }
+}
 
 on('seasonChange', ({ season }) => Game.seasonToast(season));

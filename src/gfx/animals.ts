@@ -16,6 +16,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { loadModel } from './modelqueue';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { surface } from './surface';
 
@@ -51,7 +52,7 @@ function coatMaterial(map: THREE.Texture | null, doubleSided: boolean): THREE.Me
 export function loadBeast(id: string): Promise<Beast> {
   let p = beasts.get(id);
   if (p) return p;
-  p = (async () => {
+  p = loadModel(async () => {
     const entry = (await zooIndex()).find((z) => z.id === id);
     if (!entry) throw new Error(`no such animal model: ${id}`);
     if (!loader) {
@@ -92,7 +93,7 @@ export function loadBeast(id: string): Promise<Beast> {
     const beast: Beast = { id, entry, lods, joints, material: coatMaterial(s0?.map ?? null, s0?.side === THREE.DoubleSide) };
     loaded.set(id, beast);
     return beast;
-  })();
+  });
   beasts.set(id, p);
   return p;
 }

@@ -14,6 +14,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { loadModel } from './modelqueue';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { surface } from './surface';
 import { BONES, type BoneName, type Rig } from './person';
@@ -100,7 +101,7 @@ export function outfitMaterial(rig: Rig, outfit: Outfit | null): { material: THR
 export function loadRig(id: string): Promise<Rig> {
   let p = rigs.get(id);
   if (p) return p;
-  p = (async () => {
+  p = loadModel(async () => {
     const entry = (await castIndex()).find((c) => c.id === id);
     if (!entry) throw new Error(`no such villager model: ${id}`);
     if (!loader) {
@@ -148,7 +149,7 @@ export function loadRig(id: string): Promise<Rig> {
     rig.material = bodyMaterial(tex, one);
     loaded.set(id, rig);
     return rig;
-  })();
+  });
   rigs.set(id, p);
   return p;
 }

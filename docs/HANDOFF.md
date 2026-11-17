@@ -6,6 +6,14 @@
 
 ---
 
+## Codex performance checkpoint
+
+The annotated Git tag `codex/pixelville-performance-restore` points to the clean pre-change commit `fc69ac4dbfd0e95f7a018b6a77c7229bc211c39e`. The local branch `codex/pixelville-performance` starts there. This restores the tracked game and configuration. Player saves and preferences live in the browser.
+
+The performance pass skips weather shader work whose contribution is zero, resolves High and Ultra scene antialiasing before post-processing, bounds concurrent model loads, adopts generated texture buffers, and invalidates terrain chunks by changed tiles. Road and air journeys yield between simulation steps while retaining the existing batch boundaries.
+
+The comparison scene is a Full village with Medium quality at fixed full resolution in a 1366 × 640 viewport. Compare GPU and frame timings with the same save, camera, and simulation state. For images, hold the scene at the same time, weather, and power state. Include a storm, snow, and an interior.
+
 ## 1. What this is
 
 **PixelVille — Next Dimension** is the 3D remake of **PixelVille V1**, a living village simulation you watched from above. V2 keeps every V1 system (families, jobs, minds, elections, crime, fires, festivals, disasters) and puts the player *on the street* as **the Founder**: walk, drive, ride, work shifts, talk to villagers, and rise into the sky (the Planner) to build, like V1.

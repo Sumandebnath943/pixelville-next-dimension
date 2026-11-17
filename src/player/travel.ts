@@ -16,7 +16,7 @@
      comes in off the highway);
    - and a card of what happened while you were away.
    ============================================================ */
-import { Game } from '../sim/game';
+import { CatchUp, Game } from '../sim/game';
 import { Sim } from '../sim/agents';
 import { World, GW, GH, G_WATER } from '../sim/world';
 import { Life } from '../sim/life';
@@ -55,7 +55,7 @@ interface Snap { at: number; pop: number; maxId: number; sites: Set<number> }
 interface Trip {
   c: City; mode: Mode; gate: any | null; edge: 'west' | 'north' | null;
   phase: 'board' | 'depart' | 'journey' | 'city' | 'arrive' | 'summary';
-  back: boolean; minutes: number; left: number; t0: number; minMs: number;
+  back: boolean; clock: CatchUp; t0: number; minMs: number;
   event: string | null; eventAt: number; notes: string[]; looked: boolean; snap: Snap; prepaid: boolean;
   /** the flight checked in for (absolute game-minutes: day × 1440 + time) */
   flightAt: number;
@@ -144,7 +144,7 @@ export class Travel {
       return false;
     }
     this.trip = {
-      c, mode, gate, edge, phase: 'board', back: false, minutes: 0, left: 0, t0: 0, minMs: 0,
+      c, mode, gate, edge, phase: 'board', back: false, clock: new CatchUp(0), t0: 0, minMs: 0,
       event: null, eventAt: 0, notes: [], looked: false, snap: this.snapshot(), prepaid, craft: null,
       flightAt: Sim.day * 1440 + this.nextFlight(),
     };
@@ -212,9 +212,10 @@ export class Travel {
     if (t.mode === 'road' && !t.back) Gateways.leave(t.c, t.mode);
     t.phase = 'journey';
     t.craft = null;
-    t.minutes = t.left = Math.round(t.c.modes[t.mode]!.hours * 60);
+    const minutes = Math.round(t.c.modes[t.mode]!.hours * 60);
+    t.clock = new CatchUp(minutes);
     t.t0 = performance.now();
-    t.minMs = 4200 + Math.min(2500, t.minutes * 8);
+    t.minMs = 4200 + Math.min(2500, minutes * 8);
     t.event = null;
     t.eventAt = 0.45 + Math.random() * 0.2;
     Game.setSpeed(1);
@@ -224,15 +225,11 @@ export class Travel {
     const t = this.trip;
     if (!t) return;
     if (t.phase === 'journey') {
-      if (t.left > 0) {
-        const n = Math.min(t.left, 30);
-        Game.catchUp(n);
-        t.left -= n;
-      }
+      t.clock.advance();
       const k = Math.min(1, (now - t.t0) / t.minMs);
-      if (!t.event && k >= t.eventAt) t.event = this.wayEvent(t);
+      if (!t.clock.pending && !t.event && k >= t.eventAt) t.event = this.wayEvent(t);
       this.view.journey({ from: t.back ? t.c.name : World.name, to: t.back ? World.name : t.c.name, mode: t.mode, icon: ICON[t.mode], k, clock: `Day ${Sim.day} · ${Sim.timeStr()}`, event: t.event, back: t.back });
-      if (t.left <= 0 && now - t.t0 >= t.minMs) {
+      if (t.clock.remaining <= 0 && now - t.t0 >= t.minMs) {
         if (!t.back) this.arriveCity();
         else this.homecoming();
       }
@@ -250,7 +247,7 @@ export class Travel {
       return `You got talking to a trader ${by} who needed a hand with some figures — they paid you $${pay}.`;
     }
     if (r < 0.45) return `${t.back ? 'Coming home' : 'On the way'} you read the ${t.back ? World.name : t.c.name} papers ${by}: ${t.back ? `"${World.name} keeps growing", it says` : t.c.blurb.split(':')[0].toLowerCase()}.`;
-    if (r < 0.6 && t.mode !== 'heli') { if (t.left > 0) t.left += 20; return `A delay ${t.mode === 'road' ? 'at the roadworks' : t.mode === 'rail' ? 'outside a junction' : t.mode === 'sea' ? 'while a tanker crossed' : 'circling for a slot'} — twenty minutes lost.`; }
+    if (r < 0.6 && t.mode !== 'heli') { if (t.clock.remaining > 0) t.clock.remaining += 20; return `A delay ${t.mode === 'road' ? 'at the roadworks' : t.mode === 'rail' ? 'outside a junction' : t.mode === 'sea' ? 'while a tanker crossed' : 'circling for a slot'} — twenty minutes lost.`; }
     if (r < 0.8) return `${t.mode === 'air' || t.mode === 'heli' ? 'The clouds parted' : 'The view opened up'} and you could see for miles: ${t.back ? `${World.name}'s rooftops ahead` : 'the whole valley behind you'}.`;
     return `A family ${by} asked where you were from. "${World.name}," you said. They'd heard of it.`;
   }

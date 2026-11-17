@@ -3,9 +3,9 @@
    arrive at the station and walk home; the Founder waits at a stop, boards the bus,
    pays and gets off where they asked; trips off the map (by road, and a flight with
    check-in, take-off and landing) pass the hours at home and come back to a summary. */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { Game } from '../src/sim/game';
+import { CatchUp, Game } from '../src/sim/game';
 import { Sim } from '../src/sim/agents';
 import { Life } from '../src/sim/life';
 import { World, GW } from '../src/sim/world';
@@ -43,6 +43,27 @@ function play(seconds: number, tr: Transit, tv: Travel, now: { t: number }, repo
     tv.update();
   }
 }
+
+it('yields between journey ticks and finishes the same simulated time', () => {
+  Game.boot(601);
+  Game.setSpeed(1);
+  const before = Sim.clock;
+  const clock = new CatchUp(30.25);
+  let time = 0;
+  const now = vi.spyOn(performance, 'now').mockImplementation(() => (time += 7));
+  try {
+    clock.advance();
+    expect(clock.pending).toBe(true);
+    expect(clock.remaining).toBe(30.25);
+    expect(Sim.clock - before).toBeCloseTo(0.5);
+    for (let i = 0; i < 70 && clock.remaining > 0; i++) clock.advance();
+    expect(clock.pending).toBe(false);
+    expect(clock.remaining).toBe(0);
+    expect(Sim.clock - before).toBeCloseTo(30.25);
+  } finally {
+    now.mockRestore();
+  }
+});
 
 describe('gateways', () => {
   it('the national railway reaches a new station, and the Intercity Express keeps its timetable', () => {

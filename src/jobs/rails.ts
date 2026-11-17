@@ -16,7 +16,7 @@
      the runway and land it yourself. The visitors it brings walk
      into town, and the hold carries trade.
    ============================================================ */
-import { Game } from '../sim/game';
+import { CatchUp, Game } from '../sim/game';
 import { Sim } from '../sim/agents';
 import { World, GW, GH } from '../sim/world';
 import { Life } from '../sim/life';
@@ -221,7 +221,7 @@ export class PilotJob implements Job {
   dest: City;
   pax = 0;
   flights = 0;
-  trip: { left: number; t0: number; minMs: number; back: boolean; city: boolean; event: string | null } | null = null;
+  trip: { clock: CatchUp; t0: number; minMs: number; back: boolean; city: boolean; event: string | null } | null = null;
   private legs = 0;
 
   constructor(private c: ShiftCtx) {
@@ -343,18 +343,18 @@ export class PilotJob implements Job {
   }
   private beginLeg(back: boolean): void {
     const mins = Math.round((this.dest.modes.air?.hours ?? 1.5) * 60);
-    this.trip = { left: mins, t0: performance.now(), minMs: 4200 + Math.min(2500, mins * 8), back, city: false, event: null };
+    this.trip = { clock: new CatchUp(mins), t0: performance.now(), minMs: 4200 + Math.min(2500, mins * 8), back, city: false, event: null };
     Game.setSpeed(1);
   }
   frame(now: number): void {
     const t = this.trip, view = this.c.travelView();
     if (!t || this.phase !== 'away') return;
     if (t.city) return; // (the turnaround card waits for its button)
-    if (t.left > 0) { const n = Math.min(t.left, 30); Game.catchUp(n); t.left -= n; }
+    t.clock.advance();
     const k = Math.min(1, (now - t.t0) / t.minMs);
     if (!t.event && k > 0.5) t.event = t.back ? `Cruising home at 11,000 m — ${World.name} on the horizon.` : `Smooth air over the hills; the cabin crew serve coffee.`;
     view?.journey({ from: t.back ? this.dest.name : World.name, to: t.back ? World.name : this.dest.name, mode: 'air', icon: '✈️', k, clock: `Day ${Sim.day} · ${Sim.timeStr()}`, event: t.event, back: t.back });
-    if (t.left > 0 || now - t.t0 < t.minMs) return;
+    if (t.clock.remaining > 0 || now - t.t0 < t.minMs) return;
     if (!t.back) {
       t.city = true;
       const home = 40 + Math.floor(Math.random() * 80);

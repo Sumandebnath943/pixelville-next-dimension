@@ -344,11 +344,13 @@ function backdropHeight(x: number, z: number): number {
   return f > 0 ? h * (1 - f) : h;
 }
 
-interface Chunk { sig: string; meshes: THREE.Mesh[]; water?: THREE.Mesh }
+interface Chunk { meshes: THREE.Mesh[]; water?: THREE.Mesh }
 
 export class Terrain {
   group = new THREE.Group();
   chunks: Chunk[] = [];
+  private tileGeometry = new Uint8Array(GW * GH).fill(255);
+  private dirtyChunks = new Uint8Array(NCX * NCY);
   water: WaterSystem;
   trees: TreeLayer;
   grass: GrassStream;
@@ -370,7 +372,7 @@ export class Terrain {
     scene.add(this.group);
     this.pal = sharedPalette();
     P.registerGlow(this.pal);
-    for (let i = 0; i < NCX * NCY; i++) this.chunks.push({ sig: '', meshes: [] });
+    for (let i = 0; i < NCX * NCY; i++) this.chunks.push({ meshes: [] });
     this.water = new WaterSystem(WATER_Y, this.profile.waterReflScale, 9); // (the town's water is a 4 m mesh)
     this.water.fullMirror = this.profile.fullMirrors;
     // (V2 (Milestone 8): the forest thins out with the quality: the far crowns go cheap sooner, and the haze
@@ -566,17 +568,17 @@ export class Terrain {
     if (season !== this.season || dry !== this.wasDry) {
       this.season = season;
       this.wasDry = dry;
+      this.dirtyChunks.fill(1);
       force = true;
     }
+    this.markEditedChunks();
     let changed = false;
-    shoreChanged();
     for (let cy = 0; cy < NCY; cy++)
       for (let cx = 0; cx < NCX; cx++) {
-        const sig = this.chunkSig(cx, cy) + '|' + season + (dry ? 'd' : '');
-        const ch = this.chunks[cy * NCX + cx];
-        if (sig === ch.sig) continue;
-        ch.sig = sig;
-        this.buildChunk(cx, cy, ch);
+        const index = cy * NCX + cx;
+        if (!this.dirtyChunks[index]) continue;
+        this.buildChunk(cx, cy, this.chunks[index]);
+        this.dirtyChunks[index] = 0;
         changed = true;
       }
     if (changed || force) { this.grass.reset(); this.updateBushes(); }
@@ -644,19 +646,43 @@ export class Terrain {
     this.trees.setTrees(this.baseTrees.concat(this.extraTrees, this.streetTrees));
   }
 
-  private chunkSig(cx: number, cy: number): string {
-    let h1 = 0, h2 = 0;
-    const x0 = cx * CH - 1, y0 = cy * CH - 1;
-    for (let y = y0; y <= y0 + CH + 1; y++)
-      for (let x = x0; x <= x0 + CH + 1; x++) {
-        if (!World.inB(x, y)) continue;
-        const i = World.idx(x, y);
-        // (V2 (Milestone 8): built-on land never slopes down to the water, so a building's plot counts too)
-        const v = World.ground[i] | (World.roadMap[i] << 2) | (World.railMap[i] << 3) | (World.bmap[i] ? 16 : 0);
-        h1 = (Math.imul(h1, 31) + v * (x + 1)) | 0;
-        h2 = (Math.imul(h2, 17) + v * (y + 3)) | 0;
+  /** Compare live tiles once so Planner edits, undo, disasters and imports share the same invalidation. */
+  private markEditedChunks(): void {
+    const { ground, roadMap, railMap, bmap } = World;
+    let shoreDirty = false;
+    for (let y = 0; y < GH; y++)
+      for (let x = 0; x < GW; x++) {
+        const i = y * GW + x;
+        const g = ground[i];
+        const next = g | (roadMap[i] << 2) | (railMap[i] << 3) | (bmap[i] ? 16 : 0);
+        const prev = this.tileGeometry[i];
+        if (next === prev) continue;
+        this.tileGeometry[i] = next;
+
+        // Bank geometry and water foam sample beyond a chunk's edge.
+        const left = Math.max(0, Math.floor((x - 3) / CH));
+        const right = Math.min(NCX - 1, Math.floor((x + 3) / CH));
+        const top = Math.max(0, Math.floor((y - 3) / CH));
+        const bottom = Math.min(NCY - 1, Math.floor((y + 3) / CH));
+        for (let cy = top; cy <= bottom; cy++)
+          for (let cx = left; cx <= right; cx++) this.dirtyChunks[cy * NCX + cx] = 1;
+
+        if (shoreDirty) continue;
+        const occupancyChanged = Boolean(prev & 28) !== Boolean(next & 28);
+        shoreDirty = (prev & 3) !== g || (g !== G_WATER && g !== G_ROCK && occupancyChanged && this.nearShore(x, y));
       }
-    return h1 + ':' + h2;
+    if (shoreDirty) shoreChanged();
+  }
+
+  /** Occupancy can affect the water and sand fields within two tiles of a shore. */
+  private nearShore(x: number, y: number): boolean {
+    if (y >= GH - 2) return true; // the ocean continues past the south edge
+    for (let ty = Math.max(0, y - 2); ty <= Math.min(GH - 1, y + 2); ty++)
+      for (let tx = Math.max(0, x - 2); tx <= Math.min(GW - 1, x + 2); tx++) {
+        const g = World.ground[ty * GW + tx];
+        if (g === G_WATER || g === G_SAND) return true;
+      }
+    return false;
   }
 
   private buildChunk(cx: number, cy: number, ch: Chunk): void {

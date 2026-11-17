@@ -251,7 +251,8 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         float pvMeltWet = 0.0;
         float pvField = 0.5;
         #ifdef PV_SNOW
-        {
+        // With no snow or thaw, the field has no effect on the surface.
+        if (uSnow > 0.0 || uThaw * uThawK > 0.0) {
           // V2: drifts that thaw from their edges in (env.ts pvSnowCover), wet ground round them, ploughed streets
           float plough = uPloughK * (1.0 - pvWorn);
           float cov = uSnow * uSnowK * (1.0 - plough * 0.8);
@@ -269,8 +270,10 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         #endif
         float pvPud = 0.0;
         #ifdef PV_PUDDLES
-          pvPud = smoothstep(0.64 - uWet * 0.08, 0.68 - uWet * 0.08, pvFbm(vWPos.xz * 0.16 + 3.1) + pvWear.r * 0.05)
-                * step(0.92, pvUp) * smoothstep(0.35, 0.9, uWet) * (1.0 - pvSnow);
+          if (uWet > 0.35 && pvUp >= 0.92) {
+            pvPud = smoothstep(0.64 - uWet * 0.08, 0.68 - uWet * 0.08, pvFbm(vWPos.xz * 0.16 + 3.1) + pvWear.r * 0.05)
+                  * smoothstep(0.35, 0.9, uWet) * (1.0 - pvSnow);
+          }
         #endif
         float pvWet = max(max(uWet * uWetK * mix(0.45, 1.0, smoothstep(0.1, 0.8, abs(pvUp))), pvSlush), pvMeltWet * 0.85) * (1.0 - pvSnow);
         // V2: grass out from under the snow comes up flattened and straw-pale, and greens again over a day or two
@@ -280,7 +283,9 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         diffuseColor.rgb *= mix(1.0, 0.55, pvPud);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.19, 0.17), pvSlush * 0.55 * (1.0 - pvSnow));
         // (old snow greys as it thaws)
-        diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.86, 0.89, 0.94), vec3(0.75, 0.77, 0.79), uMelt * 0.6) * (0.92 + 0.08 * pvNoise(vWPos.xz * 9.0)), pvSnow);`,
+        if (pvSnow > 0.0) {
+          diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.86, 0.89, 0.94), vec3(0.75, 0.77, 0.79), uMelt * 0.6) * (0.92 + 0.08 * pvNoise(vWPos.xz * 9.0)), pvSnow);
+        }`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
@@ -336,7 +341,8 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
         '#include <lights_fragment_maps>',
         `#include <lights_fragment_maps>
         #if defined(PV_PUDDLES) && defined(USE_ENVMAP)
-        if (uReflOn > 0.5 && pvUp > 0.9) {
+        float rk = clamp(1.0 - material.roughness * 2.6, 0.0, 1.0) * max(pvWet, pvPud);
+        if (uReflOn > 0.5 && pvUp > 0.9 && rk > 0.0) {
           vec4 rp = uReflMat * vec4(vWPos, 1.0);
           vec2 ruv = rp.xy / rp.w;
           vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
@@ -345,7 +351,6 @@ export function surface(mat: THREE.MeshStandardMaterial, o: SurfaceOpts = {}, ke
           vec3 rc = vec3(0.0);
           for (int i = 0; i < 4; i++) rc += textureLod(uReflTex, ruv + vec2(0.0, (float(i) - 1.5) * material.roughness * 0.03), lod).rgb;
           rc *= 0.25;
-          float rk = clamp(1.0 - material.roughness * 2.6, 0.0, 1.0) * max(pvWet, pvPud);
           radiance = mix(radiance, rc, rk);
         }
         #endif`,

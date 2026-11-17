@@ -1,5 +1,5 @@
 /* ============================================================
-   Render pipeline: WebGL2 renderer, HDR + MSAA composer,
+   Render pipeline: WebGL2 renderer, multisampled scene and HDR composer,
    ground-truth ambient occlusion, bloom whose threshold tracks
    exposure (so lamps glow at night but walls never do by day),
    filmic tone mapping and a final grade (contrast, saturation,
@@ -121,6 +121,34 @@ const GradeShader = {
     }`,
 };
 
+/** Resolve scene edges once. The fullscreen passes can then use single-sample HDR buffers. */
+class MultisampledScenePass extends RenderPass {
+  readonly target: THREE.WebGLRenderTarget;
+
+  constructor(scene: THREE.Scene, camera: THREE.Camera, samples: number) {
+    super(scene, camera);
+    this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples });
+  }
+
+  override setSize(width: number, height: number): void {
+    this.target.setSize(width, height);
+  }
+
+  override dispose(): void {
+    this.target.dispose();
+  }
+
+  override render(renderer: THREE.WebGLRenderer, write: THREE.WebGLRenderTarget, read: THREE.WebGLRenderTarget, deltaTime: number, maskActive: boolean): void {
+    if (this.renderToScreen) {
+      super.render(renderer, write, read, deltaTime, maskActive);
+      return;
+    }
+    super.render(renderer, write, this.target, deltaTime, maskActive);
+    renderer.initRenderTarget(read);
+    renderer.copyTextureToTexture(this.target.texture, read.texture);
+  }
+}
+
 export class Pipeline {
   renderer: THREE.WebGLRenderer;
   composer: EffectComposer;
@@ -149,9 +177,9 @@ export class Pipeline {
     this.shadowSize = P.shadow;
 
     const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
-    const rt = new THREE.WebGLRenderTarget(w * dpr, h * dpr, { type: THREE.HalfFloatType, samples: P.msaa });
+    const rt = new THREE.WebGLRenderTarget(w * dpr, h * dpr, { type: THREE.HalfFloatType, depthBuffer: !P.msaa });
     this.composer = new EffectComposer(this.renderer, rt);
-    this.renderPass = new RenderPass(scene, camera);
+    this.renderPass = P.msaa ? new MultisampledScenePass(scene, camera, P.msaa) : new RenderPass(scene, camera);
     this.composer.addPass(this.renderPass);
     if (P.ao) {
       // AO at half resolution: contact shadows under eaves, sills, kerbs and cars
@@ -204,6 +232,10 @@ export class Pipeline {
     this.onResize?.(w, h);
   }
   onResize?: (w: number, h: number) => void;
+
+  get sceneTarget(): THREE.WebGLRenderTarget {
+    return this.renderPass instanceof MultisampledScenePass ? this.renderPass.target : this.composer.readBuffer;
+  }
 
   /** V2 (Milestone 7): draw the world at a fraction of the screen's resolution (the interface stays sharp) */
   private baseDpr = 1;
