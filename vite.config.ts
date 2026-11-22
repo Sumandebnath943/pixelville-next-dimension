@@ -1,5 +1,11 @@
 import { defineConfig } from 'vitest/config';
 import { loadEnv, type Plugin } from 'vite';
+/** which build this is, for the performance report: the commit (Vercel names it to the build; a local build is
+ *  'local'), and when it was built */
+function buildId(): string {
+  const sha = loadEnv('production', '.', 'VERCEL_').VERCEL_GIT_COMMIT_SHA || '';
+  return `${sha ? sha.slice(0, 7) : 'local'} · built ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
 
 /** the villager chat proxy in development: the same code as the Vercel function (api/_chat.ts),
     with the key from .env.local, which only this server process ever sees */
@@ -35,6 +41,7 @@ function chatApi(): Plugin {
 export default defineConfig({
   server: { port: 5173 },
   plugins: [chatApi()],
+  define: { __BUILD__: JSON.stringify(buildId()) },
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 1500,
@@ -47,6 +54,7 @@ export default defineConfig({
   worker: { format: 'es' },
   test: {
     include: ['tests/**/*.test.ts'],
+    setupFiles: ['tests/setup.ts'],
     testTimeout: 120_000,
   },
 });

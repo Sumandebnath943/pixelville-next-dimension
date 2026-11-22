@@ -234,7 +234,7 @@
         </section>
         <section class="set-pane" data-pane="graphics">
           <div class="set-row"><label for="set-quality">Quality</label><select id="set-quality">
-            <option value="auto">Auto (picked for this device)</option><option value="low">Low — phones, older laptops</option><option value="medium">Medium — laptops</option><option value="high">High — gaming PCs</option><option value="ultra">Ultra — High, plus every small shadow and full reflections</option></select></div>
+            <option value="auto">Auto (timed on this computer)</option><option value="low">Low — phones, older laptops</option><option value="medium">Medium — laptops</option><option value="high">High — gaming PCs</option><option value="ultra">Ultra — High, plus every small shadow and full reflections</option></select></div>
           <div class="set-row"><label for="set-res">Resolution</label><select id="set-res">
             <option value="auto">Auto — lowers itself to keep the game smooth</option><option value="1">Full</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.55">55%</option></select></div>
           <div class="set-row"><label for="set-fps">Frame rate</label><select id="set-fps">
@@ -243,6 +243,9 @@
             <option value="off">Off</option><option value="left">Top left</option><option value="right">Top right</option></select></div>
           <div class="set-row"><label for="set-fov">Field of view</label><input id="set-fov" type="range" min="55" max="95" step="1" /></div>
           <p class="note" id="set-gfx-note">Quality applies after a reload; the rest at once.</p>
+          <div class="set-row"><label>Performance report <small>if the game runs slowly, send this to the developer</small></label><button id="set-report">Copy report</button></div>
+          <p class="note" id="set-report-note" hidden></p>
+          <pre id="set-report-text" hidden></pre>
         </section>
         <section class="set-pane" data-pane="controls">
           <div class="set-row"><label for="set-sens">Look sensitivity</label><input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" /></div>

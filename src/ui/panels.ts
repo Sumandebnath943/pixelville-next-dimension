@@ -5,6 +5,7 @@
    and help. Ported from V1 main.js with 3D-era wording.
    ============================================================ */
 import { Sim, WAGES, AGE_RETIRE } from '../sim/agents';
+import { clearRecord } from '../gfx/autoquality';
 import { World } from '../sim/world';
 import { CAT } from '../sim/catalog';
 import { Gov } from '../sim/gov';
@@ -58,6 +59,8 @@ export interface PanelApi {
   isPlanner(): boolean;
   /** Milestone 7: a setting that applies at once was changed */
   settingsChanged?(): void;
+  /** V2: the performance report's text (Settings → Graphics) */
+  perfReport?(): string;
   /** Milestone 7: run the first-day guide again */
   startTour?(): void;
   /** V2 (Milestone 9): who the Founder is (a character's id), and choosing another */
@@ -551,12 +554,30 @@ export class Panels {
     ];
     for (const [id, key, read] of live) $(id).addEventListener('change', (ev) => { Settings.set(key, read(ev.target as HTMLInputElement & HTMLSelectElement)); this.api.settingsChanged?.(); });
     $('set-quality').addEventListener('change', () => {
-      const ultra = ($('set-quality') as HTMLSelectElement).value === 'ultra';
+      const v = ($('set-quality') as HTMLSelectElement).value, ultra = v === 'ultra';
+      // (V2: choosing Auto again times this computer afresh (gfx/autoquality.ts))
+      if (v === 'auto') clearRecord();
       // (V2: Ultra is never picked for you: it asks the most of the graphics card)
-      $('set-gfx-note').textContent = (ultra ? 'Ultra draws every kerb, sash and flower pot’s shadow and every reflection in full: for a strong graphics card. ' : '') + 'Quality changes after a reload (save first, or it picks up from the autosave).';
+      $('set-gfx-note').textContent = (ultra ? 'Ultra draws every kerb, sash and flower pot’s shadow and every reflection in full: for a strong graphics card. ' : '')
+        + (v === 'auto' ? 'Auto times the first half-minute of play on this computer and screen, and opens with what keeps it smooth. ' : '')
+        + 'Quality changes after a reload (save first, or it picks up from the autosave).';
     });
     $('set-keys-reset').addEventListener('click', () => { Input.resetBinds(); $('set-keys-note').textContent = 'Back to the defaults.'; this.renderKeys(); });
     $('set-tour').addEventListener('click', () => { this.close('settings'); this.api.startTour?.(); });
+    // V2: the performance report: shown, and copied for pasting into a message
+    $('set-report').addEventListener('click', async () => {
+      const text = this.api.perfReport?.() ?? '';
+      const pre = $('set-report-text'), note = $('set-report-note');
+      pre.textContent = text;
+      pre.hidden = false;
+      note.hidden = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        note.textContent = 'Copied. Paste it into a message to the developer (it names your graphics card, screen and browser, nothing else about you).';
+      } catch {
+        note.textContent = 'The browser wouldn’t copy it: select the text below and copy it yourself.';
+      }
+    });
   }
   /** every bindable action, its key, and a button to rebind it */
   private renderKeys(): void {

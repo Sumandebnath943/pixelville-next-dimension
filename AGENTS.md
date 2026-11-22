@@ -2,4 +2,4 @@
 
 See [docs/HANDOFF.md](docs/HANDOFF.md) for the architecture and verification commands.
 
-Codex performance work begins at `codex/pixelville-performance-restore` (`fc69ac4`) on the local branch `codex/pixelville-performance`. Use `git status --short` and `git diff codex/pixelville-performance-restore` to inspect the working copy against that checkpoint.
+The Codex performance pass and the performance stages after it are merged into `main` (see "Codex performance checkpoint" and "Performance pass" in `docs/HANDOFF.md`). The tag `codex/pixelville-performance-restore` (`fc69ac4`) still marks the commit before any of that work: `git diff codex/pixelville-performance-restore` shows everything it changed.

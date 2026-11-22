@@ -47,13 +47,27 @@ export function rendererName(gl: WebGLRenderingContext | WebGL2RenderingContext)
  *  which then got the High preset) */
 export const SOFTWARE_GPU = /SwiftShader|llvmpipe|softpipe|Software|Basic Render Driver/i;
 
-/** pick a preset from the GPU: integrated and mobile GPUs get the medium tier */
-export function detectQuality(): Quality {
+let gpuSeen: string | null = null;
+/** the graphics card's name, from a throwaway context ('' without WebGL2) */
+export function probeGpu(): string {
+  if (gpuSeen !== null) return gpuSeen;
+  gpuSeen = '';
   try {
     const gl = document.createElement('canvas').getContext('webgl2');
-    if (!gl) return 'low';
-    const name = rendererName(gl);
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    if (gl) {
+      gpuSeen = rendererName(gl);
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+  } catch { /* no WebGL2 */ }
+  return gpuSeen;
+}
+
+/** guess a preset from the GPU's name: integrated and mobile GPUs get the medium tier (V2: Auto then times the
+ *  first spell of play and corrects the guess for next time: gfx/autoquality.ts) */
+export function detectQuality(): Quality {
+  try {
+    const name = probeGpu();
+    if (!name) return 'low';
     if (SOFTWARE_GPU.test(name)) return 'low';
     // V2 (Milestone 7): phones and tablets (a touch screen and no mouse) start on low (design §17.4)
     if (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches) return 'low';
@@ -186,6 +200,8 @@ export class Pipeline {
     this.renderer.shadowMap.enabled = P.shadow > 0;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
+    // (V2: the draw counts are the whole frame's (the stage resets them as a frame starts), not the last pass's)
+    this.renderer.info.autoReset = false;
     this.shadowSize = P.shadow;
 
     const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;

@@ -14,7 +14,9 @@ import { Festivals } from '../sim/festivals';
 import { Calamity } from '../sim/calamity';
 import { Settings } from '../sim/settings';
 import { GW, GH } from '../sim/world';
-import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, LAYER_NO_WATER, detectQuality, QualityProfile, isHigh } from '../gfx/pipeline';
+import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, LAYER_NO_WATER, detectQuality, probeGpu, QualityProfile, isHigh } from '../gfx/pipeline';
+import { loadRecord, markLost, signature } from '../gfx/autoquality';
+import { GpuTimer } from '../gfx/perfstats';
 import { SkySystem } from '../gfx/sky';
 import { ENV } from '../gfx/env';
 import { Precipitation } from '../gfx/precip';
@@ -78,14 +80,29 @@ export class Stage {
   waterUpdate: ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, cam: THREE.PerspectiveCamera, ambient: number, reflect: boolean) => void) | null = null;
   lost = false;
 
+  /** V2: where the preset came from: the player's choice, Auto's timing, Auto's guess from the card's name, or one
+   *  lighter for this load after the graphics card reset */
+  qualitySource: 'chosen' | 'auto-timed' | 'auto-guessed' | 'after-reset' = 'auto-guessed';
+  /** V2: the graphics card and screen, as Auto quality keys its timing */
+  sig = '';
+  /** V2: the graphics card's own time per frame, where the browser can measure it */
+  gpuTimer: GpuTimer;
+  /** V2: the last frame's draw calls and triangles (every pass) */
+  lastDraws = 0;
+  lastTris = 0;
+
   constructor(canvas: HTMLCanvasElement) {
-    this.quality = Stage.pickQuality();
+    const pick = Stage.pickQuality();
+    this.quality = pick.q;
+    this.qualitySource = pick.source;
+    this.sig = pick.sig;
     this.camera = new THREE.PerspectiveCamera(Settings.get('fov') || 60, 1, 0.25, 4000);
     this.camera.layers.enable(LAYER_NO_REFLECT);
     this.camera.layers.enable(LAYER_NO_WATER);
     this.pipe = new Pipeline(canvas, this.quality, this.scene, this.camera);
     this.profile = this.pipe.profile;
     this.renderer = this.pipe.renderer;
+    this.gpuTimer = new GpuTimer(this.renderer.getContext() as WebGL2RenderingContext);
     setTextureScale(isHigh(this.quality) ? 1 : 0.5);
     // V2: Ultra (the player's choice) brings back every small shadow; set before the town is built
     SHADOW_DETAIL.tiny = this.profile.tinyShadows;
@@ -123,6 +140,8 @@ export class Stage {
       this.lost = true;
       // come back one preset lighter on the next load (V2: that load only: it used to stick for good)
       try { sessionStorage.setItem(QUALITY_ONCE, this.quality === 'ultra' ? 'high' : this.quality === 'high' ? 'medium' : 'low'); } catch { /* private mode */ }
+      // (V2: and Auto remembers it was too much for this card and screen)
+      if (this.qualitySource.startsWith('auto')) markLost(this.sig, this.quality);
       console.error('[stage] WebGL context lost; the next load is one preset lighter');
       this.onLost?.();
     });
@@ -133,13 +152,17 @@ export class Stage {
   /** V2: the graphics card gave up (the client shows what happened and offers a reload) */
   onLost?: () => void;
 
-  static pickQuality(): Quality {
+  static pickQuality(): { q: Quality; source: Stage['qualitySource']; sig: string } {
+    const sig = signature(probeGpu());
     let once: string | null = null;
     try { once = sessionStorage.getItem(QUALITY_ONCE); sessionStorage.removeItem(QUALITY_ONCE); } catch { /* private mode */ }
-    if (once === 'low' || once === 'medium' || once === 'high') return once;
+    if (once === 'low' || once === 'medium' || once === 'high') return { q: once, source: 'after-reset', sig };
     const q = Settings.get('quality');
-    if (q === 'low' || q === 'medium' || q === 'high' || q === 'ultra') return q;
-    return detectQuality();
+    if (q === 'low' || q === 'medium' || q === 'high' || q === 'ultra') return { q, source: 'chosen', sig };
+    // V2: Auto: what the timing on this card and screen found, else a guess from the card's name (then timed)
+    const rec = loadRecord(sig);
+    if (rec) return { q: rec.pick, source: 'auto-timed', sig };
+    return { q: detectQuality(), source: 'auto-guessed', sig };
   }
   viewDistance(): number {
     return isHigh(this.quality) ? 2600 : this.quality === 'medium' ? 2000 : 1400;
@@ -379,6 +402,19 @@ export class Stage {
   private lastCam = new THREE.Matrix4();
 
   render(): void {
+    // (V2: the frame's draw calls, every pass together, and the graphics card's time for it where it can be measured)
+    this.renderer.info.reset();
+    this.gpuTimer.begin();
+    try {
+      this.draw();
+    } finally {
+      this.gpuTimer.end();
+      this.lastDraws = this.renderer.info.render.calls;
+      this.lastTris = this.renderer.info.render.triangles;
+    }
+  }
+
+  private draw(): void {
     // the headlamps lighting the street, once everything has moved this frame (none indoors)
     flushBeams(this.camera.position, this.indoor ? 0 : this.sky.nightK, isHigh(this.quality) ? 8 : this.quality === 'medium' ? 6 : 3);
     if (this.lost) return;

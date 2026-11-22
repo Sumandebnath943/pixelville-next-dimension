@@ -17,6 +17,9 @@ import { family } from './sim/core';
 import { Stage, QUALITY_ONCE } from './render/stage';
 import { rendererName, SOFTWARE_GPU } from './gfx/pipeline';
 import { FpsMeter } from './ui/fpsmeter';
+import { QualityProbe, loadRecord } from './gfx/autoquality';
+import { buildReport } from './ui/perfreport';
+import { PerfStats } from './gfx/perfstats';
 import { Terrain } from './render/terrain';
 import { BuildingLayer, yieldFrame } from './render/buildings';
 import { Actors } from './render/actors';
@@ -109,6 +112,16 @@ stage.onLost = () => {
 };
 $('gpu-reload').addEventListener('click', () => location.reload());
 const fpsMeter = new FpsMeter($('fps-meter'));
+// V2: Auto quality times the first half-minute of play on an auto-picked preset (gfx/autoquality.ts) and says what
+// it will open with next time, when that changes
+const qualityProbe = stage.qualitySource.startsWith('auto')
+  ? new QualityProbe(stage.sig, stage.quality, (verdict, next) => {
+    const name = next[0].toUpperCase() + next.slice(1);
+    hud.toast(verdict === 'slow'
+      ? `⚙️ The graphics are more than this screen can keep smooth: ${name} from the next time the game opens (Settings → Graphics to choose for yourself)`
+      : `⚙️ This computer has room to spare: ${name} graphics from the next time the game opens`, undefined, true);
+  })
+  : null;
 // V2: no graphics card in use (software drawing): say so, once a browser session, rather than leave the player
 // thinking the game itself is slow
 if (SOFTWARE_GPU.test(rendererName(stage.renderer.getContext()))) {
@@ -227,6 +240,18 @@ const panels = new Panels({
   },
   isPlanner: inPlanner,
   settingsChanged: () => applyAccess(),
+  perfReport: () => {
+    const R = stage.renderer, c = R.domElement;
+    return buildReport({
+      gpu: rendererName(R.getContext()), software: SOFTWARE_GPU.test(rendererName(R.getContext())), gpuTimer: stage.gpuTimer.available,
+      quality: stage.quality, source: stage.qualitySource, auto: loadRecord(stage.sig),
+      resSetting: Settings.get('resScale'), resScale: stage.pipe.resScale, fpsCap: Settings.get('fpsCap') || 0, meter: Settings.get('fpsMeter') || 'off',
+      canvas: [c.width, c.height],
+      where: indoors.active ? 'indoors' : planner.active ? `the Planner, ${Math.round(planner.dist)} m up` : founder.driving ? 'driving in the street' : 'on foot in the street',
+      buildings: World.buildings.length, people: Sim.people.length,
+      textures: R.info.memory.textures, geometries: R.info.memory.geometries,
+    });
+  },
   startTour: () => { Settings.set('tourDone', false); tour.start(); },
   figure: () => founder.figure,
   setFigure: (id) => founder.setFigure(id),
@@ -887,9 +912,22 @@ function guard(part: string, fn: () => void): void {
     if (n === 1 || n % 900 === 0) console.error(`[frame] ${part} failed${n > 1 ? ` (${n} times)` : ''}`, e);
   }
 }
+/** V2: this frame was drawn (not skipped by the frame-rate cap), and was an ordinary frame of play (not a loading,
+ *  landing, travel, curtain, Auto village or photo screen) */
+let drew = false, playing = false;
 function frame(now: number): void {
   if (bootClearAt && now > bootClearAt) { bootClearAt = 0; bootMark.set(false); } // (the village opens: no rescue next time)
-  try { runFrame(now); } catch (e) {
+  drew = playing = false;
+  const t0 = performance.now();
+  try {
+    runFrame(now);
+    // V2: what the frame cost, for the performance report and Auto quality's timing
+    if (drew) {
+      const gpu = stage.gpuTimer.ms;
+      PerfStats.record(now, performance.now() - t0, playing, gpu, stage.lastDraws, stage.lastTris);
+      qualityProbe?.frame(now, playing && !document.hidden && !Settings.get('fpsCap'), gpu);
+    }
+  } catch (e) {
     guard('frame', () => { throw e; });
     try { Input.endFrame(); } catch { /* the next frame */ }
     if (awaitingLandingFrame) {
@@ -906,6 +944,7 @@ function runFrame(now: number): void {
   if (cap && now - last < 1000 / cap - 3) { requestAnimationFrame(frame); return; }
   const dt = Math.min(0.1, (now - last) / 1000 || 0.016);
   last = now;
+  drew = true;
   fpsMeter.tick(now); // V2: the frame-rate counter (when it's on)
   Input.padMenu = padNav.wants();
   Input.padLayer = Input.padMenu || padNav.any();
@@ -953,6 +992,7 @@ function runFrame(now: number): void {
     requestAnimationFrame(frame);
     return;
   }
+  playing = true;
 
   // global actions
   const inside = indoors.active;

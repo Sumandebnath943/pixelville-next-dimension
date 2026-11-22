@@ -16,7 +16,7 @@
 import { MIN_PER_SEC, Snd, T, midPx } from './core';
 import { World } from './world';
 import { Sim } from './agents';
-import { Life } from './life';
+import { Life, STUCK_RELIEF } from './life';
 import { Traffic } from './traffic';
 import { leaveBay } from './parking';
 import { Mind } from './mind';
@@ -296,7 +296,11 @@ export const Health = {
         const step = Traffic.advance(a, (a.drv ??= {}), a.path, a.prog, 1, fast ? AMB_SPEED : 1.6, dt, 0.75, fast);
         a.prog = Math.min(a.path.length - 1, a.prog + step);
         Life.followPath(a, a.path, a.prog, Traffic.lanePx(a.drv));
-        if (Traffic.there(a.drv, a.path.length - 1 - a.prog, step, dt)) {
+        // (V2: gridlock relief, as for every other vehicle: an ambulance stuck for good on the way back (two of them
+        // turned round nose to nose in the junction of a crash both were called to, each waiting on the other) gets
+        // there, and its patient on the ward; out of sight, or after a long while in it)
+        a.stuckT = step > 0.002 ? 0 : (a.stuckT || 0) + dt;
+        if (Traffic.there(a.drv, a.path.length - 1 - a.prog, step, dt) || Traffic.reliefDue(a.stuckT, STUCK_RELIEF, a.x, a.y)) {
           a.done = true;
           if (fast) this.deliver(p, a.from);
         }

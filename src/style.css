@@ -95,6 +95,10 @@ body[data-meter='right'] #fps-meter { display: flex; right: 10px; }
 #fps-meter[data-level='poor'] b { color: var(--bad); }
 #fps-meter span { font-size: 11px; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.06em; }
 #fps-meter small { font-size: 11px; color: var(--ink-3); margin-left: 3px; }
+/* V2: the performance report (Settings → Graphics) */
+.set-row label small { display: block; font-size: 11.5px; color: var(--ink-3); font-weight: 400; }
+#set-report-text { margin: 4px 0 0; max-height: 220px; overflow: auto; padding: 10px 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.28); border: 1px solid var(--line);
+  font: 11.5px/1.45 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: var(--ink-2); white-space: pre-wrap; user-select: text; }
 /* (whatever else sits in its corner under the bar moves down by the counter's height, so it is never covered) */
 body[data-meter='left'] { --meter-l: 46px; }
 body[data-meter='right'] { --meter-r: 46px; }
