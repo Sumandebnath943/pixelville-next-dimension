@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { loadModel } from './modelqueue';
+import { markUsed } from './upload';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { surface } from './surface';
 
@@ -352,7 +353,7 @@ export class Herd {
     for (const p of this.pools.values()) {
       p.mesh.count = p.n;
       p.mesh.visible = p.n > 0;
-      if (p.n) p.mesh.instanceMatrix.needsUpdate = true;
+      markUsed(p.mesh.instanceMatrix, p.n);
     }
   }
 }

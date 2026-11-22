@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { PX_M, TILE_M } from '../sim/core';
 import { surface, fogOnly } from '../gfx/surface';
+import { markUsed } from '../gfx/upload';
 
 /* ---------- coordinates ---------- */
 export const tileM = (t: number): number => t * TILE_M;
@@ -235,7 +236,9 @@ export class InstancedPool {
   end(): void {
     this.mesh.count = this.n;
     this.mesh.visible = this.n > 0;
-    this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    // (only what's drawn goes to the graphics card: the whole pool, thousands of empty places, went every frame. Every
+    // place in use is written again each frame, so the last frame's range is never needed)
+    markUsed(this.mesh.instanceMatrix, this.n);
+    if (this.mesh.instanceColor) markUsed(this.mesh.instanceColor, this.n);
   }
 }

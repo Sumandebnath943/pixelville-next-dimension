@@ -14,6 +14,21 @@ The performance pass skips weather shader work whose contribution is zero, resol
 
 The comparison scene is a Full village with Medium quality at fixed full resolution in a 1366 × 640 viewport. Compare GPU and frame timings with the same save, camera, and simulation state. For images, hold the scene at the same time, weather, and power state. Include a storm, snow, and an interior.
 
+## Performance pass, stage 1 (2026-11-22, branch `perf/stage-1`)
+
+Same picture, less work per frame (measured on a Full Auto village, Medium, against `ca5d284`):
+- **Vehicle glass** is two fixed-side materials (far faces, then near) in `gfx/vehicle.ts`. three.js draws a transparent double-sided material in two passes and flags it changed before each, which re-derived its shader key twice per vehicle per pass: 38 re-derivations and 19 change flags a frame, now none. The GPS chevrons (flat) use `forceSinglePass`. Keep new transparent materials single-sided, or split them the same way.
+- **The sky's environment map** keeps one texture and copies each refresh into it (`gfx/sky.ts`): a new texture made every lit material work out its shader again on the next frame.
+- **Instanced buffers upload only the part in use** (`gfx/upload.ts` `markUsed`, used by the instanced pools, crowds, far vehicles, animals and the tree and bush levels of detail). Uploads went from ~1,000 KB to ~116 KB a frame, and the tree re-sort every 14 m no longer sends whole buffers (tens of MB at a time while driving).
+- **Grass tiles** are written into reused arrays (no matrix and colours per blade).
+- **World matrices** are worked out once per frame in `Stage.render` (`scene.matrixWorldAutoUpdate` is off while the mirrors and the passes draw).
+- **The Founder's vehicle** moves in steps of at most `DRIVE_STEP` (1/120 s), so steering feels the same at any frame rate, and it keeps its true speed down to 10 fps.
+- **Software rendering** (SwiftShader, llvmpipe, "Microsoft Basic Render Driver") is detected by `SOFTWARE_GPU` in `gfx/pipeline.ts`: it now gets Low (Basic Render Driver used to get High) and the player is told once a session (`#gpu-soft`).
+
+What still costs: each draw call allocates ~260 bytes inside three.js and the browser's WebGL calls, and the scene is drawn three or four times a frame (the picture, the water mirror, the shadows, and on High the soft-shadow normal pass). The remaining levers (a lighter water mirror, ambient occlusion from the main depth, buildings merged across materials) all change the picture slightly or need a shader rework; they wait on the owner's say.
+
+**Measuring:** the pane's frame rate is throttled and this laptop is GPU-bound, so judge changes by mechanism: draw calls per camera, `customProgramCacheKey` calls and material `version` bumps per frame, `gl.bufferSubData` bytes, heap growth. To compare two commits on one save, build the old one with `--base /base/` into `dist/base` (from PowerShell: Git Bash rewrites `/base/`) and serve `dist` with `pixelville-nd-build`: both share the origin's saves.
+
 ## 1. What this is
 
 **PixelVille — Next Dimension** is the 3D remake of **PixelVille V1**, a living village simulation you watched from above. V2 keeps every V1 system (families, jobs, minds, elections, crime, fires, festivals, disasters) and puts the player *on the street* as **the Founder**: walk, drive, ride, work shifts, talk to villagers, and rise into the sky (the Planner) to build, like V1.

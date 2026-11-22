@@ -15,6 +15,7 @@ import { Settings } from './sim/settings';
 import { CAT } from './sim/catalog';
 import { family } from './sim/core';
 import { Stage, QUALITY_ONCE } from './render/stage';
+import { rendererName, SOFTWARE_GPU } from './gfx/pipeline';
 import { Terrain } from './render/terrain';
 import { BuildingLayer, yieldFrame } from './render/buildings';
 import { Actors } from './render/actors';
@@ -106,6 +107,18 @@ stage.onLost = () => {
   $('gpu-reload').focus();
 };
 $('gpu-reload').addEventListener('click', () => location.reload());
+// V2: no graphics card in use (software drawing): say so, once a browser session, rather than leave the player
+// thinking the game itself is slow
+if (SOFTWARE_GPU.test(rendererName(stage.renderer.getContext()))) {
+  let told = false;
+  try { told = sessionStorage.getItem('pixelville-nd-soft-gpu') === '1'; sessionStorage.setItem('pixelville-nd-soft-gpu', '1'); } catch { /* private mode */ }
+  if (!told) {
+    console.warn('[stage] software rendering:', rendererName(stage.renderer.getContext()));
+    $('gpu-soft').classList.add('on');
+    $('gpu-soft-ok').focus();
+  }
+}
+$('gpu-soft-ok').addEventListener('click', () => $('gpu-soft').classList.remove('on'));
 const buildings = new BuildingLayer(stage.scene);
 const actors = new Actors(stage.scene, buildings);
 // V2: what the player can see (in front of the camera, within the range the actors are drawn in): traffic from out of

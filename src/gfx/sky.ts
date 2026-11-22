@@ -333,7 +333,7 @@ export class SkySystem {
   /** ambient level outside, used by interiors and auto exposure */
   ambient = 1;
 
-  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, shadowSize: number) {
+  constructor(private renderer: THREE.WebGLRenderer, scene: THREE.Scene, shadowSize: number) {
     const mat = makeSkyMaterial();
     this.mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
     this.mesh.scale.setScalar(9000);
@@ -510,9 +510,15 @@ export class SkySystem {
 
   envTexture: THREE.Texture | null = null;
   private refreshEnv(): void {
-    const old = this.envRT;
-    this.envRT = this.pmrem.fromScene(this.envScene, 0, 0.1, 100, { size: 128 });
-    this.envTexture = this.envRT.texture;
-    if (old) old.dispose();
+    const fresh = this.pmrem.fromScene(this.envScene, 0, 0.1, 100, { size: 128 });
+    if (!this.envRT) {
+      this.envRT = fresh;
+      this.envTexture = fresh.texture;
+      return;
+    }
+    // (the same texture every time, the new light copied into it: a new texture made every material in view work out
+    // its shader again on the next frame, a hitch each time the light moved on)
+    this.renderer.copyTextureToTexture(fresh.texture, this.envRT.texture);
+    fresh.dispose();
   }
 }

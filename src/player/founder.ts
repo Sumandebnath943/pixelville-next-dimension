@@ -86,6 +86,8 @@ export interface Car { x: number; z: number; yaw: number; speed: number; y: numb
 /** a road rule the Founder broke, or harm they caused (the wanted level and reputation read these) */
 export interface Offence { kind: 'red light' | 'speeding' | 'wrong side' | 'bump' | 'crash' | 'hit' | 'ram' | 'theft'; day: number; clock: number; x: number; z: number; at: number }
 const SPEED_LIMIT = 60 / 3.6; // town streets, with a little grace over 50 km/h
+/** the longest step the Founder's vehicle moves in (seconds): a frame is split into steps no longer than this */
+export const DRIVE_STEP = 1 / 120;
 
 export class Founder {
   pos = new THREE.Vector3();
@@ -634,8 +636,8 @@ export class Founder {
   }
 
   /* ---------- per-frame ---------- */
-  update(dt: number): void {
-    dt = Math.min(dt, 0.05);
+  update(frameDt: number): void {
+    const dt = Math.min(frameDt, 0.05);
     const sens = Settings.get('mouseSens') || 1;
     const look = Input.look(sens, !!Settings.get('invertY'));
     this.camYaw -= look.dx;
@@ -645,9 +647,17 @@ export class Founder {
       this.firstPerson = !this.firstPerson;
       Settings.set('firstPerson', this.firstPerson);
     }
-    if (this.driving) this.drive(dt);
-    else this.walk(dt);
-    this.pose(dt);
+    if (this.driving) {
+      // the car moves in small steps of the same length whatever the frame rate: in one step a frame, a slow frame
+      // swung the car round in one big jump and steering stopped feeling like steering. (A slow frame is no longer cut
+      // short either: the car keeps its true speed down to 10 frames a second)
+      const span = Math.min(frameDt, 0.1), n = Math.max(1, Math.ceil(span / DRIVE_STEP - 1e-6));
+      for (let i = 0; i < n; i++) this.drive(span / n);
+      this.pose(span);
+    } else {
+      this.walk(dt);
+      this.pose(dt);
+    }
     this.reportToTraffic(dt);
   }
 

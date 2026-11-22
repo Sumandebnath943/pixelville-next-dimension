@@ -670,11 +670,11 @@ body.indoors #wanted, body.indoors #gps-pill { display: none !important; }
 .ld-rescue-btns { display: flex; flex-wrap: wrap; gap: 8px; }
 .ld-rescue-btns small { color: var(--ink-3); font-weight: 400; }
 /* V2: the graphics card reset */
-#gpu-lost { position: fixed; inset: 0; z-index: 70; display: none; align-items: center; justify-content: center; background: rgba(5, 7, 10, 0.55); }
-#gpu-lost.on { display: flex; }
-#gpu-lost > div { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px 22px; max-width: 420px; }
-#gpu-lost b { font-size: 16px; }
-#gpu-lost p { margin: 0 0 4px; color: var(--ink-2); line-height: 1.5; }
+#gpu-lost, #gpu-soft { position: fixed; inset: 0; z-index: 70; display: none; align-items: center; justify-content: center; background: rgba(5, 7, 10, 0.55); }
+#gpu-lost.on, #gpu-soft.on { display: flex; }
+#gpu-lost > div, #gpu-soft > div { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px 22px; max-width: 420px; }
+#gpu-lost b, #gpu-soft b { font-size: 16px; }
+#gpu-lost p, #gpu-soft p { margin: 0 0 4px; color: var(--ink-2); line-height: 1.5; }
 .ld-foot { position: absolute; bottom: 12px; left: 0; right: 0; margin: 0; text-align: center; font-size: 10.5px; letter-spacing: 0.26em; text-transform: uppercase; color: rgba(244, 234, 216, 0.4); }
 @media (max-width: 640px) {
   .ld-panel { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'pct' 'status' 'bar' 'tip'; gap: 10px; }

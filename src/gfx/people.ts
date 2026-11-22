@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { loadModel } from './modelqueue';
+import { markUsed } from './upload';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { surface } from './surface';
 import { BONES, type BoneName, type Rig } from './person';
@@ -253,7 +254,7 @@ export class Crowd {
     for (const p of this.pools.values()) {
       p.mesh.count = p.n;
       p.mesh.visible = p.n > 0;
-      if (p.n) { p.mesh.instanceMatrix.needsUpdate = true; p.top.needsUpdate = true; p.legs.needsUpdate = true; }
+      markUsed(p.mesh.instanceMatrix, p.n); markUsed(p.top, p.n); markUsed(p.legs, p.n);
     }
   }
 }

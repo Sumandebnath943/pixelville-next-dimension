@@ -403,23 +403,31 @@ export class Stage {
     // shivered with it: the water's mirror is redrawn every frame whenever the view moves
     const doWater = this.camMoved || this.frameNo % P.reflEvery === 0;
     const doGround = (this.frameNo + 1) % P.reflEvery === 0;
-    // mirrors first: the water every frame it's on screen, the streets only when wet
-    ENV.reflOn.value = 0;
-    ENV.reflTex.value = null;
-    this.waterUpdate?.(this.renderer, this.scene, this.camera, this.sky.ambient, doWater);
-    // (V2: and not from high above, where a wet street at that steep an angle shows the sky's light, which the
-    // environment map already gives it)
-    if (ENV.wet.value > 0.04 && P.reflScale > 0 && (P.fullMirrors || this.camera.position.y < 90)) {
-      if (doGround || !this.groundReady) {
-        this.groundRefl.update(this.renderer, this.scene, this.camera);
-        ENV.reflMat.value.copy(this.groundRefl.textureMatrix);
-        this.groundReady = true;
-      }
-      ENV.reflTex.value = this.groundRefl.rt.texture;
-      ENV.reflOn.value = 1;
-    } else this.groundReady = false;
-    ENV.exposure.value = this.sky.exposure * this.exposureBias * this.viewBoost;
-    this.pipe.render(ENV.exposure.value, this.frozen ? 0 : 1 / 60, doShadow);
+    // (the town's positions worked out once for the frame: every drawing of the scene (the mirrors, the soft shadows'
+    // pass, the picture itself) walked all of it again and got the same answer; nothing moves while it's drawn)
+    this.scene.updateMatrixWorld();
+    this.scene.matrixWorldAutoUpdate = false;
+    try {
+      // mirrors first: the water every frame it's on screen, the streets only when wet
+      ENV.reflOn.value = 0;
+      ENV.reflTex.value = null;
+      this.waterUpdate?.(this.renderer, this.scene, this.camera, this.sky.ambient, doWater);
+      // (V2: and not from high above, where a wet street at that steep an angle shows the sky's light, which the
+      // environment map already gives it)
+      if (ENV.wet.value > 0.04 && P.reflScale > 0 && (P.fullMirrors || this.camera.position.y < 90)) {
+        if (doGround || !this.groundReady) {
+          this.groundRefl.update(this.renderer, this.scene, this.camera);
+          ENV.reflMat.value.copy(this.groundRefl.textureMatrix);
+          this.groundReady = true;
+        }
+        ENV.reflTex.value = this.groundRefl.rt.texture;
+        ENV.reflOn.value = 1;
+      } else this.groundReady = false;
+      ENV.exposure.value = this.sky.exposure * this.exposureBias * this.viewBoost;
+      this.pipe.render(ENV.exposure.value, this.frozen ? 0 : 1 / 60, doShadow);
+    } finally {
+      this.scene.matrixWorldAutoUpdate = true;
+    }
   }
 
   /* ---------- V2 (Milestone 7): resolution that keeps the frame rate ---------- */

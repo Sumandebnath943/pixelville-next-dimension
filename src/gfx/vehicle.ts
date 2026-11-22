@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { loadModel } from './modelqueue';
+import { markUsed } from './upload';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { surface } from './surface';
 import { addBeam, glare, isBraking, steerAngle, VIEW } from './car';
@@ -138,14 +139,18 @@ function kitMaterial(map: THREE.Texture, lampU: { value: THREE.Vector4 }, lamp2U
   };
   return m;
 }
-let GLASS: THREE.MeshStandardMaterial | null = null;
+let GLASS: [THREE.MeshStandardMaterial, THREE.MeshStandardMaterial] | null = null;
 /** tinted glass: the cabin faintly through it looking straight in, a mirror at a glancing angle
- *  (V2: at a third opaque it hardly read as glass at all) */
-function glassMaterial(): THREE.MeshStandardMaterial {
-  GLASS ??= surface(new THREE.MeshStandardMaterial({ color: 0x0a0e12, roughness: 0.04, metalness: 0.25, transparent: true, opacity: 0.6, side: THREE.DoubleSide }), {
+ *  (V2: at a third opaque it hardly read as glass at all).
+ *  Two materials, the far faces and then the near ones: what three.js does itself for transparent double-sided
+ *  glass, except that it flags the material changed before each of its two passes, which rebuilt the shader's
+ *  key twice for every vehicle in every pass (most of the garbage the frame made) */
+function glassMaterials(): [THREE.MeshStandardMaterial, THREE.MeshStandardMaterial] {
+  const glass = (side: THREE.Side): THREE.MeshStandardMaterial => surface(new THREE.MeshStandardMaterial({ color: 0x0a0e12, roughness: 0.04, metalness: 0.25, transparent: true, opacity: 0.6, side }), {
     snow: 0.4, wet: 0.1,
     fColor: 'diffuseColor.a = mix(0.58, 0.96, pow(1.0 - abs(dot(normalize(vWNrm), normalize(cameraPosition - vWPos))), 3.0));',
   }, 'fleetGlass');
+  GLASS ??= [glass(THREE.BackSide), glass(THREE.FrontSide)];
   return GLASS;
 }
 /** a car's clear-coated body paint (the same program as the old cars' paint) */
@@ -193,8 +198,10 @@ export class ModelCar {
       this.body.add(m);
       return m;
     };
-    this.meshes = [mk(l0.paint, this.paint, true), mk(l0.kit, kit, true), mk(l0.glass, glassMaterial(), false)];
-    if (this.meshes[2]) this.meshes[2].renderOrder = 2;
+    // (the glass's far faces are made first, so with the same depth and order they're always drawn before its near ones)
+    const [glassBack, glassFront] = glassMaterials();
+    this.meshes = [mk(l0.paint, this.paint, true), mk(l0.kit, kit, true), mk(l0.glass, glassBack, false), mk(l0.glass, glassFront, false)];
+    for (const m of this.meshes.slice(2)) if (m) m.renderOrder = 2;
     for (const [x, y, z] of model.headAt) {
       const sp = new THREE.Sprite(glare());
       sp.position.set(x, y, z);
@@ -230,7 +237,7 @@ export class ModelCar {
     if (k === this.lod) return;
     this.lod = k;
     const l = this.model.lods[k];
-    const parts = [l.paint, l.kit, l.glass];
+    const parts = [l.paint, l.kit, l.glass, l.glass];
     this.meshes.forEach((m, i) => { if (m && parts[i]) m.geometry = parts[i]!; });
     if (this.wheelMesh && l.wheel) this.wheelMesh.geometry = l.wheel;
   }
@@ -356,7 +363,7 @@ export class FarFleet {
     if (p.rotor && m.rotorAt) {
       // the rotor on its hub: the body's pose, then the hub's offset, then the spin
       this.r4.compose(this.ps.set(...m.rotorAt).multiplyScalar(scale), this.rq.setFromAxisAngle(this.up, rotor), this.sc);
-      p.rotor.setMatrixAt(p.n, this.m4.clone().multiply(this.r4));
+      p.rotor.setMatrixAt(p.n, this.r4.premultiply(this.m4));
     }
     p.n++;
   }
@@ -364,8 +371,8 @@ export class FarFleet {
     for (const p of this.pools.values()) {
       p.mesh.count = p.n;
       p.mesh.visible = p.n > 0;
-      if (p.n) { p.mesh.instanceMatrix.needsUpdate = true; p.mesh.instanceColor!.needsUpdate = true; p.lit.needsUpdate = true; }
-      if (p.rotor) { p.rotor.count = p.n; p.rotor.visible = p.n > 0; if (p.n) p.rotor.instanceMatrix.needsUpdate = true; }
+      markUsed(p.mesh.instanceMatrix, p.n); markUsed(p.mesh.instanceColor!, p.n); markUsed(p.lit, p.n);
+      if (p.rotor) { p.rotor.count = p.n; p.rotor.visible = p.n > 0; markUsed(p.rotor.instanceMatrix, p.n); }
     }
   }
 }

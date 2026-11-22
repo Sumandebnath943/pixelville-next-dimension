@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { surface } from './surface';
 import { leafCard, needleCard, bark, TexSet, hash } from './textures';
 import { LAYER_NO_REFLECT } from './pipeline';
+import { markUsed } from './upload';
 
 /* ---------- wind GLSL (object space; instance rotation undone) ---------- */
 const WIND_DECL = /* glsl */ `
@@ -734,10 +735,12 @@ export class TreeLayer {
       if (set.wood) set.wood.count = k + 1;
       set.leaves.count = k + 1;
     }
+    // (only the trees placed go to the graphics card: every set's whole buffer went, tens of megabytes each time the
+    // camera moved on 14 m, a stall about once a second at the wheel)
     for (const s of sets) {
-      if (s.wood) { s.wood.instanceMatrix.needsUpdate = true; s.wood.visible = s.wood.count > 0; }
-      s.leaves.instanceMatrix.needsUpdate = true;
-      if (s.leaves.instanceColor) s.leaves.instanceColor.needsUpdate = true;
+      if (s.wood) { markUsed(s.wood.instanceMatrix, s.wood.count); s.wood.visible = s.wood.count > 0; }
+      markUsed(s.leaves.instanceMatrix, s.leaves.count);
+      if (s.leaves.instanceColor) markUsed(s.leaves.instanceColor, s.leaves.count);
       s.leaves.visible = s.leaves.count > 0 && (!s.deciduous || leafFall.value < 0.99);
     }
     // the bushes: near ones leaf by leaf, the rest as solid crowns out to the middle distance
@@ -768,14 +771,15 @@ export class TreeLayer {
       }
     }
     for (const b of this.bushNear) {
-      b.leaves.instanceMatrix.needsUpdate = b.core.instanceMatrix.needsUpdate = true;
-      if (b.leaves.instanceColor) b.leaves.instanceColor.needsUpdate = true;
+      markUsed(b.leaves.instanceMatrix, b.leaves.count);
+      markUsed(b.core.instanceMatrix, b.core.count);
+      if (b.leaves.instanceColor) markUsed(b.leaves.instanceColor, b.leaves.count);
       // (bare through the winter: the twigs don't show at this size)
       b.leaves.visible = b.leaves.count > 0 && fall < 0.99;
       b.core.visible = b.core.count > 0 && fall < 0.99;
     }
-    this.bushFar.instanceMatrix.needsUpdate = true;
-    if (this.bushFar.instanceColor) this.bushFar.instanceColor.needsUpdate = true;
+    markUsed(this.bushFar.instanceMatrix, this.bushFar.count);
+    if (this.bushFar.instanceColor) markUsed(this.bushFar.instanceColor, this.bushFar.count);
     this.bushFar.visible = this.bushFar.count > 0 && fall < 0.99;
   }
 }
@@ -830,35 +834,43 @@ export class GrassStream {
   private build(tx: number, tz: number): void {
     const T = this.tile;
     const n = Math.floor(T * T * this.perM2);
-    const mats: THREE.Matrix4[] = [], cols: THREE.Color[] = [];
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
-    const up = new THREE.Vector3(0, 1, 0);
+    // (the blades are written straight into reused arrays: a matrix and two colours made for every blade, two tiles
+    // a frame while driving, were garbage the browser stopped to clear)
+    if (GRASS_M.length < n * 16) { GRASS_M = new Float32Array(n * 16); GRASS_C = new Float32Array(n * 3); }
+    let k = 0;
     for (let i = 0; i < n; i++) {
       const x = tx * T + hash(i, tx * 7 + tz, 1) * T, z = tz * T + hash(i, tx + tz * 13, 2) * T;
       const [d, hk, gy] = this.density(x, z);
       if (d <= 0 || hash(i, tx * 3 + tz * 5, 3) > d) continue;
-      q.setFromAxisAngle(up, hash(i, tx, 4) * Math.PI * 2);
+      _gq.setFromAxisAngle(_gUp, hash(i, tx, 4) * Math.PI * 2);
       const sc = hk * (0.7 + hash(i, tz, 5) * 0.6);
       const sw = Math.min(1, Math.sqrt(sc) * 1.1);
-      s.set(sw, sc, sw);
-      p.set(x, gy, z);
-      mats.push(m4.compose(p, q, s).clone());
+      _gs.set(sw, sc, sw);
+      _gp.set(x, gy, z);
+      _gm.compose(_gp, _gq, _gs).toArray(GRASS_M, k * 16);
       const v = hash(i, tx + tz, 6);
-      const c = new THREE.Color(0.85 + v * 0.3, 0.85 + v * 0.25, 0.75 + v * 0.2);
-      if (hash(Math.floor(x / 3), Math.floor(z / 3), 9) > 0.8) c.multiply(new THREE.Color(1.25, 1.05, 0.7));
-      cols.push(c);
+      _gc.setRGB(0.85 + v * 0.3, 0.85 + v * 0.25, 0.75 + v * 0.2);
+      if (hash(Math.floor(x / 3), Math.floor(z / 3), 9) > 0.8) _gc.multiply(_gWarm);
+      _gc.toArray(GRASS_C, k * 3);
+      k++;
     }
-    const mesh = new THREE.InstancedMesh(this.geo, this.material, Math.max(1, mats.length));
-    mats.forEach((m, i) => { mesh.setMatrixAt(i, m); mesh.setColorAt(i, cols[i]); });
-    mesh.count = mats.length;
+    const mesh = new THREE.InstancedMesh(this.geo, this.material, Math.max(1, k));
+    if (k > 0) {
+      mesh.instanceMatrix.array.set(GRASS_M.subarray(0, k * 16));
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(GRASS_C.slice(0, k * 3), 3);
+    }
+    mesh.count = k;
     mesh.receiveShadow = true;
     mesh.castShadow = false;
     mesh.computeBoundingSphere();
     mesh.layers.set(LAYER_NO_REFLECT);
     this.scene.add(mesh);
-    this.tiles.set(tx + ',' + tz, { mesh, cx: tx * T + T / 2, cz: tz * T + T / 2, total: mats.length });
+    this.tiles.set(tx + ',' + tz, { mesh, cx: tx * T + T / 2, cz: tz * T + T / 2, total: k });
   }
 }
+let GRASS_M = new Float32Array(0), GRASS_C = new Float32Array(0);
+const _gm = new THREE.Matrix4(), _gq = new THREE.Quaternion(), _gs = new THREE.Vector3(), _gp = new THREE.Vector3();
+const _gUp = new THREE.Vector3(0, 1, 0), _gc = new THREE.Color(), _gWarm = new THREE.Color(1.25, 1.05, 0.7);
 
 /* ---------- grass ---------- */
 const GRASS_DECL = /* glsl */ `

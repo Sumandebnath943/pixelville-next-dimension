@@ -34,6 +34,9 @@ export class GpsArrows {
     const mat = fogOnly(new THREE.MeshBasicMaterial({
       color: 0xffffff, transparent: true, opacity: 0.88, depthWrite: false, side: THREE.DoubleSide,
     }), 'gpsArrow');
+    // (flat chevrons seen from above: one pass draws them exactly as three.js' two would, without flagging the material
+    // changed twice a frame)
+    mat.forceSinglePass = true;
     this.mesh = new THREE.InstancedMesh(geo, mat, MAX);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 5;

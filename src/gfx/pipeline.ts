@@ -37,15 +37,24 @@ export type Quality = 'ultra' | 'high' | 'medium' | 'low';
 /** High or above (full-size textures, the longest views, the most headlamps) */
 export const isHigh = (q: Quality): boolean => q === 'high' || q === 'ultra';
 
+/** the graphics card's name as the browser reports it */
+export function rendererName(gl: WebGLRenderingContext | WebGL2RenderingContext): string {
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+}
+/** V2: the browser draws without the graphics card (it's blocked or switched off, or a remote desktop): Chrome's
+ *  SwiftShader, Mesa's llvmpipe, or Windows' own "Microsoft Basic Render Driver" (which the check used to miss, and
+ *  which then got the High preset) */
+export const SOFTWARE_GPU = /SwiftShader|llvmpipe|softpipe|Software|Basic Render Driver/i;
+
 /** pick a preset from the GPU: integrated and mobile GPUs get the medium tier */
 export function detectQuality(): Quality {
   try {
     const gl = document.createElement('canvas').getContext('webgl2');
     if (!gl) return 'low';
-    const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    const name = rendererName(gl);
     gl.getExtension('WEBGL_lose_context')?.loseContext();
-    if (/SwiftShader|llvmpipe|Software/i.test(name)) return 'low';
+    if (SOFTWARE_GPU.test(name)) return 'low';
     // V2 (Milestone 7): phones and tablets (a touch screen and no mouse) start on low (design §17.4)
     if (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches) return 'low';
     if (/Intel(?!.*Arc)|UHD|Iris|Mali|Adreno|PowerVR|Apple GPU|Radeon\(TM\) Graphics|Vega \d+ Graphics/i.test(name)) return 'medium';
