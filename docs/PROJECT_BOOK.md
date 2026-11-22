@@ -2,7 +2,7 @@
 
 > The A–Z of the project: every system, place, rule, file and idea, in one alphabetical book.
 > For getting started, read [HANDOFF.md](HANDOFF.md); for the design, [DESIGN.md](DESIGN.md); for what each milestone delivered, [MILESTONES.md](MILESTONES.md).
-> State as of 2026-10-30: Milestones 1–8 done, Milestone 9 (live play fixes) on `main`, live at https://pixelvillenextdimension.houseofnamus.com/ (every push to `main` deploys). "M9" entries below are from the batches after launch.
+> State as of 2026-11-22: Milestones 1–8 done, Milestone 9 (live play fixes, last 9n: performance) on `main`, live at https://pixelvillenextdimension.houseofnamus.com/ (every push to `main` deploys). "M9" entries below are from the batches after launch.
 
 ---
 
@@ -21,7 +21,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Afterload / afterMapEdit** — `Game.afterMapEdit()` must be called after placing or removing buildings by script: it refreshes connections, roads and derived maps.
 
-**AI chat** — Villager conversations through Groq (**M3**). `api/_chat.ts` is the proxy (persona rules, rate limits: 12/min and 400/day per address, retired-model fallback, broken-JSON recovery); `api/chat.ts` is the Vercel function; the dev server serves it from `vite.config.ts`. Client: `src/ai/client.ts` (one request in flight, 8/min, 150/session, 12 s timeout, falls back to **Templates**). Context: `src/ai/context.ts`. Effects (opinion, mood, a memory, a place) are clamped in `src/ai/effects.ts`. The key lives in `.env.local` (`GROQ_API_KEY`, optional `GROQ_MODEL`); never print it.
+**AI chat** — Villager conversations through Groq (**M3**). `api/_chat.ts` is the proxy (persona rules, rate limits: 12/min and 400/day per address, retired-model fallback, broken-JSON recovery); `api/chat.ts` is the Vercel function (**M9** 9n: its relative import needs the `.js` ending, `./_chat.js`: without it Vercel couldn't load it and live chat failed from launch until 2026-11-22); the dev server serves it from `vite.config.ts`. Client: `src/ai/client.ts` (one request in flight, 8/min, 150/session, 12 s timeout, falls back to **Templates**). Context: `src/ai/context.ts`. Effects (opinion, mood, a memory, a place) are clamped in `src/ai/effects.ts`. The key lives in `.env.local` (`GROQ_API_KEY`, optional `GROQ_MODEL`); never print it.
 
 **Airfield / Airport** — 48×15 tiles since M6 (was 13×8). `Life.airfield(a)` gives, in metres: the runway along the south edge (`ry`, `rx0`→`rx1`, 372 m), the taxiway (`ty`), and four **stands** 45 m apart (airliners span 30 m). Only one plane uses the runway at a time; up to three airliners stand parked; the fourth stand is the Founder's. Old saves with the small airport move it to the nearest spot it fits. Always faces south (`normFacing`). See **Flights**, **Pilot**.
 
@@ -38,6 +38,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Arrest** — The Founder can be arrested (**Busted**) or, on a **Police** shift, arrest a burglar (`Life.resolve(true)`).
 
 **Assets** — The world, buildings, trees, textures and sound are procedural. Since **M9** (9j) the people, vehicles and animals are downloaded models (the owner chose Microsoft Rocketbox, MIT, for people and CC BY 4.0 Sketchfab models for the rest): raw files in `assets-src/` (not committed; sources in `docs/MODEL_SOURCES.md`), built small into `public/models/` by `scripts/{people,vehicles,animals}/build.mjs`. CC BY means every model stays credited: add any new one to `scripts/credits.mjs` (see **Credits**).
+
+**Auto quality** — **M9** (9n) `src/gfx/autoquality.ts`: with Quality on Auto, the first 20 s of ordinary play (after 8 s of warm-up) on each graphics card and screen are timed (`QualityProbe`) and the next load opens with what keeps it smooth: High or Ultra slower than 25 ms a frame → Medium; Medium only slower than 45 ms → Low; Medium with the card timed under 5 ms → High (kept only if it then holds up). Kept in `localStorage` `pixelville-nd-auto-quality` (`AutoRecord`: the pick, presets kept and too slow, the last timing); a graphics reset marks the preset too slow (`markLost`); choosing Auto in Settings clears it. A toast says when the next preset changes. Tests: `tests/autoquality.test.ts`.
 
 **Auto resolution** — M7: Settings → Graphics → Resolution "auto" (`Stage.autoRes`) drops the world's render resolution 10% at a time while frames run under ~30 fps, back up when there's room, never below 80% (M9; it was 70%, and the soft picture was much of why the game looked worse than the **Look lab**); or a fixed 100/85/70/55%. The grade pass sharpens (`sharpen`, more the lower the resolution). A 30 fps cap saves battery.
 
@@ -173,6 +175,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Frame loop** — `frame()` in `src/main.ts` (order in HANDOFF §5). **M9**: `frame()` wraps `runFrame()` and each part runs in `guard(part, fn)`, so one exception is logged and skipped instead of stopping the game.
 
+**Frame-rate counter** — **M9** (9n) Settings → Graphics → *Frame rate counter* (`fpsMeter`: off, top left, top right; `src/ui/fpsmeter.ts`): frames a second over the last half second and the slowest frame in it, green from 50 fps, amber from 30, red below, under the top bar; the panels in that corner move down to make room (`--meter-l`, `--meter-r`). Only during play.
+
 **freeAfterUpload** — **M9** `src/gfx/architecture.ts`: static meshes (terrain chunks, gates, mountains, lamp posts, merged building chunks) drop their attribute arrays once uploaded to the GPU. Never use it on geometry that is raycast, merged or rebuilt from its arrays.
 
 ---
@@ -201,7 +205,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## H
 
-**Health** — `src/sim/health.ts`: health 0–100, colds/flu/stomach bugs/pneumonia and injuries; serious cases lie down until an ambulance comes by road; the ward (12 beds when staffed); recovery fastest in hospital; bills ($14 a day, $12 for the ambulance: the household pays what it can, the fund covers the rest while it has money, the remainder becomes a **Debt** to the hospital, `Health.charge`). Nobody dies of an injury.
+**Health** — `src/sim/health.ts` (**M9** 9n: an ambulance stuck for good on its way back gets gridlock relief and delivers its patient): health 0–100, colds/flu/stomach bugs/pneumonia and injuries; serious cases lie down until an ambulance comes by road; the ward (12 beds when staffed); recovery fastest in hospital; bills ($14 a day, $12 for the ambulance: the household pays what it can, the fund covers the rest while it has money, the remainder becomes a **Debt** to the hospital, `Health.charge`). Nobody dies of an injury.
 
 **hash2** — `src/render/kit.ts`: an unsigned 32-bit hash. Shift it with `>>>`, never `>>`: signed shifts went negative for half the inputs and threw rooftop AC units into the sky and trees onto the roads (both fixed in **M9**).
 
@@ -307,7 +311,9 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Paramedic** — M6 job (hospital): casualties come to you; treat them on foot, drive them in, hand them over to the ward; home visits to the sick between calls.
 
-**Performance** — Medium tier on the Intel laptop ≈ 27 ms/frame at 1016×550 with a 42-building town. Integrated GPUs get **medium** (no MSAA/AO, 2K shadows refreshed on alternate frames, half-resolution textures); discrete get high. Never compile a shader on frame 1.
+**Performance** — Medium tier on the Intel laptop ≈ 27 ms/frame at 1016×550 with a 42-building town. Integrated GPUs get **medium** (no MSAA/AO, 2K shadows refreshed on alternate frames, half-resolution textures); discrete get high, and since 9n **Auto quality** corrects the guess by timing play. Never compile a shader on frame 1. **M9** (9n, MILESTONES.md): no transparent double-sided materials (three.js re-keys their shader twice a draw: vehicle glass is two fixed-side materials), one environment texture for the sky's light, **Upload ranges** for instanced buffers, world matrices once a frame (`Stage.render`), the water mirror and the soft-shadow pass skip a building's finest parts (`LAYER_NO_WATER`, `userData.noAO`). Measure with `PerfStats` (`src/gfx/perfstats.ts`: the last 600 frames, the game's work, the card's time from `GpuTimer`, draws) or the **Performance report**.
+
+**Performance report** — **M9** (9n) Settings → Graphics → *Copy report* (`src/ui/perfreport.ts`): plain text for a player to send: the graphics card and whether the browser draws without it, the screen and the size drawn at, the preset and where it came from, **Auto quality**'s timing, the last stretch of play (fps, slowest frames, the game's work, the card's time, draws, triangles), memory, the village's size, the browser, and the build (`__BUILD__`: commit and build time, from `vite.config.ts`). Copied to the clipboard, and shown to copy by hand where the browser won't.
 
 **Phones (playing on one)** — M7: touch controls from the start, full screen on the first tap (landscape where allowed), a "turn your phone sideways" card when upright, a compact layout for short screens, Low quality by default, two-finger twist to turn the Planner, installable (manifest + icon in `public/`).
 
@@ -329,7 +335,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 ## Q
 
-**Quality tiers** — `detectQuality()`: low / medium / high (see **Performance**); a setting overrides, applied after reload. **M9**: **Ultra** is only ever chosen in Settings; a graphics reset lowers the preset for the next load only (`QUALITY_ONCE` in `src/render/stage.ts`; it used to stick for good, and settings lowered that way were moved back to Auto once, `Settings.qualityFix`).
+**Quality tiers** — `detectQuality()`: low / medium / high, guessed from the card's name (see **Performance**; since 9n **Auto quality** times play and corrects it); a setting overrides, applied after reload. **M9**: **Ultra** is only ever chosen in Settings; a graphics reset lowers the preset for the next load only (`QUALITY_ONCE` in `src/render/stage.ts`; it used to stick for good, and settings lowered that way were moved back to Auto once, `Settings.qualityFix`).
 
 **Queues** — Anonymous riders waiting at bus stops and taxi ranks (`Life.stopQueues`), longer at rush hour, standing on the pavement (`Life.queueSpot`). Cabs wait at their rank on the kerb beside the stand (**M9** 9m: `stopKerb`, pulled in, `rankSlot`) and set fares down at the kerb by their door, never turned across the road.
 
@@ -357,7 +363,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Seasons** — See **Clock**; trees, crops, snow cover, ice, festivals follow them.
 
-**Settings** — `src/sim/settings.ts` (kept in this browser): village name, growth pace, Christmas lock, autosave, volume; quality (Auto, Low, Medium, High, **Ultra**), resolution, frame cap, FOV (60° by default since M9), god view; look sensitivity, invert, key bindings; interface size, subtitles, colour vision, shake, head bob, reduce motion; whether the guide was seen. Four tabs in the modal (M7).
+**Settings** — `src/sim/settings.ts` (kept in this browser): village name, growth pace, Christmas lock, autosave, volume; quality (Auto, Low, Medium, High, **Ultra**), resolution, frame cap, the **Frame-rate counter** (9n), FOV (60° by default since M9), god view; look sensitivity, invert, key bindings; interface size, subtitles, colour vision, shake, head bob, reduce motion; whether the guide was seen. Four tabs in the modal (M7).
 
 **Shifts** — `src/player/shifts.ts`: start at the workplace or from the phone; the workplace lends its vehicle at the kerb; the job loop runs; tasks pay into the shift; stars 1–5; up to 8 hours (14 for the pilot) with a little overtime to finish; clock off for pay = (hourly × hours + task pay) × (0.7 + 0.1 × stars). See **Jobs (Founder)**, **Claims**, **Money rule**.
 
@@ -368,6 +374,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Showrooms** — Car Showroom (Pixel Hatch, Ville Saloon, Meadow Estate, Ridge 4×4, $280–520) and Motorcycle Showroom (Sprite 125, Ridge 650, $160–260), ten paints, part exchange (`src/ui/showroom.ts`).
 
 **Sim** — `src/sim/agents.ts` (`Sim`): the people: families, schedules, trips, commuting, wages, savings, ambitions, businesses, weddings, births, ageing; plus stats.
+
+**Software rendering** — **M9** (9n) `SOFTWARE_GPU` in `src/gfx/pipeline.ts`: SwiftShader, llvmpipe, softpipe or Windows' "Microsoft Basic Render Driver" (a blocked or switched-off graphics card, a remote desktop). Auto picks Low, and a notice (`#gpu-soft`, once a browser session) says to turn on hardware acceleration.
 
 **Sounds** — `src/audio/sounds.ts`: V1's procedural audio. One-shots are positional (`Snd.at`): the sim's `Snd.siren(at)` etc. carry a place, heard quieter with distance and panned to their side of the listener (`Snd.listen`, set from the camera each frame). **M9**: a new synthesised engine (street, room and UI buses, reverb) and `src/audio/scape.ts`, the ambience from what's around the listener (wind, leaves, rain, water, traffic, crowds, birds by species, insects, sites, works, fires), engine voices, the Founder's engine, tyres and footsteps by surface, and each building's sounds indoors.
 
@@ -394,7 +402,7 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 
 **Terrain** — `src/render/terrain.ts`: textured grass/sand/rock, kerbed roads, bridges, ballasted rails, lamps (built per chunk, M9), animated water with foam and ice, trees in four LODs (32k), **Street trees**, streamed grass, banded shores, hills and the sea beyond the map. Tree positions come from `treeSpot` (shared with collisions; M9 fixed a signed shift that put some on the roads).
 
-**Tests** — Vitest in `tests/`, one file per system (sim, traffic, founder, wanted, reputation, photo, interiors, chat, health, power, education, supply, deeper, travel, shifts, V1 import); `tests/town.ts` builds towns. 118 tests at M7 (`controls.test.ts` added), 130 at M8 (`polish.test.ts`), 152 in M9 (`collisions`, `jams`, `economy` among the new files), 170 after 9l (`vehicles`, `parking`, `buses`, `rail`, `zebra`, `autovillage`). Tests that drive traffic mock `performance.now()` in step with the ticks.
+**Tests** — Vitest in `tests/`, one file per system (sim, traffic, founder, wanted, reputation, photo, interiors, chat, health, power, education, supply, deeper, travel, shifts, V1 import); `tests/town.ts` builds towns. 118 tests at M7 (`controls.test.ts` added), 130 at M8 (`polish.test.ts`), 152 in M9 (`collisions`, `jams`, `economy` among the new files), 170 after 9l (`vehicles`, `parking`, `buses`, `rail`, `zebra`, `autovillage`). Tests that drive traffic mock `performance.now()` in step with the ticks. **9n**: 181 tests (`autoquality` added); every test is repeatable: `tests/setup.ts` restarts a seeded `Math.random` before each test and gives `performance.now()` a steady clock (a quarter of a millisecond a reading) unless the file mocks it; `PV_SEED=n npx vitest run` tries other dice (a sweep of 40 found the ambulance deadlock, MILESTONES.md 9n).
 
 **Thaw** — **M9** The spring thaw and the ice: `pvSnowField/pvSnowLine/pvSnowCover` in `src/gfx/env.ts` (drifts tens of metres across), `ENV.melt` (wet margins), `ENV.thaw` (flattened, straw-pale grass for a day and a half), the `plough` and `thaw` surface options, the melt on the sim clock in `Stage.drift`, and `Stage.ice` (lakes freeze in winter and thaw from the banks in floes, `gfx/water.ts`).
 
@@ -421,6 +429,8 @@ Entries are alphabetical. **Bold** words inside an entry are entries of their ow
 **Ultra** — **M9** The fourth quality preset, only ever chosen in Settings → Graphics: High plus every small shadow (`SHADOW_DETAIL.tiny`, `castsShadow` in `src/gfx/architecture.ts`: kerbs, pavements, sashes, door brass, pots) and full mirrors (`fullMirrors`: the water however little is in view, wet streets at any range and height). The **Look lab** always draws the small shadows.
 
 **Undo** — `Ctrl+Z` in the Planner (`Game.undo`).
+
+**Upload ranges** — **M9** (9n) `markUsed` in `src/gfx/upload.ts`: an instanced buffer refilled from 0 each time uploads only its first `n` items (three.js sends the whole buffer otherwise: pools sized for thousands sent mostly empty space every frame, and the trees' re-sort tens of MB at a time). Used by the instanced pools, crowds, far vehicles, animals and the tree and bush levels of detail.
 
 ---
 

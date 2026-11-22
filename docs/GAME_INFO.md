@@ -19,7 +19,7 @@ It is the sequel to the original 2D, top-down PixelVille. Every one of the origi
 | Time | 1 game minute per real second; a day is about 24 real minutes; a year is 28 days in four seasons |
 | Villagers | Every person simulated individually: traits, memories, friends, jobs, health, schooling, opinion of you |
 | Tech | TypeScript, Three.js, Vite, Vercel; AI villager chat through Groq |
-| Graphics | Low, Medium and High picked for your device; Ultra (every small shadow, full reflections) when you choose it |
+| Graphics | Low, Medium and High: Auto times play on your computer and screen and keeps what runs smoothly; Ultra (every small shadow, full reflections) when you choose it |
 | Assets | The world, buildings, trees, textures and sound are generated in code; villagers (Microsoft Rocketbox, MIT), vehicles and animals (CC BY 4.0) are downloaded models, every one credited |
 
 ### Design pillars
@@ -745,7 +745,10 @@ GPU fire and smoke with no per-particle CPU work: flickering flames, rising embe
 
 ### Performance
 
-- **Quality presets:** integrated GPUs get Medium (no MSAA or AO, 2K shadows, half-resolution textures); discrete GPUs get High; phones and tablets start on Low. **Ultra** is never picked for you: High plus every small shadow (kerbs, pavements, window sashes, door brass, flower pots) and full reflections (water however little is in view, wet streets at any distance and height), for a strong graphics card. Changes apply after a reload.
+- **Quality presets:** integrated GPUs start on Medium (no MSAA or AO, 2K shadows, half-resolution textures); discrete GPUs on High; phones and tablets on Low. **Auto times the first half-minute of play** on each computer and screen and opens with what keeps it smooth from the next visit: High under 40 fps becomes Medium, Medium only under about 22 fps becomes Low, and Medium with a graphics card barely working tries High. A preset you choose yourself is never changed.
+- **A browser drawing without the graphics card** (switched off, blocked, a remote desktop) is spotted: the game says so and how to turn hardware acceleration on.
+- **Frame rate counter** (Settings → Graphics: off, top left, top right): frames a second and the slowest recent frame, green, amber or red. **Copy report** puts a plain-text performance report on the clipboard (graphics card, screen, preset, the last stretch of play, memory) to send when the game runs slowly.
+- **The same picture for less work (2026-11):** car glass, the sky's light and the instanced crowds, trees and vehicles no longer make the graphics card redo work every frame (uploads a tenth of what they were); the water's ripples and the soft shadows skip the finest building parts nobody could see in them; and your own car is steered in small fixed steps, so it handles the same at any frame rate. **Ultra** is never picked for you: High plus every small shadow (kerbs, pavements, window sashes, door brass, flower pots) and full reflections (water however little is in view, wet streets at any distance and height), for a strong graphics card. Changes apply after a reload.
 - **Auto resolution** drops render resolution 10% at a time below about 30 fps and raises it when there's room, never below 80% (the picture stays sharp); or fixed 100/85/70/55%. A 30 fps cap saves battery.
 - **Only what shows is drawn:** the water's mirror is skipped when water is a sliver of the view, wet streets mirror only what's near, flat ground and the smallest details cast no shadows on the lighter presets, and street lamps are culled with the ground they stand on.
 - **Memory:** static ground, banks, mountains and lamp posts keep no copy in the page once on the graphics card (about 150 MB less for a 95-building village); a two-day soak at 8× stays flat.
@@ -776,6 +779,7 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Animals | 18 modelled species: farm yards, a five-enclosure zoo, deer, hares, pigeons, cats, walkers' dogs, birds on the wing | Medium |
 | Ambulances | Dispatched by road from the nearest hospital; treat at the scene, carry to the ward | Medium |
 | Approval | The mayor's standing from quality of life, builds, scandals, grievances | Small |
+| Auto quality | Auto times play on each computer and screen and opens with what keeps it smooth | Small |
 | Auto resolution | Render resolution follows frame rate, never below 80%, sharpened | Small |
 | Auto village | A whole village built and moved into at a press, watched from the air in four sizes (hamlet to the full town); pin season, weather, festival and pace; take it over | Medium |
 | Auto-road | A\* road builder with terrain costs and turn penalty joins every new building | Medium |
@@ -866,7 +870,7 @@ Every system and feature in the game in one alphabetical list, each tagged by sc
 | Power grid | Demand vs capacity, rolling blackouts, faults, repair crews, dark districts | Big |
 | Puddles | Born in heavy rain, evaporate in dry weather | Small |
 | PVTV | The village channel, headlines from real events, stock ticker | Medium |
-| Quality tiers | Low, Medium, High chosen by the GPU; Ultra when you choose it | Small |
+| Quality tiers | Low, Medium, High (Auto: guessed from the GPU, then timed); Ultra when you choose it | Small |
 | Rainbows | After rain stops in daylight | Small |
 | Reputation | Per-villager opinion of you, spread by gossip and TV, setting prices and reactions | Big |
 | Rescue | A village that crashed while loading opens again, lighter, or is kept safe while you start afresh | Small |

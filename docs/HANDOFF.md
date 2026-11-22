@@ -1,6 +1,6 @@
 # PixelVille — Next Dimension · Project bible & handoff
 
-> Written 2026-10-25 at the end of Milestone 6 and kept current since (last update 2026-10-30), for whoever picks the project up next (a new Claude session on a new account included).
+> Written 2026-10-25 at the end of Milestone 6 and kept current since (last update 2026-11-22), for whoever picks the project up next (a new Claude session on a new account included).
 > Read this first (the A–Z reference is [PROJECT_BOOK.md](PROJECT_BOOK.md)), then [DESIGN.md](DESIGN.md) (the full design) and [MILESTONES.md](MILESTONES.md) (what each milestone delivered, in detail).
 > Anything learned in earlier sessions lived in that account's private memory; everything worth keeping from it is copied here.
 
@@ -14,7 +14,7 @@ The performance pass skips weather shader work whose contribution is zero, resol
 
 The comparison scene is a Full village with Medium quality at fixed full resolution in a 1366 × 640 viewport. Compare GPU and frame timings with the same save, camera, and simulation state. For images, hold the scene at the same time, weather, and power state. Include a storm, snow, and an interior.
 
-## Performance pass, stage 1 (2026-11-22, branch `perf/stage-1`)
+## Performance pass (2026-11-22, all on `main`; MILESTONES.md 9n)
 
 Same picture, less work per frame (measured on a Full Auto village, Medium, against `ca5d284`):
 - **Vehicle glass** is two fixed-side materials (far faces, then near) in `gfx/vehicle.ts`. three.js draws a transparent double-sided material in two passes and flags it changed before each, which re-derived its shader key twice per vehicle per pass: 38 re-derivations and 19 change flags a frame, now none. The GPS chevrons (flat) use `forceSinglePass`. Keep new transparent materials single-sided, or split them the same way.
@@ -57,9 +57,10 @@ What still costs: each draw call allocates ~260 bytes inside three.js and the br
 
 **Never modify the V1 repo.** It is the behavioural reference.
 
-### Status (2026-10-31)
+### Status (2026-11-22)
 - **Live** at https://pixelvillenextdimension.houseofnamus.com/; `main` deploys on every push.
 - **Milestone 9 (live play fixes)**: the owner's batches since launch went straight onto `main` (details in MILESTONES.md): elections on the ground, headlight beams, junction boxes and real vehicle sizes, shores and boats, traffic from beyond the edge, the rugged peak, collisions, tree LODs, the new sound engine, shop interiors, **god view**, the **money overhaul** (`src/sim/economy.ts`), the **Auto village**, the traffic-deadlock fix with gridlock relief, the **look fixes** (resolution floor, FOV 60, street trees, texture anti-tiling), the **top-bar fit**, the **rescue prompt** for villages that won't open, a **lighter frame**, the **spring thaw**, **Ultra graphics**, and trees moved off the roads. Then 9j–9m (below). Last pushed commit `8c7c534`; 170 tests pass.
+- **9n · Performance, live chat, frame-rate tools** (2026-11-22, `f01c582` → `db3434a`): the same picture with far less work per frame (vehicle glass, the sky's light, instanced uploads, driving in fixed steps), a lighter water mirror and soft-shadow pass, live villager chat working at last (`api/chat.ts` import), a frame-rate counter, Auto quality that times play per card and screen, Settings → Graphics → *Copy report*, repeatable tests (and the ambulance deadlock they found). Only `main` remains (old branches deleted). See *Performance pass* above and MILESTONES.md 9n; 181 tests pass. Not yet tried on the design PCs that started it: their *Copy report* is the next thing to look at.
 - **9m · The owner's five-point list** (2026-10-31, `8c7c534`): real glass and cabins in every vehicle and full models for buses, vans, lorries and the emergency services near the camera; no more false "knocked down" for people waiting at their door; cabs wait and set down at the kerb, never across the road; dressed rooms (paintings, curtains, window views, lampshades, plants); a drive spot for every family car. See MILESTONES.md 9m.
 - **9l · The owner's "changes 2" list** (2026-10-31, `06a5bdd`): buses, parking, rail (crossings, wide bends, multiple units), collisions and zebra crossings, Auto village sizes, access lanes, sharper vehicle prints; 170 tests pass. See MILESTONES.md 9l. Headless tests that drive traffic must mock `performance.now()` in step with the ticks (the lights run on it).
 - **9k · The owner's 23-point list** (2026-10-31): see MILESTONES.md 9k (committed `956ef37`).
@@ -151,7 +152,7 @@ docs/         HANDOFF.md (this file), DESIGN.md, MILESTONES.md, GAME_INFO.md (ev
 slice.html + src/slice/   the "look lab" vertical slice (Milestone 1.5)
 ```
 
-**Frame loop** (`src/main.ts`): input → overlays (busted/wasted curtain; travel or the pilot's journey screen) → landing screen → Auto village → photo mode → global keys → `Game.tick` (the sim) → indoors or street (Founder, transit, travel, interactions) → `shifts.update` → Planner → errands, motoring, wanted, street life, GPS → cameras → render → shift marker → HUD (every 400 ms) → phone. Since 2026-10-30 `frame()` wraps `runFrame()`, and the sim, map sync, sky, terrain, actors and HUD each run inside `guard(part, fn)`: an exception is logged once (then every 900th time) and the rest of the frame goes on (it used to stop the loop for good).
+**Frame loop** (`src/main.ts`; since 9n `frame()` also times each frame into `PerfStats` and feeds Auto quality's `QualityProbe`, and `runFrame` ticks the frame-rate counter): input → overlays (busted/wasted curtain; travel or the pilot's journey screen) → landing screen → Auto village → photo mode → global keys → `Game.tick` (the sim) → indoors or street (Founder, transit, travel, interactions) → `shifts.update` → Planner → errands, motoring, wanted, street life, GPS → cameras → render → shift marker → HUD (every 400 ms) → phone. Since 2026-10-30 `frame()` wraps `runFrame()`, and the sim, map sync, sky, terrain, actors and HUD each run inside `guard(part, fn)`: an exception is logged once (then every 900th time) and the rest of the frame goes on (it used to stop the loop for good).
 
 **Boot** (`boot()` in `src/main.ts`) reads the autosave, offers rescue choices after an interrupted startup, and prepares the terrain, buildings, textures, models, and shaders. The loading screen (`src/ui/loading.ts`) eases toward each phase’s cap using building counts and elapsed time within the current phase. A successful landing render unlocks the final animation to 100% and the landing controls. The boot mark clears 30 seconds after the first successful landing render or on `pagehide`.
 
@@ -205,6 +206,8 @@ slice.html + src/slice/   the "look lab" vertical slice (Milestone 1.5)
 - **When the pane is hidden, `requestAnimationFrame` stops** and timers throttle to ~1 s: villagers stop moving and scripted waits stall. Take a screenshot to keep it visible. Screenshots can lag a few seconds behind scripted changes; check state in JS.
 - `Game.catchUp(n)` advances the clock and the daily logic but **does not walk villagers**; they move with frames.
 - The pane's fps counter lies (throttled). For timing, pause and step (`LOOK.dbg.paused`, `LOOK.step()` in the slice).
+- **Close the game's tab when a check is done** (`tabs_close`): `preview_stop` stops the server but the loaded page keeps rendering, and `preview_start` opens a tab of its own beside any you navigate. The game holds the owner's Intel UHD at 85–100% busy, and the desktop app shares that chip, so the owner's screen flickers while a game runs in the pane (1–2% with the tab closed). For a long session in the pane: Low, or the 30 fps cap.
+- **The game's own tools:** Settings → Graphics → *Frame rate counter* and *Copy report* (the report includes Auto quality's timing record, kept in `localStorage` `pixelville-nd-auto-quality`; remove it, or choose Auto in Settings, to time afresh).
 - After a hot update, `await import('/src/x.ts')` may give a second, empty module copy; find the live URL with `performance.getEntriesByType('resource')…` or reload first. `/src/save/store.ts` (rarely edited) is safe to import.
 - Keep each `javascript_tool` script under ~40 s (it times out at 45 s).
 - **Exceptions in a per-frame update stop the whole frame loop** (the scene freezes while state looks fine): read console errors first.
@@ -254,8 +257,10 @@ const store = await import('/src/save/store.ts'); await store.put(store.AUTO, Ga
 - **Traffic hits (9m)**: about two real hits a day remain in a town, a bus or a cab clipping a walker on a junction corner; walkers cross side-street mouths on the zebra without waiting for turning traffic. A car creeping out of a dead-end lane can nudge someone crossing it (shaken only).
 - **Models (9j) follow-ups**: more train models need the owner's downloads (only the diesel, the railcar and the boxcar exist); pigeons and ducks have no wing bones (the birds in flight are code-built since 9k, `gfx/birds.ts`); the Founder's moped and bicycle are still code-built (the scooter and bicycle models could replace them); the zoo's pens were checked by their layout only (the test village had no zoo); no fire engine better than the current CC BY one was found.
 - **A returning browser on the live site** once had a problem a fresh window didn't; it was never reproduced. The likely causes are handled (the rescue prompt, quality no longer stuck low, the frame guard, less memory); if it comes back, ask the owner what they see, and with their OK look in their own Chrome.
-- **Traffic:** no permanent gridlock (gridlock relief clears any car stuck 100–150 s), checked in the game on Auto villages; very cramped hand-built layouts can still form short jams that relief clears.
+- **Traffic:** no permanent gridlock (gridlock relief clears any car stuck 100–150 s; since 9n ambulances on their way back too), checked in the game on Auto villages; very cramped hand-built layouts can still form short jams that relief clears.
 - The Browser pane's frame times are not the owner's (its rAF is throttled): judge performance by draw calls, render time and memory.
+- **The design PCs (9n)**: the lag that started 9n was reported on strong PCs with big monitors that weren't available to test on. Everything since was measured on the owner's laptop; the next step is a *Copy report* from one of those PCs after a minute of play on Auto (and a reload, so Auto's pick is in use).
+- **Fewer draws for buildings**: each building chunk is one draw per material (about 20); one draw per chunk needs a texture-array shader rework (the largest saving left, and the riskiest to the look).
 - Not checked on real hardware: a gamepad (tested with a scripted stand-in pad), a real phone (tested in the pane's phone emulation at 812×375 and 375×812), iPhone full screen (Safari has no element full screen on iPhone; the Home Screen app is full screen).
 - Chat limits are per server instance (Vercel runs several): a shared store (Vercel KV) would make the daily cap exact.
 - With a very large interface size on a narrow window, the hint and the news can overlap.

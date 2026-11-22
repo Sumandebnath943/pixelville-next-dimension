@@ -448,7 +448,7 @@ Vite · TypeScript (strict; the ported sim is checked against shared entity type
 - Static geometry merged per chunk; instancing for trees, lamps, props, people and cars.
 - Frustum + distance culling; cascaded shadows near the player only.
 - Night lighting: emissive windows and lamp glow, real lights only for the closest sources (headlights, sirens, fires).
-- Quality presets (Low / Medium / High) with automatic detection; mobile defaults to Low. **Ultra** (V2) is only ever the player's choice: High plus every small shadow and full mirrors.
+- Quality presets (Low / Medium / High) with automatic detection; mobile defaults to Low. (V2, 2026-11: Auto then times play on each computer and screen and corrects the guess for the next visit; a frame-rate counter and a copyable performance report live in Settings → Graphics.) **Ultra** (V2) is only ever the player's choice: High plus every small shadow and full mirrors.
 - Draw only what shows (V2): the water mirror is skipped when water is a sliver of the view; wet streets mirror the nearest 320 m; flat ground and the smallest details cast no shadows below Ultra; static meshes drop their page copy once on the GPU. Resolution scaling stops at 80% and the grade sharpens.
 - Never a frozen screen (V2): each part of the frame runs guarded, so one failure is logged and skipped.
 - Sim heavy passes (grievance survey, coverage, planning) stay throttled as in V1.

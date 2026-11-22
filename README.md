@@ -4,7 +4,7 @@ The 3D sequel to [PixelVille](https://github.com/Sumandebnath943/pixelville): th
 
 Walk and drive through your village in first or third person, and rise into the sky to build, just like before. Villagers commute, gossip, fall in love, vote, open businesses and remember what happened to them.
 
-> **Status:** live at **[pixelvillenextdimension.houseofnamus.com](https://pixelvillenextdimension.houseofnamus.com/)** (every push to `main` deploys). Milestones 1–8 are done (the living town, the semi-realistic look, street life, interiors and villager chat, the deeper village, going places, work shifts, launch polish, the owner's polish list), and Milestone 9's fixes from live play are on `main`: junction boxes and gridlock relief, a closed economy with tills, budgets and debts, god view, the Auto village, street trees, the spring thaw, saves that always open, a lighter frame, an Ultra graphics preset, and real models for the villagers, vehicles and animals with a choice of who the Founder is. See [the milestone plan](docs/MILESTONES.md), [the handoff](docs/HANDOFF.md) and [the game info](docs/GAME_INFO.md). The look lab, a single street block for trying the graphics, is at `/slice.html`.
+> **Status:** live at **[pixelvillenextdimension.houseofnamus.com](https://pixelvillenextdimension.houseofnamus.com/)** (every push to `main` deploys). Milestones 1–8 are done (the living town, the semi-realistic look, street life, interiors and villager chat, the deeper village, going places, work shifts, launch polish, the owner's polish list), and Milestone 9's fixes from live play are on `main`: junction boxes and gridlock relief, a closed economy with tills, budgets and debts, god view, the Auto village, street trees, the spring thaw, saves that always open, a lighter frame, the same picture at far less cost per frame (9n), working villager chat on the live site, an Ultra graphics preset, and real models for the villagers, vehicles and animals with a choice of who the Founder is. See [the milestone plan](docs/MILESTONES.md), [the handoff](docs/HANDOFF.md) and [the game info](docs/GAME_INFO.md). The look lab, a single street block for trying the graphics, is at `/slice.html`.
 
 ## Run it
 
@@ -42,7 +42,7 @@ Then open the address Vite prints (usually http://localhost:5173). Other scripts
 
 **Saves:** there are three slots plus an autosave, and the game continues your last village when you return. If a village crashed while loading last time, the loading screen offers to open it again, open it with lighter graphics, or start afresh with the old one kept safe. Export and import to a file, including **PixelVille V1 exports**: a V1 village is placed in the bottom-centre of the bigger map.
 
-**Graphics:** Settings → Graphics → Quality: Auto picks Low, Medium or High for your device; **Ultra** (every small shadow, full reflections) is there when you want it.
+**Graphics:** Settings → Graphics → Quality: Auto starts from a guess for your graphics card, times the first half-minute of play on your computer and screen, and opens with what keeps it smooth from then on; **Ultra** (every small shadow, full reflections) is there when you want it. *Frame rate counter* shows the frame rate in a top corner, and if the game runs slowly, *Copy report* copies a performance report to send to the developer.
 
 ## Documents
 

@@ -20,6 +20,8 @@
 - Opens on the loading screen, then the first-day guide (in a fresh browser).
 - `https://pixelville.next.houseofnamus.com/api/chat` answers `{"ready":true}` once the key is set.
 - Talk to a villager: a natural reply (AI) rather than a template line means the key works.
+- If `/api/chat` answers with a server error, read the function's log: `vercel logs <deployment url>` (from `vercel inspect <domain>`). Relative imports in `api/` must end in `.js`: Vercel runs the function as an ES module (a missing ending kept live chat down from launch until 2026-11-22).
+- Settings → Graphics → *Copy report* on the live site names the build it came from (the commit), so a report shows whether a deploy has reached that browser.
 - On a phone: the touch controls show, the first tap goes full screen; "Add to Home Screen" installs it.
 
 ## Notes

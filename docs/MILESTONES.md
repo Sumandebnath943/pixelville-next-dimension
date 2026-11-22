@@ -13,7 +13,7 @@
 | 6 | **Work shifts** | All playable jobs (done) |
 | 7 | **Launch polish** | Mobile tuning, performance, balance, accessibility, launch (done; live at [pixelvillenextdimension.houseofnamus.com](https://pixelvillenextdimension.houseofnamus.com/), every push to `main` deploys) |
 | 8 | **The owner's polish list** | 33 points from the first full play (done 2026-10-26) |
-| 9 | **Live play fixes** | The owner's batches since launch: traffic, the look, money, an Auto village, saves that always open, a lighter frame (2026-10-26 → 10-30) |
+| 9 | **Live play fixes** | The owner's batches since launch: traffic, the look, money, an Auto village, saves that always open, a lighter frame (2026-10-26 → 10-31); 9n, performance with the same picture, live chat, Auto quality that times play, a performance report (2026-11-22) |
 
 ---
 
@@ -453,7 +453,7 @@ Stretched over the village year: day 15–16 the head gardener scouts by helicop
 
 ---
 
-## Milestone 9 · Live play fixes (2026-10-26 → 10-30, straight onto `main`)
+## Milestone 9 · Live play fixes (2026-10-26 → 11-22, straight onto `main`)
 
 After launch the owner played the live game and sent fixes in batches; each batch was built, checked in the Browser pane and committed to `main` (which deploys) when the owner said so.
 
@@ -555,11 +555,23 @@ The code-built people, cars and animals give way to downloaded models (owner's c
 ### Checked
 - 170 tests pass; typecheck clean. In the Browser pane (Juniper Hill): the bus near and mid (door side too), the ambulance as a full model, a mid-distance taxi's cabin; 4 game hours with no false hits and no knock-down news; a cab at its rank pulled in at the kerb; 24 game hours with no surplus cars and 1 front-door arrival (a car the old save had left at a door) of 122 car trips; a house and a café dressed, no console errors. Headless audits: walkers off the pavement outside crossings ~2 person-seconds a day; 827 crossings in 12 hours, all straight over.
 
+### 9n · Performance, live chat, and tools to see the frame rate (2026-11-17 → 11-22)
+The owner's report: on strong "design" PCs (64 GB, professional graphics cards, big monitors) the live game lagged on every preset, worse than their Intel UHD laptop, and driving was undrivable. The owner's rule for the whole batch: **"I should not feel anything"**: nothing may look worse.
+- **Codex's pass** (`f90c272`, `ca5d284`, 11-17): High/Ultra antialiasing resolved once before the post effects (the composer's buffers were all 4× MSAA), snow and puddle shader work skipped when it does nothing, at most four models loading at once, shared placeholder texture buffers, terrain chunks rebuilt by changed tile, journeys catching up in slices, a smoother loading screen. Reviewed: correct, but mostly loading-time wins.
+- **Stage 1, same picture, less work** (`f01c582`): vehicle glass as two fixed-side materials (three.js re-derived the shader key of transparent double-sided glass twice per car per pass: 38 times a frame, now none); the sky's environment map kept as one texture (a new one made every lit material re-derive its shader); instanced buffers upload only the part in use (`gfx/upload.ts`: ~1,000 → ~116 KB a frame; the tree re-sort every 14 m sent whole buffers, tens of MB, while driving); grass tiles without per-blade garbage; world matrices once a frame; the Founder's vehicle in fixed 1/120 s steps (steering the same at any frame rate, true speed down to 10 fps); software rendering detected (Windows' "Microsoft Basic Render Driver" used to get High) with a notice.
+- **Stage 1b** (`b4e5f81`), chosen by the owner from side-by-side images: the water's mirror leaves out glazing bars, brass, pots and lead (people and vehicles stay, at the owner's request; window frames, awnings and signs too, or the mirrored windows show as holes); the High/Ultra soft-shadow pass skips the finest parts (about 15% of it). Ambient occlusion from the picture's depth alone was tried and dropped: it darkened every grass field.
+- **Live chat fixed, and a frame-rate counter** (`82f9782`): `api/chat.ts` imported `./_chat` without `.js`; Vercel runs it as an ES module, so every request had failed (HTTP 500) since launch and villagers only used their offline lines. Settings → Graphics → *Frame rate counter* (off, top left, top right): fps and the slowest frame of the last half second.
+- **Stage 2 and 3, repeatable tests** (`14fe7a9`): Auto quality times 20 s of play per graphics card and screen and opens with what keeps it smooth next time (High under 40 fps → Medium; Medium only under ~22 fps → Low; Medium with an idle card tries High). Settings → Graphics → *Copy report*: a plain-text performance report (card, screen, preset and its source, the last stretch of play, draws, memory, build). Tests roll seeded dice and read a steady clock (`tests/setup.ts`); a sweep of seeds found two ambulances deadlocked nose to nose in a junction for good, now given gridlock relief like every other vehicle.
+- **Housekeeping** (`db3434a`): every old branch deleted, here and on GitHub (all were fully in `main`); Codex's checkpoint tag pushed.
+### Checked
+- 181 tests pass (40 seeds of the chance-heavy files too); typecheck and production build clean. Measured on the same save, live build against new: shader re-derivations 6–26 a frame → 0; graphics-card uploads 140–525 → 58–84 KB a frame standing, ~2,000–2,750 → 115–141 KB driving; browser memory clean-ups halved; on Medium while driving the slowest 5% of frames 176 → 41 ms and stalls over 50 ms 8 → 1; on High 6–7% fewer draws, the soft-shadow pass 12–15% fewer, the water pass 9–11% fewer. Looks checked at frozen moments: 0.06–0.07% of pixels differ. Live: the build stamp reads `14fe7a9`, `/api/chat` answers ready and a villager replied. Not yet tried on the design PCs themselves.
+
 ---
 
 ## Ways of working
 
 - Every milestone: playable build deployed to a Vercel preview, then promoted.
-- Sim changes ship with tests; the multi-day soak test runs on every change.
+- Sim changes ship with tests; the multi-day soak test runs on every change. Since 9n tests are repeatable (seeded dice, a steady clock): a failure is a failure every time, and `PV_SEED=n` tries other dice.
+- Speed work is judged by what it saves (draws, shader work, uploads, garbage) and checked side by side at a frozen moment; anything that changes the look waits for the owner's say.
 - Assets are CC0, MIT or CC BY 4.0 (since 9j: CC BY with every creator credited in `public/models/CREDITS.md` and the Credits screen), tracked in `public/assets/LICENSES.md` and `docs/MODEL_SOURCES.md`.
 - V1 is never modified; it stays the reference for behaviour.
