@@ -28,6 +28,8 @@ export function applyAccess(): void {
   root.style.setProperty('--ui', String(Math.max(0.6, Math.min(1.5, ui * autoScale()))));
   body.dataset.cv = Settings.get('colorVision') || 'standard';
   body.classList.toggle('calm', !!Settings.get('calm'));
+  // V2: the frame-rate counter's corner (off hides it)
+  body.dataset.meter = Settings.get('fpsMeter') || 'off';
 }
 addEventListener('resize', () => applyAccess());
 

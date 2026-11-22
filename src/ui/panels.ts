@@ -505,6 +505,7 @@ export class Panels {
     // V2 (Milestone 7): graphics, controls and accessibility, applied as they change
     ($('set-res') as HTMLSelectElement).value = String(Settings.get('resScale') ?? 'auto');
     ($('set-fps') as HTMLSelectElement).value = String(Settings.get('fpsCap') || 0);
+    ($('set-meter') as HTMLSelectElement).value = Settings.get('fpsMeter') || 'off';
     ($('set-ui') as HTMLSelectElement).value = String(Settings.get('uiScale') || 1);
     ($('set-subs') as HTMLSelectElement).value = Settings.get('subtitles') || 'speech';
     ($('set-cv') as HTMLSelectElement).value = Settings.get('colorVision') || 'standard';
@@ -537,6 +538,7 @@ export class Panels {
     const live: [string, string, (el: HTMLInputElement & HTMLSelectElement) => unknown][] = [
       ['set-res', 'resScale', (e) => (e.value === 'auto' ? 'auto' : +e.value)],
       ['set-fps', 'fpsCap', (e) => +e.value],
+      ['set-meter', 'fpsMeter', (e) => e.value],
       ['set-ui', 'uiScale', (e) => +e.value],
       ['set-subs', 'subtitles', (e) => e.value],
       ['set-cv', 'colorVision', (e) => e.value],

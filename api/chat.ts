@@ -1,7 +1,9 @@
 /* The Vercel function for villager chat: POST /api/chat. The key comes from
    the project's environment variables (GROQ_API_KEY, GROQ_MODEL); see
    api/_chat.ts for the rules and checks. */
-import { handleChat, ready } from './_chat';
+// (with the `.js` ending: Vercel runs this as an ES module, where a relative import without one isn't found, and
+// every request failed with "Cannot find module '/var/task/api/_chat'")
+import { handleChat, ready } from './_chat.js';
 
 const env = (): Record<string, string | undefined> => (globalThis as unknown as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });

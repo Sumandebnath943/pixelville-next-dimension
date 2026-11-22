@@ -72,6 +72,7 @@
     <canvas id="game"></canvas>
 
     <div id="hud">
+      <div id="fps-meter" class="glass" aria-hidden="true" title="Frames a second, and the slowest frame of the last half second (Settings → Graphics)"><b>–</b><span>fps</span><small></small></div>
       <div id="topbar">
         <div id="tb-left" class="glass">
           <div class="tb-id">
@@ -238,6 +239,8 @@
             <option value="auto">Auto — lowers itself to keep the game smooth</option><option value="1">Full</option><option value="0.85">85%</option><option value="0.7">70%</option><option value="0.55">55%</option></select></div>
           <div class="set-row"><label for="set-fps">Frame rate</label><select id="set-fps">
             <option value="0">As fast as it goes</option><option value="30">30 fps — saves battery</option></select></div>
+          <div class="set-row"><label for="set-meter">Frame rate counter</label><select id="set-meter">
+            <option value="off">Off</option><option value="left">Top left</option><option value="right">Top right</option></select></div>
           <div class="set-row"><label for="set-fov">Field of view</label><input id="set-fov" type="range" min="55" max="95" step="1" /></div>
           <p class="note" id="set-gfx-note">Quality applies after a reload; the rest at once.</p>
         </section>

@@ -23,6 +23,7 @@ export const Settings: any = {
     // V2 (Milestone 7): performance, controls and accessibility (this browser's, not the village's)
     resScale: 'auto',     // auto (dynamic) | 1 | 0.85 | 0.7 | 0.55
     fpsCap: 0,            // 0 = uncapped | 30
+    fpsMeter: 'off',      // V2: the frame-rate counter: off | left | right (a top corner)
     keys: {},             // the player's own key bindings over the defaults (src/input/input.ts)
     uiScale: 1,           // interface size
     subtitles: 'speech',  // off | speech | all (speech and sound captions)

@@ -16,6 +16,7 @@ import { CAT } from './sim/catalog';
 import { family } from './sim/core';
 import { Stage, QUALITY_ONCE } from './render/stage';
 import { rendererName, SOFTWARE_GPU } from './gfx/pipeline';
+import { FpsMeter } from './ui/fpsmeter';
 import { Terrain } from './render/terrain';
 import { BuildingLayer, yieldFrame } from './render/buildings';
 import { Actors } from './render/actors';
@@ -107,6 +108,7 @@ stage.onLost = () => {
   $('gpu-reload').focus();
 };
 $('gpu-reload').addEventListener('click', () => location.reload());
+const fpsMeter = new FpsMeter($('fps-meter'));
 // V2: no graphics card in use (software drawing): say so, once a browser session, rather than leave the player
 // thinking the game itself is slow
 if (SOFTWARE_GPU.test(rendererName(stage.renderer.getContext()))) {
@@ -904,6 +906,7 @@ function runFrame(now: number): void {
   if (cap && now - last < 1000 / cap - 3) { requestAnimationFrame(frame); return; }
   const dt = Math.min(0.1, (now - last) / 1000 || 0.016);
   last = now;
+  fpsMeter.tick(now); // V2: the frame-rate counter (when it's on)
   Input.padMenu = padNav.wants();
   Input.padLayer = Input.padMenu || padNav.any();
   Input.poll();
