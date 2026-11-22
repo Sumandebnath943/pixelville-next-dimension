@@ -8,7 +8,7 @@
 
 ## Codex performance checkpoint
 
-The annotated Git tag `codex/pixelville-performance-restore` points to the clean pre-change commit `fc69ac4dbfd0e95f7a018b6a77c7229bc211c39e`. The local branch `codex/pixelville-performance` starts there. This restores the tracked game and configuration. Player saves and preferences live in the browser.
+The annotated Git tag `codex/pixelville-performance-restore` (on GitHub too) points to the clean pre-change commit `fc69ac4dbfd0e95f7a018b6a77c7229bc211c39e`. The work that followed it is all on `main` (its branch is deleted). Checking out the tag restores the tracked game and configuration as they were; player saves and preferences live in the browser.
 
 The performance pass skips weather shader work whose contribution is zero, resolves High and Ultra scene antialiasing before post-processing, bounds concurrent model loads, adopts generated texture buffers, and invalidates terrain chunks by changed tiles. Road and air journeys yield between simulation steps while retaining the existing batch boundaries.
 
@@ -97,7 +97,7 @@ Settled 2026-10-23, before any code:
 - **Visual bar: maximum realism and detail.** Procedural box models don't count as finished art. The owner's original 20-point wish list: richer graphics, lush realistic trees and ground, realistic roads and water, a sky that isn't a flat wall, detailed buildings, people and cars that look real (not "inflated 2D"), good eye-level views; real water physics, wind in trees, traffic that yields, realistic walking/driving; realistic snow and effects; weather and seasons blending in; a sea and a river; a tall beautiful Christmas tree in a Rockefeller-style plaza and vivid festival lights; a V2-specific HUD; nicer thought bubbles (one at a time). Most are done; **real rigged people and car models are still code-built stand-ins** (asset licensing is undecided: CC0-only vs CC-BY/Mixamo vs paid — ask before adding assets).
 - **Show a small vertical slice before rolling a new look out everywhere.**
 - **Raise new feature ideas before building them**; build to the agreed design otherwise.
-- **Workflow they've used:** each milestone on its own branch (`milestone-N`), merged into `main` and pushed when they ask. Since launch, fixes come in numbered batches and go straight onto `main`; commit and push only when they ask (they've asked for one commit per batch). A push deploys the live site.
+- **Workflow they've used:** each milestone on its own branch (`milestone-N`), merged into `main` and pushed when they ask. (Once merged, a branch is deleted, here and on GitHub: on 2026-11-22 every old one went, `milestone-1.5-new-look` to `milestone-8`, `leftovers-m1` and `fix/owner-list-batch-10`, all fully in `main`. MILESTONES.md still names them as history.) Since launch, fixes come in numbered batches and go straight onto `main`; commit and push only when they ask (they've asked for one commit per batch). A push deploys the live site.
 - They judge on the live site in their own Chrome, where an old village may be saved: think about returning players (old saves, settings kept in the browser) as well as a fresh visit.
 - They like being told plainly what was verified in the game vs only in tests, and what's left.
 - Commit attribution line used so far: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (use whatever the new session's instructions say).
