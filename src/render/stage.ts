@@ -14,7 +14,7 @@ import { Festivals } from '../sim/festivals';
 import { Calamity } from '../sim/calamity';
 import { Settings } from '../sim/settings';
 import { GW, GH } from '../sim/world';
-import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, detectQuality, QualityProfile, isHigh } from '../gfx/pipeline';
+import { Pipeline, PlanarReflection, Quality, LAYER_NO_REFLECT, LAYER_NO_WATER, detectQuality, QualityProfile, isHigh } from '../gfx/pipeline';
 import { SkySystem } from '../gfx/sky';
 import { ENV } from '../gfx/env';
 import { Precipitation } from '../gfx/precip';
@@ -82,6 +82,7 @@ export class Stage {
     this.quality = Stage.pickQuality();
     this.camera = new THREE.PerspectiveCamera(Settings.get('fov') || 60, 1, 0.25, 4000);
     this.camera.layers.enable(LAYER_NO_REFLECT);
+    this.camera.layers.enable(LAYER_NO_WATER);
     this.pipe = new Pipeline(canvas, this.quality, this.scene, this.camera);
     this.profile = this.pipe.profile;
     this.renderer = this.pipe.renderer;

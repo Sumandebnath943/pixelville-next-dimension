@@ -84,6 +84,9 @@ export const PROFILES: Record<Quality, QualityProfile> = {
 };
 /** objects on this layer are skipped by reflections (grass, rain) */
 export const LAYER_NO_REFLECT = 1;
+/** V2: objects on this layer are skipped by the water's mirror only: a building's finest parts (glazing bars, brass,
+ *  pots, lead), which the ripples blur away; the wet streets still show them */
+export const LAYER_NO_WATER = 2;
 
 const GradeShader = {
   uniforms: {
@@ -193,6 +196,8 @@ export class Pipeline {
     if (P.ao) {
       // AO at half resolution: contact shadows under eaves, sills, kerbs and cars
       this.gtao = new GTAOPass(scene, camera, (w * dpr) / 2, (h * dpr) / 2);
+      // (V2: its depth and normals are still drawn in a pass of their own. Worked out from the picture's depth alone,
+      // the facing of thin grass blades came out wrong and every field darkened; see `noAO` below for what it skips)
       this.gtao.blendIntensity = 0.85;
       this.gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.0, samples: 12, screenSpaceRadius: false });
       this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
@@ -208,7 +213,9 @@ export class Pipeline {
           if (!m.isMesh || !m.visible) return;
           const mat = m.material as THREE.Material | THREE.Material[];
           const see = !Array.isArray(mat) && !!mat && (mat.transparent || !mat.depthWrite || mat.blending === THREE.AdditiveBlending);
-          if (see || !m.geometry?.getAttribute('normal')) { m.visible = false; g._visibilityCache.push(m); }
+          // (and a building's finest parts, marked `noAO`: window frames, glazing bars, trim, brass, pots, lead. Too
+          // thin to shade anything at the pass's half resolution, they were a sixth of its drawing)
+          if (see || m.userData.noAO || !m.geometry?.getAttribute('normal')) { m.visible = false; g._visibilityCache.push(m); }
         });
       };
       this.composer.addPass(this.gtao);
@@ -337,6 +344,8 @@ export class PlanarReflection {
 
   /** V2: how far the mirror sees (0: as far as the camera) */
   maxFar = 0;
+  /** the layers this mirror leaves out */
+  skipLayers = 1 << LAYER_NO_REFLECT;
   constructor(public y: number, public scale = 0.5) {
     this.rt = new THREE.WebGLRenderTarget(512, 512, {
       type: THREE.HalfFloatType,
@@ -371,7 +380,7 @@ export class PlanarReflection {
       const top = (cam.near * Math.tan(THREE.MathUtils.DEG2RAD * 0.5 * cam.fov)) / cam.zoom, w = 2 * top * cam.aspect;
       vc.projectionMatrix.makePerspective(-w / 2, w / 2, top, -top, cam.near, Math.min(cam.far, this.maxFar));
     } else vc.projectionMatrix.copy(cam.projectionMatrix);
-    vc.layers.mask = cam.layers.mask & ~(1 << LAYER_NO_REFLECT);
+    vc.layers.mask = cam.layers.mask & ~this.skipLayers;
     this.textureMatrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
     this.textureMatrix.multiply(vc.projectionMatrix).multiply(vc.matrixWorldInverse);
     // oblique near plane clips everything below the mirror

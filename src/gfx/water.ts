@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { ENV, GLSL_COMMON, bindEnv } from './env';
 import { waterNormals } from './textures';
-import { PlanarReflection } from './pipeline';
+import { PlanarReflection, LAYER_NO_WATER } from './pipeline';
 
 const NW = 4;
 const _vp = new THREE.Matrix4(), _fr = new THREE.Frustum(), _c4 = new THREE.Vector4();
@@ -170,6 +170,9 @@ export class WaterSystem {
     this.minLen = minLen;
     this.wavesU = Array.from({ length: NW }, () => new THREE.Vector4());
     this.reflection = new PlanarReflection(level, reflScale);
+    // (a building's finest parts are left out of the rippled mirror, which blurs them away anyway; people and
+    // vehicles stay in it)
+    this.reflection.skipLayers |= 1 << LAYER_NO_WATER;
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uWaves: { value: this.wavesU },

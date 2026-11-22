@@ -25,7 +25,11 @@ Same picture, less work per frame (measured on a Full Auto village, Medium, agai
 - **The Founder's vehicle** moves in steps of at most `DRIVE_STEP` (1/120 s), so steering feels the same at any frame rate, and it keeps its true speed down to 10 fps.
 - **Software rendering** (SwiftShader, llvmpipe, "Microsoft Basic Render Driver") is detected by `SOFTWARE_GPU` in `gfx/pipeline.ts`: it now gets Low (Basic Render Driver used to get High) and the player is told once a session (`#gpu-soft`).
 
-What still costs: each draw call allocates ~260 bytes inside three.js and the browser's WebGL calls, and the scene is drawn three or four times a frame (the picture, the water mirror, the shadows, and on High the soft-shadow normal pass). The remaining levers (a lighter water mirror, ambient occlusion from the main depth, buildings merged across materials) all change the picture slightly or need a shader rework; they wait on the owner's say.
+**Stage 1b (owner-approved after side-by-side images, 2026-11-22):**
+- **The water's mirror** leaves out a building's glazing bars, brass, pots and lead (`LAYER_NO_WATER`, set on the merged chunk meshes in `render/buildings.ts`; `PlanarReflection.skipLayers`). People and vehicles stay in it, at the owner's request. Window frames, awnings and signs must stay too: without the frames the mirrored windows show as bright holes, and a missing awning is plain to see.
+- **The soft shadows' depth-and-normal pass** (High, Ultra) skips meshes marked `userData.noAO`: window frames, glazing bars, trim, brass, pots, lead (about 15% of that pass). Working the AO out from the picture's depth alone was tried and dropped: normals from depth are wrong on thin grass blades and every field darkened.
+
+What still costs: each draw call allocates ~260 bytes inside three.js and the browser's WebGL calls, and the scene is drawn three or four times a frame (the picture, the water mirror, the shadows, and on High the soft-shadow pass). Merging buildings across materials (one draw per chunk) needs a texture-array shader rework and is not done.
 
 **Measuring:** the pane's frame rate is throttled and this laptop is GPU-bound, so judge changes by mechanism: draw calls per camera, `customProgramCacheKey` calls and material `version` bumps per frame, `gl.bufferSubData` bytes, heap growth. To compare two commits on one save, build the old one with `--base /base/` into `dist/base` (from PowerShell: Git Bash rewrites `/base/`) and serve `dist` with `pixelville-nd-build`: both share the origin's saves.
 

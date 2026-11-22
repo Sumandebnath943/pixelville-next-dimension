@@ -21,6 +21,7 @@ import { zooPlan } from './zoo';
 import { Lots, type Spot } from '../sim/parking';
 import { Kit, Packed, Palette, sharedPalette, Frame, Hole, wallFace, obox, sashWindow, frontDoor, glassPane, chimney as brickChimney, TRIM, meshesFromParts, freeAfterUpload } from '../gfx/architecture';
 import * as TX from '../gfx/textures';
+import { LAYER_NO_WATER } from '../gfx/pipeline';
 import { TreeInstance, Species } from '../gfx/vegetation';
 
 const TM = 8;
@@ -1555,6 +1556,12 @@ export function yieldFrame(): Promise<void> {
   });
 }
 const BCH = 16; // tiles per building chunk
+/** the materials too fine for the water's rippled mirror: glazing bars, brass, pots and lead. (Not the window frames,
+ *  awnings or signs: without the frames the mirrored windows showed as bright holes, and an awning is missed) */
+const NO_WATER_MIRROR = new Set(['sashBar', 'brass', 'pot', 'lead']);
+/** the materials left out of the soft shadows' depth-and-normal pass (High and Ultra): too thin to shade anything
+ *  at its half resolution */
+const NO_AO_PASS = new Set(['sash', 'sashBar', 'trim', 'brass', 'pot', 'lead']);
 const NBCX = Math.ceil(256 / BCH);
 interface Entry {
   sig: string;
@@ -1747,7 +1754,12 @@ export class BuildingLayer {
     const meshes = meshesFromParts(this.pal, all, this.group, true);
     // the merged copy lives on the GPU; drop its CPU arrays after upload
     freeAfterUpload(meshes);
-    for (const m of meshes) m.userData.chunk = ci;
+    for (const m of meshes) {
+      m.userData.chunk = ci;
+      // (the finest parts stay out of the water's rippled mirror, and out of the soft shadows' pass)
+      if (NO_WATER_MIRROR.has(m.name)) m.layers.set(LAYER_NO_WATER);
+      if (NO_AO_PASS.has(m.name)) m.userData.noAO = true;
+    }
     this.chunkMeshes.set(ci, meshes);
   }
 
